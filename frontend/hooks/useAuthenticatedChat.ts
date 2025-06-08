@@ -1,0 +1,107 @@
+"use client"
+
+import { useChat as useAIChat } from "@ai-sdk/react"
+import { useAuth } from "@/frontend/components/AuthProvider"
+import { useAPIKeyStore } from "@/frontend/stores/APIKeyStore"
+import { useModelStore } from "@/frontend/stores/ModelStore"
+import { useWebSearchStore } from "@/frontend/stores/WebSearchStore"
+import { apiClient } from "@/lib/api-client"
+import type { UIMessage } from "ai"
+import { toast } from "sonner"
+import { useMemo } from "react"
+
+interface UseAuthenticatedChatProps {
+  threadId: string
+  initialMessages: UIMessage[]
+  onFinish?: (message: UIMessage) => void
+  onStart?: (message: UIMessage) => void
+}
+
+export function useAuthenticatedChat({ threadId, initialMessages, onFinish, onStart }: UseAuthenticatedChatProps) {
+  const { user } = useAuth()
+  const getKey = useAPIKeyStore((state) => state.getKey)
+  const selectedModel = useModelStore((state) => state.selectedModel)
+  const webSearchEnabled = useWebSearchStore((state) => state.enabled)
+
+  // Memoize the model config to prevent re-renders
+  const modelConfig = useMemo(() => {
+    const { getModelConfig } = useModelStore.getState()
+    return getModelConfig()
+  }, [selectedModel])
+
+  console.log("🔧 useAuthenticatedChat initialized with:", {
+    threadId,
+    initialMessagesCount: initialMessages.length,
+    userId: user?.id,
+    webSearchEnabled,
+  })
+
+  const chat = useAIChat({
+    id: threadId,
+    initialMessages,
+    experimental_throttle: 50,
+    onFinish: (message) => {
+      console.log("🏁 Chat finished, message:", message.id, "Content length:", message.content.length)
+      // Call the original onFinish if provided
+      onFinish?.(message)
+      // The API route handles saving the message and creating summaries
+    },
+    fetch: async (url, options) => {
+      try {
+        console.log("🔑 Custom fetch for chat:", url, "Web search enabled:", webSearchEnabled)
+
+        // Add model-specific API key
+        const apiKey = getKey(modelConfig.provider)
+        if (!apiKey) {
+          throw new Error(`${modelConfig.provider} API key is required`)
+        }
+
+        const headers = new Headers(options?.headers || {})
+        headers.set(modelConfig.headerKey, apiKey)
+
+        // Parse the existing body to add web search flag
+        const existingBody = options?.body ? JSON.parse(options.body as string) : {}
+        const newBody = {
+          ...existingBody,
+          webSearchEnabled,
+        }
+
+        // Use our custom API client
+        return apiClient.fetch(url, {
+          ...options,
+          headers,
+          body: JSON.stringify(newBody),
+        })
+      } catch (error) {
+        console.error("Failed to make chat request:", error)
+        throw error
+      }
+    },
+    body: {
+      model: selectedModel,
+      webSearchEnabled,
+    },
+    api: `/api/chat?threadId=${threadId}`,
+    onError: (error) => {
+      console.error("Chat error:", error)
+      if (error.message.includes("Authentication") || error.message.includes("401")) {
+        toast.error("Authentication failed. Please sign in again.")
+      } else {
+        toast.error("Something went wrong with the chat")
+      }
+    },
+  })
+
+  // Enhanced append function that calls onStart
+  const enhancedAppend = async (message: UIMessage) => {
+    console.log("🚀 Starting new chat message:", message.id)
+    onStart?.(message)
+    return chat.append(message)
+  }
+
+  return {
+    ...chat,
+    append: enhancedAppend,
+    isAuthenticated: !!user,
+  }
+}
