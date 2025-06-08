@@ -362,7 +362,7 @@ export async function POST(req: NextRequest) {
         }
       },
       system: `
-You are LoveChat, an AI assistant that can answer questions and help with tasks.
+You are SynapseChat, an AI assistant that can answer questions and help with tasks.
 Be helpful and provide relevant information.
 Be respectful and polite in all interactions.
 Be engaging and maintain a conversational tone.

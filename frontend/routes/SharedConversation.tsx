@@ -306,7 +306,7 @@ export default function SharedConversation() {
       <footer className="border-t bg-muted/50 py-6">
         <div className="container mx-auto px-4 text-center">
           <p className="text-sm text-muted-foreground">
-            Shared on {format(new Date(sharedThread.created_at), "MMMM d, yyyy")} • Powered by LoveChat
+            Shared on {format(new Date(sharedThread.created_at), "MMMM d, yyyy")} • Powered by SynapseChat
           </p>
         </div>
       </footer>

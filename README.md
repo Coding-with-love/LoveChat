@@ -1,6 +1,6 @@
-# LoveChat - T3Chat Cloneathon Entry
+# SynapseChat - T3Chat Cloneathon Entry
 
-LoveChat is a modern, feature-rich chat application built for the T3Chat Cloneathon competition. It combines the power of AI with real-time chat capabilities, offering a seamless and intuitive user experience.
+SynapseChat is a modern, feature-rich chat application built for the T3Chat Cloneathon competition. It combines the power of AI with real-time chat capabilities, offering a seamless and intuitive user experience.
 
 ##  Features
 

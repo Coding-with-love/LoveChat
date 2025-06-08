@@ -20,7 +20,7 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "LoveChat",
+  title: "SynapseChat",
   description: "A chat application with Supabase authentication",
 }
 

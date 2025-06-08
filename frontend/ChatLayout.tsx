@@ -20,7 +20,7 @@ export default function ChatLayout() {
         <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
           <div className="flex h-14 items-center justify-between px-4">
             <div className="flex items-center gap-2">
-              <h1 className="font-semibold">LoveChat</h1>
+              <h1 className="font-semibold">SynapseChat</h1>
             </div>
 
             {/* Chat controls on the right */}
