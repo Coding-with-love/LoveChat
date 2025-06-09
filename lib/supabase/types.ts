@@ -231,44 +231,6 @@ export interface Database {
           error_message?: string | null
         }
       }
-      code_conversions: {
-        Row: {
-          id: string
-          thread_id: string
-          message_id: string
-          user_id: string
-          original_code: string
-          original_language: string
-          converted_code: string
-          target_language: string
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          thread_id: string
-          message_id: string
-          user_id: string
-          original_code: string
-          original_language: string
-          converted_code: string
-          target_language: string
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          thread_id?: string
-          message_id?: string
-          user_id?: string
-          original_code?: string
-          original_language?: string
-          converted_code?: string
-          target_language?: string
-          created_at?: string
-          updated_at?: string
-        }
-      }
     }
   }
 }
