@@ -59,7 +59,8 @@ export async function POST(req: NextRequest) {
   console.log("🚀 Chat API called")
 
   try {
-    const { messages, model, webSearchEnabled } = await req.json()
+    const json = await req.json()
+    const { messages, model, webSearchEnabled, apiKey: bodyApiKey } = json
     const headersList = await headers()
 
     // Check if this is an Ollama model
@@ -95,12 +96,60 @@ export async function POST(req: NextRequest) {
     console.log("🔍 Web search enabled:", webSearchEnabled)
 
     const modelConfig = getModelConfig(model as AIModel)
-    const apiKey = headersList.get(modelConfig.headerKey) as string
 
+    // Try to get API key from multiple sources
+    let apiKey: string | null = null
+    
+    // 1. Check if API key is in the request body
+    if (bodyApiKey) {
+      console.log("🔑 Found API key in request body")
+      apiKey = bodyApiKey
+    }
+    
+    // 2. Check standard header based on provider
     if (!apiKey) {
-      console.log("Missing API key for provider:", modelConfig.provider)
+      const headerKey = modelConfig.headerKey
+      apiKey = headersList.get(headerKey)
+      if (apiKey) {
+        console.log(`🔑 Found API key in standard header: ${headerKey}`)
+      }
+    }
+    
+    // 3. Check alternative headers
+    if (!apiKey) {
+      const alternativeHeaders = [
+        "x-google-api-key",
+        "google-api-key",
+        "x-api-key",
+        "x-openai-api-key",
+        "openai-api-key",
+        "x-openrouter-api-key",
+        "openrouter-api-key"
+      ]
+      
+      for (const header of alternativeHeaders) {
+        apiKey = headersList.get(header)
+        if (apiKey) {
+          console.log(`🔑 Found API key in alternative header: ${header}`)
+          break
+        }
+      }
+    }
+    
+    // 4. Check all headers as a last resort
+    if (!apiKey) {
+      console.log("🔍 Checking all headers for API key...")
+      const allHeaders = Object.fromEntries(headersList.entries())
+      console.log("📋 All headers:", allHeaders)
+    }
+
+    // If still no API key, return error
+    if (!apiKey) {
+      console.log("❌ Missing API key for provider:", modelConfig.provider)
       return NextResponse.json({ error: `${modelConfig.provider} API key is required` }, { status: 400 })
     }
+
+    console.log("✅ API key found, length:", apiKey.length)
 
     let aiModel
     let modelSupportsSearch = false

@@ -6,15 +6,9 @@ export async function getActiveStreamsForThread(threadId: string): Promise<strin
   try {
     console.log("🔍 Fetching active streams for thread:", threadId)
 
-    // Use the apiClient which handles auth tokens properly
-    const response = await apiClient.fetch(`/api/resumable-streams?threadId=${threadId}`)
+    // Use the apiClient get method instead of fetch
+    const data = await apiClient.get<{ streams: string[] }>(`/api/resumable-streams?threadId=${threadId}`)
 
-    if (!response.ok) {
-      console.error("❌ Failed to fetch streams:", response.statusText)
-      return []
-    }
-
-    const data = await response.json()
     console.log("📋 Active streams response:", data)
     return data.streams || []
   } catch (error) {
@@ -27,8 +21,14 @@ export async function resumeStream(streamId: string): Promise<ReadableStream | n
   try {
     console.log("🔄 Attempting to resume stream:", streamId)
 
-    // Use the apiClient which handles auth tokens properly
-    const response = await apiClient.fetch(`/api/resume-stream?streamId=${streamId}`)
+    // For streaming responses, we need to use the native fetch with auth headers
+    const { getAuthHeaders } = await import("@/lib/auth-headers")
+    const headers = await getAuthHeaders()
+
+    const response = await fetch(`/api/resume-stream?streamId=${streamId}`, {
+      method: "GET",
+      headers,
+    })
 
     if (!response.ok) {
       console.error("❌ Failed to resume stream:", response.statusText)

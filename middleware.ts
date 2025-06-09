@@ -20,7 +20,18 @@ export async function middleware(request: NextRequest) {
   }
 
   // Only apply middleware to specific API routes that need authentication
-  const protectedRoutes = ["/api/chat", "/api/completion", "/api/test-auth", "/api/search"]
+  const protectedRoutes = [
+    "/api/chat",
+    "/api/completion",
+    "/api/test-auth",
+    "/api/search",
+    "/api/mark-interrupted",
+    "/api/resume-stream",
+    "/api/resumable-streams",
+    "/api/test-resumable",
+    "/api/convert-code",
+    "/api/explain-code",
+  ]
   const isProtectedRoute = protectedRoutes.some((route) => pathname.startsWith(route))
 
   if (isProtectedRoute) {
@@ -88,11 +99,23 @@ export const config = {
     "/api/completion/:path*",
     "/api/test-auth/:path*",
     "/api/search/:path*",
+    "/api/mark-interrupted/:path*",
+    "/api/resume-stream/:path*",
+    "/api/resumable-streams/:path*",
+    "/api/test-resumable/:path*",
+    "/api/convert-code/:path*",
+    "/api/explain-code/:path*",
     // Also match without path parameters
     "/api/chat",
     "/api/completion",
     "/api/test-auth",
     "/api/search",
+    "/api/mark-interrupted",
+    "/api/resume-stream",
+    "/api/resumable-streams",
+    "/api/test-resumable",
+    "/api/convert-code",
+    "/api/explain-code",
     // Include shared API routes for processing but they'll be skipped in middleware
     "/api/shared/:path*",
   ],

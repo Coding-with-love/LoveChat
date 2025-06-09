@@ -1,104 +1,169 @@
-"use client"
+import { getAuthHeaders } from "./auth-headers"
 
-import { supabase } from "./supabase/client"
-import { toast } from "sonner"
+interface ApiClientOptions {
+  baseUrl?: string
+  headers?: Record<string, string>
+}
 
-// Create a client for making authenticated API calls
-export const apiClient = {
+class ApiClient {
+  private baseUrl: string
+  private defaultHeaders: Record<string, string>
+
+  constructor(options: ApiClientOptions = {}) {
+    this.baseUrl = options.baseUrl || ""
+    this.defaultHeaders = options.headers || {}
+  }
+
   async fetch(url: string, options: RequestInit = {}): Promise<Response> {
     try {
-      console.log("🔑 API Client: Preparing request to", url)
+      const headers = await this.getHeaders(options.headers as Record<string, string>)
+      console.log(`📡 API Client: FETCH ${url}`)
 
-      // Get the current session
-      const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession()
-
-      if (sessionError) {
-        console.error("Failed to get session:", sessionError)
-        throw new Error("Authentication failed")
-      }
-
-      if (!session?.access_token) {
-        console.log("🔄 No token found, trying to refresh session...")
-
-        // Try to refresh the session
-        const { error: refreshError } = await supabase.auth.refreshSession()
-
-        if (refreshError) {
-          console.error("Failed to refresh session:", refreshError)
-          throw new Error("Session expired. Please sign in again.")
-        }
-
-        // Get the refreshed session
-        const {
-          data: { session: refreshedSession },
-        } = await supabase.auth.getSession()
-
-        if (!refreshedSession?.access_token) {
-          throw new Error("No authentication token available after refresh")
-        }
-
-        console.log("✅ Session refreshed successfully")
-      }
-
-      // Get the latest session after potential refresh
-      const {
-        data: { session: currentSession },
-      } = await supabase.auth.getSession()
-
-      if (!currentSession?.access_token) {
-        throw new Error("No authentication token available")
-      }
-
-      // Add authorization header
-      const headers = new Headers(options.headers || {})
-      headers.set("authorization", `Bearer ${currentSession.access_token}`)
-      headers.set("content-type", "application/json")
-
-      console.log("📋 API Client: Headers prepared with token length:", currentSession.access_token.length)
-      console.log("📋 API Client: Token preview:", currentSession.access_token.substring(0, 20) + "...")
-
-      // Make the request
-      const response = await fetch(url, {
+      const response = await fetch(`${this.baseUrl}${url}`, {
         ...options,
+        headers: {
+          ...headers,
+          ...options.headers,
+        },
+      })
+
+      console.log(`📡 API Client: Response status:`, response.status)
+      return response
+    } catch (error) {
+      console.error(`❌ API Client: FETCH ${url} failed:`, error)
+      throw error
+    }
+  }
+
+  private async getHeaders(customHeaders: Record<string, string> = {}): Promise<Record<string, string>> {
+    try {
+      console.log("🔑 API Client: Getting auth headers...")
+      const authHeaders = await getAuthHeaders()
+      console.log(
+        "🔑 API Client: Auth headers obtained, token length:",
+        authHeaders.authorization ? authHeaders.authorization.length : 0,
+      )
+
+      return {
+        ...this.defaultHeaders,
+        ...authHeaders,
+        ...customHeaders,
+      }
+    } catch (error) {
+      console.error("❌ API Client: Failed to get auth headers:", error)
+      throw new Error("Authentication required")
+    }
+  }
+
+  async get<T>(url: string, options: { headers?: Record<string, string> } = {}): Promise<T> {
+    try {
+      const headers = await this.getHeaders(options.headers)
+      console.log(`📡 API Client: GET ${url}`)
+
+      const response = await fetch(`${this.baseUrl}${url}`, {
+        method: "GET",
         headers,
       })
 
-      console.log("📡 API Client: Response status:", response.status)
+      console.log(`📡 API Client: Response status:`, response.status)
 
-      if (response.status === 401) {
-        console.error("🚨 401 Unauthorized - Token might be invalid")
-        console.log("🔍 Full token:", currentSession.access_token)
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error(`❌ API Client: Error response:`, errorText)
+        throw new Error(errorText || `HTTP ${response.status}: ${response.statusText}`)
       }
 
-      return response
+      return await response.json()
     } catch (error) {
-      console.error("API Client error:", error)
-      toast.error(error instanceof Error ? error.message : "API request failed")
+      console.error(`❌ API Client: GET ${url} failed:`, error)
       throw error
     }
-  },
+  }
 
-  async post<T = any>(url: string, data: any, options: Omit<RequestInit, "body" | "method"> = {}): Promise<T> {
-    const response = await this.fetch(url, {
-      ...options,
-      method: "POST",
-      body: JSON.stringify(data),
-    })
+  async post<T>(url: string, data: any, options: { headers?: Record<string, string> } = {}): Promise<T> {
+    try {
+      const headers = await this.getHeaders(options.headers)
+      console.log(`📡 API Client: POST ${url}`)
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      let errorData
-      try {
-        errorData = JSON.parse(errorText)
-      } catch {
-        errorData = { error: errorText }
+      const response = await fetch(`${this.baseUrl}${url}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(data),
+      })
+
+      console.log(`📡 API Client: Response status:`, response.status)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error(`❌ API Client: Error response:`, errorText)
+
+        try {
+          // Try to parse as JSON
+          const errorJson = JSON.parse(errorText)
+          throw new Error(errorJson.error || `HTTP ${response.status}: ${response.statusText}`)
+        } catch (e) {
+          // If parsing fails, use the raw text
+          throw new Error(errorText || `HTTP ${response.status}: ${response.statusText}`)
+        }
       }
-      throw new Error(errorData.error || "Request failed")
-    }
 
-    return response.json()
-  },
+      return await response.json()
+    } catch (error) {
+      console.error(`❌ API Client: POST ${url} failed:`, error)
+      throw error
+    }
+  }
+
+  async put<T>(url: string, data: any, options: { headers?: Record<string, string> } = {}): Promise<T> {
+    try {
+      const headers = await this.getHeaders(options.headers)
+      console.log(`📡 API Client: PUT ${url}`)
+
+      const response = await fetch(`${this.baseUrl}${url}`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify(data),
+      })
+
+      console.log(`📡 API Client: Response status:`, response.status)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error(`❌ API Client: Error response:`, errorText)
+        throw new Error(errorText || `HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      return await response.json()
+    } catch (error) {
+      console.error(`❌ API Client: PUT ${url} failed:`, error)
+      throw error
+    }
+  }
+
+  async delete<T>(url: string, options: { headers?: Record<string, string> } = {}): Promise<T> {
+    try {
+      const headers = await this.getHeaders(options.headers)
+      console.log(`📡 API Client: DELETE ${url}`)
+
+      const response = await fetch(`${this.baseUrl}${url}`, {
+        method: "DELETE",
+        headers,
+      })
+
+      console.log(`📡 API Client: Response status:`, response.status)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error(`❌ API Client: Error response:`, errorText)
+        throw new Error(errorText || `HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      return await response.json()
+    } catch (error) {
+      console.error(`❌ API Client: DELETE ${url} failed:`, error)
+      throw error
+    }
+  }
 }
+
+export const apiClient = new ApiClient()

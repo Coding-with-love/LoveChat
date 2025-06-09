@@ -1,6 +1,6 @@
 "use client"
 
-import { memo, useState, useEffect, useRef } from "react"
+import { memo, useState, useEffect, useRef, useCallback } from "react"
 import MarkdownRenderer from "@/frontend/components/MemoizedMarkdown"
 import { cn } from "@/lib/utils"
 import type { UIMessage } from "ai"
@@ -77,6 +77,21 @@ function PureMessage({
       return part.type === "text" || part.type === "reasoning"
     }) || []
 
+  // Handle code conversion - use useCallback to prevent unnecessary re-renders
+  const handleCodeConvert = useCallback(
+    (originalCode: string, convertedCode: string, target: string) => {
+      console.log("🔄 Code converted in Message component:", {
+        messageId: message.id,
+        target,
+        originalLength: originalCode.length,
+        convertedLength: convertedCode.length,
+      })
+      // The actual saving is handled in the MemoizedMarkdown component
+      // We don't need to do anything here to update the UI
+    },
+    [message.id],
+  )
+
   return (
     <div
       ref={messageRef}
@@ -145,7 +160,13 @@ function PureMessage({
                   ],
                 )}
               >
-                <MarkdownRenderer content={part.text} id={message.id} />
+                <MarkdownRenderer
+                  content={part.text}
+                  id={message.id}
+                  threadId={threadId}
+                  messageId={message.id}
+                  onCodeConvert={handleCodeConvert}
+                />
 
                 {/* Completion celebration effect */}
                 {showAnimation && <div className="absolute -top-2 -right-2 text-2xl animate-bounce">✨</div>}

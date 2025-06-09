@@ -33,6 +33,13 @@ export const useMessageSummary = () => {
       return
     }
 
+    console.log("🔑 Starting completion with:", {
+      promptLength: prompt.length,
+      threadId: options.body.threadId,
+      isTitle: options.body.isTitle,
+      hasGoogleKey: !!googleKey,
+    })
+
     setIsLoading(true)
     try {
       console.log("🔑 Making completion request...")
@@ -60,9 +67,20 @@ export const useMessageSummary = () => {
 
       return response
     } catch (error) {
-      console.error("Completion error:", error)
-      if (error instanceof Error && (error.message.includes("Authentication") || error.message.includes("401"))) {
-        toast.error("Authentication failed. Please sign in again.")
+      console.error("❌ Completion error details:", error)
+
+      if (error instanceof Error) {
+        console.error("❌ Error message:", error.message)
+
+        if (error.message.includes("Authentication") || error.message.includes("401")) {
+          toast.error("Authentication failed. Please sign in again.")
+        } else if (error.message.includes("API key")) {
+          toast.error("Invalid or missing Google API key")
+        } else if (error.message.includes("quota")) {
+          toast.error("API quota exceeded. Please try again later.")
+        } else {
+          toast.error(`Failed to generate summary: ${error.message}`)
+        }
       } else {
         toast.error("Failed to generate summary")
       }

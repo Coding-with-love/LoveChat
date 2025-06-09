@@ -485,6 +485,78 @@ export const moveThreadToProject = async (threadId: string, projectId: string | 
   return data
 }
 
+// Code Conversion Functions
+export const saveCodeConversion = async (
+  threadId: string,
+  messageId: string,
+  originalCode: string,
+  originalLanguage: string,
+  convertedCode: string,
+  targetLanguage: string,
+) => {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error("User not authenticated")
+
+  console.log("💾 Saving code conversion:", {
+    threadId,
+    messageId,
+    originalLanguage,
+    targetLanguage,
+  })
+
+  // Generate a UUID for the conversion ID
+  const conversionId = uuidv4()
+
+  const { data, error } = await supabase
+    .from("code_conversions")
+    .insert({
+      id: conversionId,
+      thread_id: threadId,
+      message_id: messageId, // Now accepts string IDs
+      user_id: user.id,
+      original_code: originalCode,
+      original_language: originalLanguage,
+      converted_code: convertedCode,
+      target_language: targetLanguage,
+    })
+    .select()
+    .single()
+
+  if (error) {
+    console.error("❌ Failed to save code conversion:", error)
+    throw error
+  }
+
+  console.log("✅ Code conversion saved successfully")
+  return data
+}
+
+export const getCodeConversions = async (threadId: string, messageId: string) => {
+  try {
+    console.log("🔍 Getting code conversions for:", { threadId, messageId })
+
+    const { data, error } = await supabase
+      .from("code_conversions")
+      .select("*")
+      .eq("thread_id", threadId)
+      .eq("message_id", messageId)
+      .order("created_at", { ascending: true })
+
+    if (error) {
+      console.error("❌ Failed to get code conversions:", error)
+      throw error
+    }
+
+    console.log(`✅ Found ${data?.length || 0} code conversions`)
+    return data || []
+  } catch (error) {
+    console.error("❌ Failed to get code conversions:", error)
+    throw error
+  }
+}
+
 // Helper functions
 function generateShareToken(): string {
   // Generate a URL-safe random token

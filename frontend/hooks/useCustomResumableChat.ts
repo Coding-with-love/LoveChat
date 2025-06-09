@@ -62,20 +62,57 @@ export function useCustomResumableChat({
         const { getModelConfig } = useModelStore.getState()
         const modelConfig = getModelConfig()
 
+        console.log("🔑 Getting API key for provider:", modelConfig.provider)
         const apiKey = getKey(modelConfig.provider)
+        console.log("🔑 API key found:", !!apiKey, "Length:", apiKey?.length || 0)
+
         if (!apiKey) {
           throw new Error(`${modelConfig.provider} API key is required`)
         }
 
-        const headers = new Headers(options?.headers || {})
-        headers.set(modelConfig.headerKey, apiKey)
-
-        const existingBody = options?.body ? JSON.parse(options.body as string) : {}
-        const newBody = {
-          ...existingBody,
-          webSearchEnabled,
+        // Parse and update the body to include webSearchEnabled and API key
+        let newBody = {}
+        if (options?.body) {
+          try {
+            newBody = JSON.parse(options.body as string)
+          } catch (e) {
+            console.error("Failed to parse request body:", e)
+          }
         }
 
+        newBody = {
+          ...newBody,
+          model: selectedModel,
+          webSearchEnabled,
+          apiKey: apiKey, // Include the API key in the body
+        }
+
+        // Create new headers and add the API key in multiple formats
+        const headers = new Headers(options?.headers || {})
+
+        // Set the API key in multiple header formats to ensure it's received
+        headers.set(modelConfig.headerKey, apiKey)
+
+        // Add provider-specific headers
+        if (modelConfig.provider === "google") {
+          headers.set("x-google-api-key", apiKey)
+          headers.set("google-api-key", apiKey)
+          headers.set("x-api-key", apiKey)
+        } else if (modelConfig.provider === "openai") {
+          headers.set("x-openai-api-key", apiKey)
+          headers.set("openai-api-key", apiKey)
+          headers.set("x-api-key", apiKey)
+        } else if (modelConfig.provider === "openrouter") {
+          headers.set("x-openrouter-api-key", apiKey)
+          headers.set("openrouter-api-key", apiKey)
+          headers.set("x-api-key", apiKey)
+        }
+
+        // Log headers for debugging
+        console.log("📋 Request headers:", Object.fromEntries(headers.entries()))
+        console.log("📦 Request body:", JSON.stringify(newBody, null, 2))
+
+        // Use apiClient.fetch to ensure proper authentication headers are included
         return apiClient.fetch(url, {
           ...options,
           headers,
@@ -277,16 +314,6 @@ export function useCustomResumableChat({
 
           onFinish?.(finalMessage)
 
-          // Replace this section:
-          // Reset after showing completion
-          // setTimeout(() => {
-          //   setIsResuming(false)
-          //   setResumeProgress(0)
-          //   setResumeComplete(false)
-          //   setResumedMessageId(null)
-          // }, 3000)
-
-          // With this:
           // Auto-refresh after showing completion animation
           setTimeout(() => {
             console.log("🔄 Auto-refreshing page after resume completion")

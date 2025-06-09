@@ -61,10 +61,26 @@ const createUserMessage = (id: string, text: string): UIMessage => ({
 
 function PureChatInput({ threadId, input, status, setInput, append, stop }: ChatInputProps) {
   const { user } = useAuth()
-  const canChat = useAPIKeyStore((state) => state.hasRequiredKeys())
+  const getKey = useAPIKeyStore((state) => state.getKey)
+  const selectedModel = useModelStore((state) => state.selectedModel)
   const [uploadedFiles, setUploadedFiles] = useState<FileUploadResult[]>([])
   const { enabled: webSearchEnabled, toggle: toggleWebSearch } = useWebSearchStore()
-  const selectedModel = useModelStore((state) => state.selectedModel)
+
+  // Check if we have an API key for the currently selected model
+  const canChat = useMemo(() => {
+    const modelConfig = getModelConfig(selectedModel)
+    const apiKey = getKey(modelConfig.provider)
+    const hasKey = !!apiKey
+
+    console.log("🔍 Chat availability check:", {
+      selectedModel,
+      provider: modelConfig.provider,
+      hasKey,
+      keyLength: apiKey?.length || 0,
+    })
+
+    return hasKey
+  }, [selectedModel, getKey])
 
   const { textareaRef, adjustHeight } = useAutoResizeTextarea({
     minHeight: 72,
