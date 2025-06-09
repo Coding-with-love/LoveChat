@@ -7,18 +7,22 @@ import { toast } from "sonner"
 export interface ResumableStream {
   id: string
   thread_id: string
-  message_id: string
   user_id: string
-  status: "streaming" | "paused" | "completed" | "failed"
+  status: "active" | "paused" | "completed" | "failed"
   partial_content: string
-  continuation_prompt: string | null
-  model: string
-  model_config: any
-  started_at: string
-  last_updated_at: string
+  last_chunk_at: string | null
+  created_at: string
   completed_at: string | null
-  total_tokens: number
-  estimated_completion: number
+  error_message: string | null
+  // Legacy fields for backward compatibility
+  message_id?: string
+  continuation_prompt?: string | null
+  model?: string
+  model_config?: any
+  started_at?: string
+  last_updated_at?: string
+  total_tokens?: number
+  estimated_completion?: number
   threads?: { title: string }
 }
 
@@ -48,7 +52,7 @@ export function useResumableStreams() {
         `)
         .eq("user_id", user.id)
         .eq("status", "paused")
-        .order("started_at", { ascending: false })
+        .order("created_at", { ascending: false })
 
       if (error) {
         console.error("Error loading resumable streams:", error)

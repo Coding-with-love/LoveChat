@@ -5,6 +5,7 @@ import { useAuth } from "@/frontend/components/AuthProvider"
 import { useAPIKeyStore } from "@/frontend/stores/APIKeyStore"
 import { useModelStore } from "@/frontend/stores/ModelStore"
 import { useWebSearchStore } from "@/frontend/stores/WebSearchStore"
+import { useAutoResume } from "./useAutoResume"
 import { apiClient } from "@/lib/api-client"
 import type { UIMessage } from "ai"
 import { toast } from "sonner"
@@ -15,9 +16,16 @@ interface UseAuthenticatedChatProps {
   initialMessages: UIMessage[]
   onFinish?: (message: UIMessage) => void
   onStart?: (message: UIMessage) => void
+  autoResume?: boolean
 }
 
-export function useAuthenticatedChat({ threadId, initialMessages, onFinish, onStart }: UseAuthenticatedChatProps) {
+export function useAuthenticatedChat({
+  threadId,
+  initialMessages,
+  onFinish,
+  onStart,
+  autoResume = true,
+}: UseAuthenticatedChatProps) {
   const { user } = useAuth()
   const getKey = useAPIKeyStore((state) => state.getKey)
   const selectedModel = useModelStore((state) => state.selectedModel)
@@ -34,6 +42,7 @@ export function useAuthenticatedChat({ threadId, initialMessages, onFinish, onSt
     initialMessagesCount: initialMessages.length,
     userId: user?.id,
     webSearchEnabled,
+    autoResume,
   })
 
   const chat = useAIChat({
@@ -90,6 +99,15 @@ export function useAuthenticatedChat({ threadId, initialMessages, onFinish, onSt
         toast.error("Something went wrong with the chat")
       }
     },
+  })
+
+  // Use the auto-resume hook
+  useAutoResume({
+    autoResume,
+    initialMessages,
+    experimental_resume: chat.experimental_resume,
+    data: chat.data,
+    setMessages: chat.setMessages,
   })
 
   // Enhanced append function that calls onStart

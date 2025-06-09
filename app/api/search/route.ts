@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
 
     const response = await fetch(searchUrl, {
       headers: {
-        "User-Agent": "SynapseChat/1.0",
+        "User-Agent": "LoveChat/1.0",
       },
     })
 

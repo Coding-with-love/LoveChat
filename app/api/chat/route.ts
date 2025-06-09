@@ -7,15 +7,53 @@ import { getModelConfig, type AIModel } from "@/lib/models"
 import { type NextRequest, NextResponse } from "next/server"
 import { supabaseServer } from "@/lib/supabase/server"
 import { v4 as uuidv4 } from "uuid"
-
-// Import the resumable streams functions at the top
-import {
-  createResumableStreamServer,
-  updateResumableStreamServer,
-  estimateCompletion,
-} from "@/lib/supabase/resumable-streams"
+import { CustomResumableStream } from "@/lib/resumable-streams-server"
 
 export const maxDuration = 60
+
+// GET handler for resuming streams
+export async function GET(request: Request) {
+  console.log("🔄 Resume stream request received")
+
+  const { searchParams } = new URL(request.url)
+  const threadId = searchParams.get("chatId") || searchParams.get("threadId")
+
+  if (!threadId) {
+    return new Response("Thread ID is required", { status: 400 })
+  }
+
+  try {
+    // Get the most recent active stream for this thread
+    const activeStreams = await CustomResumableStream.getActiveStreamsForThread(threadId)
+
+    if (activeStreams.length === 0) {
+      console.log("No active streams found for thread:", threadId)
+      return new Response("No active streams found", { status: 404 })
+    }
+
+    const recentStreamId = activeStreams[0]
+    console.log("🔄 Attempting to resume stream:", recentStreamId)
+
+    // Try to resume the stream
+    const resumedStream = await CustomResumableStream.resume(recentStreamId)
+
+    if (resumedStream) {
+      console.log("✅ Successfully resumed stream")
+      return new Response(resumedStream, {
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        },
+      })
+    }
+
+    return new Response("Unable to resume stream", { status: 404 })
+  } catch (error) {
+    console.error("Error in GET handler:", error)
+    return new Response("Internal server error", { status: 500 })
+  }
+}
 
 export async function POST(req: NextRequest) {
   console.log("🚀 Chat API called")
@@ -56,11 +94,6 @@ export async function POST(req: NextRequest) {
     console.log("✅ User authenticated:", user.id)
     console.log("🔍 Web search enabled:", webSearchEnabled)
 
-    // After the user authentication section, add this debugging:
-    console.log("🟠 [CHAT API DEBUG] Starting resumable stream creation process")
-    console.log("🟠 [CHAT API DEBUG] Thread ID from query params:", req.nextUrl.searchParams.get("threadId"))
-    console.log("🟠 [CHAT API DEBUG] Messages received:", messages?.length || 0)
-
     const modelConfig = getModelConfig(model as AIModel)
     const apiKey = headersList.get(modelConfig.headerKey) as string
 
@@ -72,56 +105,57 @@ export async function POST(req: NextRequest) {
     let aiModel
     let modelSupportsSearch = false
 
-    // Create resumable stream for tracking - do this early
     const threadId = req.nextUrl.searchParams.get("threadId")
-    let resumableStreamId: string | null = null
-    let aiMessageId: string | null = null
+
+    // Check if there's an existing incomplete message to resume
+    let existingMessageId: string | null = null
+    let partialContent = ""
+
+    if (threadId) {
+      // Look for the most recent assistant message that might be incomplete
+      const { data: recentMessages } = await supabaseServer
+        .from("messages")
+        .select("*")
+        .eq("thread_id", threadId)
+        .eq("role", "assistant")
+        .order("created_at", { ascending: false })
+        .limit(1)
+
+      if (recentMessages && recentMessages.length > 0) {
+        const lastMessage = recentMessages[0]
+        // Check if this message has an active resumable stream
+        const activeStreams = await CustomResumableStream.getActiveStreamsForThread(threadId)
+
+        if (activeStreams.length > 0) {
+          // Get the stream data to check if it's for this message
+          const { data: streamData } = await supabaseServer
+            .from("resumable_streams")
+            .select("*")
+            .eq("id", activeStreams[0])
+            .single()
+
+          if (streamData && streamData.partial_content) {
+            existingMessageId = lastMessage.id
+            partialContent = streamData.partial_content
+            console.log("📝 Found existing partial content:", partialContent.length, "characters")
+          }
+        }
+      }
+    }
+
+    // Create a new resumable stream
+    let resumableStream: CustomResumableStream | null = null
+    const aiMessageId = existingMessageId || uuidv4()
 
     if (threadId) {
       try {
-        const lastMessage = messages[messages.length - 1]
-        console.log("🟠 [CHAT API DEBUG] Last message:", lastMessage)
-
-        if (lastMessage?.role === "user") {
-          // Try to get the AI message ID from headers (sent by client)
-          const clientMessageId = headersList.get("x-ai-message-id")
-          aiMessageId = clientMessageId || uuidv4()
-
-          console.log("🟠 [CHAT API DEBUG] AI message ID:", aiMessageId)
-          console.log("🟠 [CHAT API DEBUG] From client header:", !!clientMessageId)
-          console.log("🟠 [CHAT API DEBUG] User ID:", user.id)
-          console.log("🟠 [CHAT API DEBUG] Model:", model)
-          console.log("🟠 [CHAT API DEBUG] Last message content length:", lastMessage.content?.length || 0)
-
-          console.log("🟠 [CHAT API DEBUG] Calling createResumableStreamServer...")
-
-          const resumableStream = await createResumableStreamServer(
-            threadId,
-            aiMessageId,
-            user.id,
-            model as AIModel,
-            modelConfig,
-            lastMessage.content,
-          )
-
-          resumableStreamId = resumableStream.id
-          console.log("🟠 [CHAT API DEBUG] Created resumable stream successfully!")
-          console.log("🟠 [CHAT API DEBUG] Resumable stream ID:", resumableStreamId)
-          console.log("🟠 [CHAT API DEBUG] Resumable stream data:", resumableStream)
-        } else {
-          console.log("🟠 [CHAT API DEBUG] Last message is not from user, skipping stream creation")
-        }
+        resumableStream = await CustomResumableStream.createNew(threadId, user.id, aiMessageId, partialContent)
+        console.log("💾 Created new resumable stream")
       } catch (error) {
-        console.error("🟠 [CHAT API DEBUG] Failed to create resumable stream:", error)
-        console.error("🟠 [CHAT API DEBUG] Error details:", error)
-        // Don't fail the request if stream creation fails
+        console.error("Failed to create resumable stream:", error)
+        // Continue without resumable stream
       }
-    } else {
-      console.log("🟠 [CHAT API DEBUG] No thread ID provided, skipping stream creation")
     }
-
-    console.log("🟠 [CHAT API DEBUG] Final resumable stream ID:", resumableStreamId)
-    console.log("🟠 [CHAT API DEBUG] Final AI message ID:", aiMessageId)
 
     switch (modelConfig.provider) {
       case "google":
@@ -216,153 +250,119 @@ export async function POST(req: NextRequest) {
       return newMsg
     })
 
+    // If we're resuming, modify the system prompt to continue from where we left off
+    let systemPrompt = getSystemPrompt(webSearchEnabled, modelSupportsSearch, user.email)
+    if (partialContent) {
+      systemPrompt += `\n\nIMPORTANT: You were previously responding to this conversation but were interrupted. Your partial response so far was:\n"${partialContent}"\n\nPlease continue from exactly where you left off. Do not repeat what you already said, just continue the response naturally.`
+      console.log("🔄 Modified system prompt for resumption")
+    }
+
+    // Create the stream (either resumable or regular)
+    let responseStream: ReadableStream
+
+    if (resumableStream) {
+      // Use our custom resumable stream
+      responseStream = await resumableStream.create()
+
+      // Start the AI generation in the background
+      generateAIResponse(
+        aiModel,
+        processedMessages,
+        systemPrompt,
+        user.email,
+        resumableStream,
+        threadId,
+        aiMessageId,
+        user.id,
+        modelConfig,
+        apiKey,
+        partialContent,
+      ).catch((error) => {
+        console.error("Error in AI generation:", error)
+        resumableStream?.fail(error.message)
+      })
+    } else {
+      // Fallback to regular streaming
+      console.log("⚠️ Using fallback streaming (no resumable streams)")
+
+      const result = streamText({
+        model: aiModel,
+        messages: processedMessages,
+        system: systemPrompt,
+        experimental_transform: [smoothStream({ chunking: "word" })],
+        onFinish: async ({ text, finishReason, usage, sources, providerMetadata }) => {
+          const fullText = partialContent + text
+          await handleMessageSave(
+            threadId,
+            aiMessageId,
+            user.id,
+            fullText,
+            sources,
+            providerMetadata,
+            modelConfig,
+            apiKey,
+          )
+        },
+      })
+
+      responseStream = result.toDataStream()
+    }
+
+    return new Response(responseStream, {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    })
+  } catch (error) {
+    console.error("Chat API error:", error)
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 })
+  }
+}
+
+// Separate function to handle AI generation with resumable streams
+async function generateAIResponse(
+  aiModel: any,
+  processedMessages: any[],
+  systemPrompt: string,
+  userEmail: string,
+  resumableStream: CustomResumableStream,
+  threadId: string | null,
+  aiMessageId: string,
+  userId: string,
+  modelConfig: any,
+  apiKey: string,
+  partialContent = "",
+) {
+  try {
     const result = streamText({
       model: aiModel,
       messages: processedMessages,
-      onError: async (error) => {
-        console.log("AI model error:", error)
-        if (resumableStreamId) {
-          try {
-            await updateResumableStreamServer(resumableStreamId, {
-              status: "failed",
-            })
-          } catch (updateError) {
-            console.error("Failed to mark stream as failed:", updateError)
-          }
-        }
-      },
+      system: systemPrompt,
+      experimental_transform: [smoothStream({ chunking: "word" })],
       onFinish: async ({ text, finishReason, usage, sources, providerMetadata }) => {
-        try {
-          console.log("🏁 AI generation finished, saving message...")
-          console.log("📝 Generated text length:", text.length)
-          console.log("🔍 Sources available:", !!sources && sources.length > 0)
-          console.log("🧵 Saving to thread:", threadId)
-
-          if (threadId && text && aiMessageId) {
-            console.log("💾 Creating AI message with pre-generated ID:", aiMessageId)
-
-            // Include sources in the message parts if available
-            const messageParts = [{ type: "text", text }]
-
-            // Add sources if available
-            if (sources && sources.length > 0) {
-              messageParts.push({
-                type: "sources",
-                sources,
-              })
-            }
-
-            // Add provider metadata if available
-            if (providerMetadata) {
-              // For Google models, extract grounding metadata
-              if (providerMetadata.google?.groundingMetadata) {
-                messageParts.push({
-                  type: "grounding_metadata",
-                  metadata: providerMetadata.google.groundingMetadata,
-                })
-              }
-            }
-
-            const aiMessage = {
-              id: aiMessageId,
-              thread_id: threadId,
-              user_id: user.id,
-              parts: messageParts,
-              content: text,
-              role: "assistant" as const,
-              created_at: new Date().toISOString(),
-            }
-
-            // Save the AI message
-            const { error, data } = await supabaseServer
-              .from("messages")
-              .upsert(aiMessage, {
-                onConflict: "id",
-                ignoreDuplicates: false,
-              })
-              .select()
-
-            if (error) {
-              console.error("❌ Failed to save AI message:", error)
-            } else {
-              console.log("✅ AI message saved successfully:", data?.[0]?.id)
-
-              // Generate summary for AI response
-              try {
-                console.log("📝 Generating summary for AI response...")
-
-                // Create a summary model for generating summaries
-                const summaryModel =
-                  modelConfig.provider === "google" ? createGoogleGenerativeAI({ apiKey })("gemini-1.5-flash") : aiModel
-
-                const { text: summary } = await generateText({
-                  model: summaryModel,
-                  system: `
-              - You will generate a brief summary of the AI assistant's response for navigation purposes
-              - Keep it under 50 characters
-              - Focus on the main topic or key information provided
-              - Do not use quotes or special characters
-              - Make it descriptive and useful for navigation
-              `,
-                  prompt: text.slice(0, 1000), // Limit prompt length
-                })
-
-                // Save the summary
-                const { error: summaryError } = await supabaseServer.from("message_summaries").insert({
-                  thread_id: threadId,
-                  message_id: aiMessageId,
-                  user_id: user.id,
-                  content: summary,
-                })
-
-                if (summaryError) {
-                  console.error("❌ Failed to create AI message summary:", summaryError)
-                } else {
-                  console.log("✅ AI message summary created:", summary)
-                }
-              } catch (summaryError) {
-                console.error("❌ Failed to generate AI message summary:", summaryError)
-                // Don't fail the whole request if summary generation fails
-              }
-            }
-
-            // In the onFinish handler, add this after saving the AI message:
-            if (resumableStreamId) {
-              try {
-                await updateResumableStreamServer(resumableStreamId, {
-                  status: "completed",
-                  partial_content: text,
-                  estimated_completion: 1.0,
-                  completed_at: new Date().toISOString(),
-                  total_tokens: usage?.totalTokens || 0,
-                })
-                console.log("✅ Marked resumable stream as completed")
-              } catch (error) {
-                console.error("Failed to update resumable stream:", error)
-              }
-            }
-
-            // Update thread's last_message_at
-            const { error: updateError } = await supabaseServer
-              .from("threads")
-              .update({ last_message_at: new Date().toISOString() })
-              .eq("id", threadId)
-              .eq("user_id", user.id)
-
-            if (updateError) {
-              console.error("❌ Failed to update thread:", updateError)
-            } else {
-              console.log("✅ Thread updated successfully")
-            }
-          } else {
-            console.log("⚠️ No thread ID or text, skipping save")
-          }
-        } catch (error) {
-          console.error("💥 Error in onFinish:", error)
-        }
+        const fullText = partialContent + text
+        await handleMessageSave(threadId, aiMessageId, userId, fullText, sources, providerMetadata, modelConfig, apiKey)
+        await resumableStream.complete()
       },
-      system: `
-You are SynapseChat, an AI assistant that can answer questions and help with tasks.
+    })
+
+    // Stream the response through our resumable stream
+    for await (const chunk of result.textStream) {
+      await resumableStream.write(chunk)
+    }
+  } catch (error) {
+    console.error("Error in AI generation:", error)
+    await resumableStream.fail(error.message)
+    throw error
+  }
+}
+
+// Helper function to get system prompt
+function getSystemPrompt(webSearchEnabled: boolean, modelSupportsSearch: boolean, userEmail: string) {
+  return `
+You are LoveChat, an AI assistant that can answer questions and help with tasks.
 Be helpful and provide relevant information.
 Be respectful and polite in all interactions.
 Be engaging and maintain a conversational tone.
@@ -428,38 +428,134 @@ Examples:
 - Display: 
 $$\\frac{d}{dx}\\sin(x) = \\cos(x)$$
 
-Current user: ${user.email}
-`,
-      experimental_transform: [smoothStream({ chunking: "word" })],
-      abortSignal: req.signal,
-      // In the streamText call, update the onChunk handler:
-      onChunk: async ({ chunk }) => {
-        if (chunk.type === "text-delta" && resumableStreamId) {
-          try {
-            // Update stream progress
-            const currentContent = (chunk as any).text || ""
-            const estimatedProgress = estimateCompletion(currentContent)
+Current user: ${userEmail}
+`
+}
 
-            await updateResumableStreamServer(resumableStreamId, {
-              partial_content: currentContent,
-              estimated_completion: estimatedProgress,
-            })
-          } catch (error) {
-            console.error("Failed to update stream progress:", error)
-          }
+// Helper function to handle message saving
+async function handleMessageSave(
+  threadId: string | null,
+  aiMessageId: string,
+  userId: string,
+  text: string,
+  sources: any,
+  providerMetadata: any,
+  modelConfig: any,
+  apiKey: string,
+) {
+  try {
+    console.log("🏁 AI generation finished, saving message...")
+    console.log("📝 Generated text length:", text.length)
+    console.log("🔍 Sources available:", !!sources && sources.length > 0)
+    console.log("🧵 Saving to thread:", threadId)
+
+    if (threadId && text) {
+      console.log("💾 Creating AI message with ID:", aiMessageId)
+
+      // Include sources in the message parts if available
+      const messageParts = [{ type: "text", text }]
+
+      // Add sources if available
+      if (sources && sources.length > 0) {
+        messageParts.push({
+          type: "sources",
+          sources: sources,
+        } as any)
+      }
+
+      // Add provider metadata if available
+      if (providerMetadata) {
+        // For Google models, extract grounding metadata
+        if (providerMetadata.google?.groundingMetadata) {
+          messageParts.push({
+            type: "grounding_metadata",
+            metadata: providerMetadata.google.groundingMetadata,
+          } as any)
         }
-      },
-    })
+      }
 
-    return result.toDataStreamResponse({
-      sendReasoning: true,
-      getErrorMessage: (error) => {
-        return (error as { message: string }).message
-      },
-    })
+      const aiMessage = {
+        id: aiMessageId,
+        thread_id: threadId,
+        user_id: userId,
+        parts: messageParts,
+        content: text,
+        role: "assistant" as const,
+        created_at: new Date().toISOString(),
+      }
+
+      // Save the AI message
+      const { error, data } = await supabaseServer
+        .from("messages")
+        .upsert(aiMessage, {
+          onConflict: "id",
+          ignoreDuplicates: false,
+        })
+        .select()
+
+      if (error) {
+        console.error("❌ Failed to save AI message:", error)
+      } else {
+        console.log("✅ AI message saved successfully:", data?.[0]?.id)
+
+        // Generate summary for AI response
+        try {
+          console.log("📝 Generating summary for AI response...")
+
+          // Create a summary model for generating summaries
+          const summaryModel =
+            modelConfig.provider === "google"
+              ? createGoogleGenerativeAI({ apiKey })("gemini-1.5-flash")
+              : createOpenAI({ apiKey })("gpt-4o-mini")
+
+          const { text: summary } = await generateText({
+            model: summaryModel,
+            system: `
+        - You will generate a brief summary of the AI assistant's response for navigation purposes
+        - Keep it under 50 characters
+        - Focus on the main topic or key information provided
+        - Do not use quotes or special characters
+        - Make it descriptive and useful for navigation
+        `,
+            prompt: text.slice(0, 1000), // Limit prompt length
+          })
+
+          // Save the summary
+          const { error: summaryError } = await supabaseServer.from("message_summaries").insert({
+            thread_id: threadId,
+            message_id: aiMessageId,
+            user_id: userId,
+            content: summary,
+          })
+
+          if (summaryError) {
+            console.error("❌ Failed to create AI message summary:", summaryError)
+          } else {
+            console.log("✅ AI message summary created:", summary)
+          }
+        } catch (summaryError) {
+          console.error("❌ Failed to generate AI message summary:", summaryError)
+          // Don't fail the whole request if summary generation fails
+        }
+      }
+
+      // Update thread's last_message_at
+      const { error: updateError } = await supabaseServer
+        .from("threads")
+        .update({ last_message_at: new Date().toISOString() })
+        .eq("id", threadId)
+        .eq("user_id", userId)
+
+      if (updateError) {
+        console.error("❌ Failed to update thread:", updateError)
+      } else {
+        console.log("✅ Thread updated successfully")
+      }
+    } else {
+      console.log("⚠️ No thread ID or text, skipping save")
+    }
   } catch (error) {
-    console.error("Chat API error:", error)
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 })
+    console.error("💥 Error in message save:", error)
   }
 }
 

@@ -11,7 +11,6 @@ import MessageEditor from "./MessageEditor"
 import MessageReasoning from "./MessageReasoning"
 import FileAttachmentViewer from "./FileAttachmentViewer"
 import MessageSources from "./MessageSources"
-// Import the new WebSearchBanner component
 import WebSearchBanner from "./WebSearchBanner"
 
 function PureMessage({
@@ -22,6 +21,8 @@ function PureMessage({
   isStreaming,
   registerRef,
   stop,
+  resumeComplete,
+  resumedMessageId,
 }: {
   threadId: string
   message: UIMessage
@@ -30,8 +31,11 @@ function PureMessage({
   isStreaming: boolean
   registerRef: (id: string, ref: HTMLDivElement | null) => void
   stop: UseChatHelpers["stop"]
+  resumeComplete?: boolean
+  resumedMessageId?: string | null
 }) {
   const [mode, setMode] = useState<"view" | "edit">("view")
+  const [showAnimation, setShowAnimation] = useState(false)
   const messageRef = useRef<HTMLDivElement>(null)
 
   // Register this message's ref for navigation
@@ -39,6 +43,21 @@ function PureMessage({
     registerRef(message.id, messageRef.current)
     return () => registerRef(message.id, null)
   }, [message.id, registerRef])
+
+  // Handle resume completion animation
+  useEffect(() => {
+    if (resumeComplete && resumedMessageId === message.id) {
+      console.log("🎉 Triggering completion animation for message:", message.id)
+      setShowAnimation(true)
+
+      // Reset animation after duration
+      const timer = setTimeout(() => {
+        setShowAnimation(false)
+      }, 2000)
+
+      return () => clearTimeout(timer)
+    }
+  }, [resumeComplete, resumedMessageId, message.id])
 
   // Extract file attachments from message parts
   const fileAttachments = message.parts?.find((part) => part.type === "file_attachments")?.attachments || []
@@ -52,11 +71,9 @@ function PureMessage({
   // Filter out tool calls and other non-user-facing parts
   const displayParts =
     message.parts?.filter((part) => {
-      // Only show text parts and reasoning for user messages
       if (message.role === "user") {
         return part.type === "text" || part.type === "reasoning"
       }
-      // For assistant messages, show text and reasoning
       return part.type === "text" || part.type === "reasoning"
     }) || []
 
@@ -64,7 +81,11 @@ function PureMessage({
     <div
       ref={messageRef}
       role="article"
-      className={cn("flex flex-col", message.role === "user" ? "items-end" : "items-start")}
+      className={cn(
+        "flex flex-col transition-all duration-500",
+        message.role === "user" ? "items-end" : "items-start",
+        showAnimation && "animate-pulse",
+      )}
       data-message-id={message.id}
     >
       {/* Web Search Banner for Assistant Messages */}
@@ -110,17 +131,26 @@ function PureMessage({
               )}
             </div>
           ) : (
-            <div key={key} className="group flex flex-col gap-2 w-full">
-              {/* Enhanced styling for web search responses */}
+            <div key={key} className="group flex flex-col gap-2 w-full relative">
               <div
                 className={cn(
-                  "transition-all duration-300",
+                  "transition-all duration-500 relative",
                   usedWebSearch &&
                     "border-l-4 border-blue-500 pl-4 bg-blue-50/50 dark:bg-blue-950/20 rounded-lg shadow-sm",
+                  showAnimation && [
+                    "transform scale-[1.02] shadow-lg",
+                    "bg-gradient-to-r from-green-50 via-blue-50 to-purple-50",
+                    "dark:from-green-950/20 dark:via-blue-950/20 dark:to-purple-950/20",
+                    "border border-green-200 dark:border-green-800",
+                  ],
                 )}
               >
                 <MarkdownRenderer content={part.text} id={message.id} />
+
+                {/* Completion celebration effect */}
+                {showAnimation && <div className="absolute -top-2 -right-2 text-2xl animate-bounce">✨</div>}
               </div>
+
               {!isStreaming && (
                 <MessageControls
                   threadId={threadId}
@@ -135,7 +165,6 @@ function PureMessage({
           )
         }
 
-        // Skip any other part types
         return null
       })}
 
@@ -155,6 +184,8 @@ function PureMessage({
 const PreviewMessage = memo(PureMessage, (prevProps, nextProps) => {
   if (prevProps.isStreaming !== nextProps.isStreaming) return false
   if (prevProps.message.id !== nextProps.message.id) return false
+  if (prevProps.resumeComplete !== nextProps.resumeComplete) return false
+  if (prevProps.resumedMessageId !== nextProps.resumedMessageId) return false
   if (!equal(prevProps.message.parts, nextProps.message.parts)) return false
   return true
 })

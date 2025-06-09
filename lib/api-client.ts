@@ -58,6 +58,7 @@ export const apiClient = {
       headers.set("content-type", "application/json")
 
       console.log("📋 API Client: Headers prepared with token length:", currentSession.access_token.length)
+      console.log("📋 API Client: Token preview:", currentSession.access_token.substring(0, 20) + "...")
 
       // Make the request
       const response = await fetch(url, {
@@ -66,6 +67,11 @@ export const apiClient = {
       })
 
       console.log("📡 API Client: Response status:", response.status)
+
+      if (response.status === 401) {
+        console.error("🚨 401 Unauthorized - Token might be invalid")
+        console.log("🔍 Full token:", currentSession.access_token)
+      }
 
       return response
     } catch (error) {

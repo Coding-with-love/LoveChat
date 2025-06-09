@@ -9,7 +9,6 @@ import {
   SidebarMenu,
   SidebarMenuItem,
   SidebarFooter,
-  SidebarTrigger,
   SidebarSeparator,
 } from "@/frontend/components/ui/sidebar"
 import { Button, buttonVariants } from "./ui/button"
@@ -17,19 +16,7 @@ import { deleteThread, getThreads, getProjects, moveThreadToProject, deleteProje
 import { supabase } from "@/lib/supabase/client"
 import { useEffect, useState, useCallback } from "react"
 import { Link, useNavigate, useParams } from "react-router"
-import {
-  User,
-  LogOut,
-  Share2,
-  Clock,
-  FolderOpen,
-  Folder,
-  Plus,
-  MoreHorizontal,
-  Edit,
-  Loader2,
-  Trash,
-} from "lucide-react"
+import { User, LogOut, Share2, FolderOpen, Folder, Plus, MoreHorizontal, Edit, Loader2, Trash } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { memo } from "react"
 import { useAuth } from "@/frontend/components/AuthProvider"
@@ -46,8 +33,6 @@ import {
   DropdownMenuSubTrigger,
 } from "@/frontend/components/ui/dropdown-menu"
 import ShareDialog from "./ShareDialog"
-import { ResumableStreams } from "./ResumableStreams"
-import { useResumableStreams } from "../hooks/useResumableStreams"
 import { CreateProjectDialog } from "./CreateProjectDialog"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/frontend/components/ui/collapsible"
 import {
@@ -118,7 +103,6 @@ export default function ChatSidebar() {
   const [shareThreadTitle, setShareThreadTitle] = useState("")
   const [createProjectOpen, setCreateProjectOpen] = useState(false)
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
-  const { hasResumableStreams, resumeStream } = useResumableStreams()
   const [deleteProjectDialogOpen, setDeleteProjectDialogOpen] = useState(false)
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null)
 
@@ -532,28 +516,6 @@ export default function ChatSidebar() {
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
-
-          {hasResumableStreams && (
-            <>
-              <SidebarSeparator />
-              <SidebarGroup>
-                <div className="flex items-center gap-2 px-2 py-1">
-                  <Clock className="h-4 w-4" />
-                  <span className="text-sm font-medium">Interrupted Conversations</span>
-                </div>
-                <SidebarGroupContent>
-                  <ResumableStreams
-                    onResumeStream={(streamId, threadId, messageId) => {
-                      resumeStream(streamId)
-                      if (threadId !== id) {
-                        navigate(`/chat/${threadId}`)
-                      }
-                    }}
-                  />
-                </SidebarGroupContent>
-              </SidebarGroup>
-            </>
-          )}
         </SidebarContent>
         <Footer />
       </div>
@@ -597,11 +559,10 @@ export default function ChatSidebar() {
 function PureHeader() {
   return (
     <SidebarHeader className="flex flex-col gap-4 p-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-center">
         <h1 className="text-2xl font-bold">
           Love<span className="">Chat</span>
         </h1>
-        <SidebarTrigger className="h-8 w-8" />
       </div>
       <Link
         to="/chat"

@@ -15,6 +15,8 @@ function PureMessages({
   error,
   stop,
   registerRef,
+  resumeComplete,
+  resumedMessageId,
 }: {
   threadId: string
   messages: UIMessage[]
@@ -24,6 +26,8 @@ function PureMessages({
   error: UseChatHelpers["error"]
   stop: UseChatHelpers["stop"]
   registerRef: (id: string, ref: HTMLDivElement | null) => void
+  resumeComplete?: boolean
+  resumedMessageId?: string | null
 }) {
   return (
     <section className="flex flex-col space-y-12">
@@ -37,6 +41,8 @@ function PureMessages({
           reload={reload}
           registerRef={registerRef}
           stop={stop}
+          resumeComplete={resumeComplete}
+          resumedMessageId={resumedMessageId}
         />
       ))}
       {status === "submitted" && <MessageLoading />}
@@ -49,6 +55,8 @@ const Messages = memo(PureMessages, (prevProps, nextProps) => {
   if (prevProps.status !== nextProps.status) return false
   if (prevProps.error !== nextProps.error) return false
   if (prevProps.messages.length !== nextProps.messages.length) return false
+  if (prevProps.resumeComplete !== nextProps.resumeComplete) return false
+  if (prevProps.resumedMessageId !== nextProps.resumedMessageId) return false
   if (!equal(prevProps.messages, nextProps.messages)) return false
   return true
 })

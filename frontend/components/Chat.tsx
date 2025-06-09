@@ -8,11 +8,10 @@ import { useAPIKeyStore } from "@/frontend/stores/APIKeyStore"
 import { useModelStore } from "@/frontend/stores/ModelStore"
 import { SidebarTrigger, useSidebar } from "./ui/sidebar"
 import { Button } from "./ui/button"
-import { ChevronDown } from "lucide-react"
-import { useAuthenticatedChat } from "@/frontend/hooks/useAuthenticatedChat"
-import { useStreamInterruption } from "@/frontend/hooks/useStreamInterruption"
+import { ChevronDown, RotateCcw } from "lucide-react"
+import { useCustomResumableChat } from "@/frontend/hooks/useCustomResumableChat"
 import { getModelConfig } from "@/lib/models"
-import { v4 as uuidv4 } from "uuid"
+import { GlobalResumingIndicator } from "./ResumingIndicator"
 
 interface ChatProps {
   threadId: string
@@ -27,47 +26,43 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
 
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
   const isAutoScrolling = useRef(false)
-  const currentStreamId = useRef<string | null>(null)
 
-  // Stream interruption detection
-  const { registerStream, unregisterStream } = useStreamInterruption()
+  // Use our custom resumable chat hook
+  const {
+    messages,
+    input,
+    status,
+    setInput,
+    setMessages,
+    append,
+    stop,
+    reload,
+    error,
+    isAuthenticated,
+    isResuming,
+    resumeProgress,
+    resumeComplete,
+    resumedMessageId,
+    manualResume,
+  } = useCustomResumableChat({
+    threadId,
+    initialMessages,
+    onFinish: (message) => {
+      console.log("🏁 Chat stream finished:", message.id)
+    },
+    autoResume: true,
+  })
 
-  // Enhanced useAuthenticatedChat with stream tracking
-  const { messages, input, status, setInput, setMessages, append, stop, reload, error, isAuthenticated } =
-    useAuthenticatedChat({
-      threadId,
-      initialMessages,
-      onFinish: (message) => {
-        console.log("🏁 Chat stream finished, unregistering:", message.id)
-        if (currentStreamId.current) {
-          unregisterStream(currentStreamId.current)
-          currentStreamId.current = null
-        }
-      },
+  // Debug logging
+  useEffect(() => {
+    console.log("🎯 Chat state:", {
+      isResuming,
+      resumeProgress,
+      resumeComplete,
+      resumedMessageId,
+      messagesCount: messages.length,
     })
-
-  // Enhanced append function that registers streams immediately
-  const enhancedAppend = async (message: UIMessage) => {
-    // Generate a predictable message ID for the AI response
-    const aiMessageId = uuidv4()
-    console.log("🚀 Starting new chat, registering stream immediately:", aiMessageId)
-
-    // Register the stream before making the API call
-    currentStreamId.current = aiMessageId
-    registerStream(aiMessageId)
-
-    try {
-      await append(message)
-    } catch (error) {
-      console.error("Error in append:", error)
-      // If append fails, unregister the stream
-      if (currentStreamId.current) {
-        unregisterStream(currentStreamId.current)
-        currentStreamId.current = null
-      }
-      throw error
-    }
-  }
+  }, [isResuming, resumeProgress, resumeComplete, resumedMessageId, messages.length])
 
   const scrollToBottom = () => {
     isAutoScrolling.current = true
@@ -75,7 +70,6 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
       top: document.documentElement.scrollHeight,
       behavior: "smooth",
     })
-    // Reset auto-scrolling flag after animation completes
     setTimeout(() => {
       isAutoScrolling.current = false
     }, 1000)
@@ -88,7 +82,6 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
     const windowHeight = window.innerHeight
     const documentHeight = document.documentElement.scrollHeight
 
-    // Show button when user is more than 200px from bottom
     const isNearBottom = documentHeight - (scrollTop + windowHeight) < 200
     setShowScrollToBottom(!isNearBottom)
   }
@@ -99,8 +92,9 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
     return () => window.removeEventListener("scroll", handleScroll)
   }, [])
 
+  // Auto-scroll during streaming or resuming
   useEffect(() => {
-    if (status === "streaming" && messages.length > 0) {
+    if ((status === "streaming" || isResuming) && messages.length > 0) {
       const scrollTop = window.pageYOffset || document.documentElement.scrollTop
       const windowHeight = window.innerHeight
       const documentHeight = document.documentElement.scrollHeight
@@ -110,37 +104,7 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
         setTimeout(() => scrollToBottom(), 100)
       }
     }
-  }, [messages.length, status])
-
-  // Enhanced stop function that also unregisters the stream
-  const handleStop = () => {
-    console.log("🛑 Manually stopping chat stream")
-    if (currentStreamId.current) {
-      unregisterStream(currentStreamId.current)
-      currentStreamId.current = null
-    }
-    stop()
-  }
-
-  // Cleanup on component unmount
-  useEffect(() => {
-    return () => {
-      console.log("🧹 Chat component unmounting, cleaning up active stream")
-      if (currentStreamId.current) {
-        unregisterStream(currentStreamId.current)
-        currentStreamId.current = null
-      }
-    }
-  }, [unregisterStream])
-
-  // Track status changes to handle interruptions
-  useEffect(() => {
-    if (status === "error" && currentStreamId.current) {
-      console.log("❌ Chat stream error, unregistering:", currentStreamId.current)
-      unregisterStream(currentStreamId.current)
-      currentStreamId.current = null
-    }
-  }, [status, unregisterStream])
+  }, [messages.length, status, isResuming])
 
   if (!isAuthenticated) {
     return (
@@ -154,7 +118,10 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
     <div className="relative w-full">
       <ChatSidebarTrigger />
 
-      <main className={`flex flex-col w-full max-w-3xl pt-10 pb-56 mx-auto transition-all duration-300 ease-in-out`}>
+      {/* Global Resuming Indicator */}
+      <GlobalResumingIndicator isResuming={isResuming} resumeProgress={resumeProgress} threadTitle="Current Chat" />
+
+      <main className="flex flex-col w-full max-w-3xl pt-10 pb-56 mx-auto transition-all duration-300 ease-in-out">
         <Messages
           threadId={threadId}
           messages={messages}
@@ -163,16 +130,11 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
           reload={reload}
           error={error}
           registerRef={registerRef || (() => {})}
-          stop={handleStop}
+          stop={stop}
+          resumeComplete={resumeComplete}
+          resumedMessageId={resumedMessageId}
         />
-        <ChatInput
-          threadId={threadId}
-          input={input}
-          status={status}
-          append={enhancedAppend}
-          setInput={setInput}
-          stop={handleStop}
-        />
+        <ChatInput threadId={threadId} input={input} status={status} append={append} setInput={setInput} stop={stop} />
       </main>
 
       {showScrollToBottom && (

@@ -200,50 +200,35 @@ export interface Database {
         Row: {
           id: string
           thread_id: string
-          message_id: string
           user_id: string
-          status: "streaming" | "paused" | "completed" | "failed"
+          status: "active" | "paused" | "completed" | "failed"
           partial_content: string
-          continuation_prompt: string | null
-          model: string
-          model_config: any
-          started_at: string
-          last_updated_at: string
+          last_chunk_at: string
+          created_at: string
           completed_at: string | null
-          total_tokens: number
-          estimated_completion: number
+          error_message: string | null
         }
         Insert: {
           id?: string
           thread_id: string
-          message_id: string
           user_id: string
-          status: "streaming" | "paused" | "completed" | "failed"
+          status: "active" | "paused" | "completed" | "failed"
           partial_content?: string
-          continuation_prompt?: string | null
-          model: string
-          model_config?: any
-          started_at?: string
-          last_updated_at?: string
+          last_chunk_at?: string
+          created_at?: string
           completed_at?: string | null
-          total_tokens?: number
-          estimated_completion?: number
+          error_message?: string | null
         }
         Update: {
           id?: string
           thread_id?: string
-          message_id?: string
           user_id?: string
-          status?: "streaming" | "paused" | "completed" | "failed"
+          status?: "active" | "paused" | "completed" | "failed"
           partial_content?: string
-          continuation_prompt?: string | null
-          model?: string
-          model_config?: any
-          started_at?: string
-          last_updated_at?: string
+          last_chunk_at?: string
+          created_at?: string
           completed_at?: string | null
-          total_tokens?: number
-          estimated_completion?: number
+          error_message?: string | null
         }
       }
     }

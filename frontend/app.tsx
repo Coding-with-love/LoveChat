@@ -13,6 +13,7 @@ import Settings from "./routes/Settings"
 import SharedConversation from "./routes/SharedConversation"
 import Project from "./routes/Project"
 import { Toaster } from "sonner"
+import { GlobalResumingIndicator } from "./components/ResumingIndicator"
 
 function AuthenticatedApp() {
   return (
@@ -73,6 +74,7 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthenticatedApp />
+      <GlobalResumingIndicator />
       <Toaster position="top-right" />
     </QueryClientProvider>
   )

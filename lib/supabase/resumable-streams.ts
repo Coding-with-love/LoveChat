@@ -12,8 +12,8 @@ export interface ResumableStream {
   continuation_prompt: string | null
   model: string
   model_config: any
-  started_at: string
-  last_updated_at: string
+  created_at: string // Changed from started_at
+  last_updated_at: string // This should be last_chunk_at
   completed_at: string | null
   total_tokens: number
   estimated_completion: number
@@ -86,7 +86,7 @@ export const getUserResumableStreams = async (status?: ResumableStream["status"]
       messages(content)
     `)
     .eq("user_id", user.id)
-    .order("started_at", { ascending: false })
+    .order("created_at", { ascending: false })
 
   if (status) {
     query = query.eq("status", status)
