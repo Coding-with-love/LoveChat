@@ -271,17 +271,19 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
 
   return (
     <div className="fixed bottom-0 w-full max-w-3xl">
-      <div className="bg-secondary rounded-t-[20px] pb-0 w-full">
+      <div className="bg-background/95 backdrop-blur-sm border border-border rounded-t-2xl shadow-2xl pb-0 w-full">
         {/* File preview area - appears above the input */}
         {hasFiles && (
-          <div className="pt-2">
-            <FilePreviewList files={uploadedFiles} onRemoveFile={handleRemoveFile} />
+          <div className="pt-4 px-4">
+            <div className="bg-muted/50 rounded-xl p-3 border border-border/50">
+              <FilePreviewList files={uploadedFiles} onRemoveFile={handleRemoveFile} />
+            </div>
           </div>
         )}
 
-        <div className="relative p-2">
+        <div className="relative p-4">
           <div className="flex flex-col">
-            <div className="bg-secondary overflow-y-auto max-h-[300px]">
+            <div className="bg-background border border-border rounded-xl overflow-hidden shadow-sm">
               <Textarea
                 id="chat-input"
                 value={input}
@@ -295,12 +297,12 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
                         : "What can I do for you?"
                 }
                 className={cn(
-                  "w-full px-4 py-3 border-none shadow-none dark:bg-transparent",
-                  "placeholder:text-muted-foreground resize-none",
+                  "w-full px-4 py-4 border-none shadow-none bg-transparent",
+                  "placeholder:text-muted-foreground/70 resize-none",
                   "focus-visible:ring-0 focus-visible:ring-offset-0",
                   "scrollbar-thin scrollbar-track-transparent scrollbar-thumb-muted-foreground/30",
-                  "scrollbar-thumb-rounded-full",
-                  "min-h-[72px]",
+                  "scrollbar-thumb-rounded-full text-base",
+                  "min-h-[80px]",
                 )}
                 ref={textareaRef}
                 onKeyDown={handleKeyDown}
@@ -313,66 +315,96 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
               </span>
             </div>
 
-            <div className="h-14 flex items-center px-2">
+            <div className="h-16 flex items-center px-2 pt-3">
               <div className="flex items-center justify-between w-full">
-                <div className="flex items-center gap-2">
-                  <ChatModelDropdown />
-                  <FileUpload
-                    threadId={threadId}
-                    onFileUpload={handleFileUpload}
-                    uploadedFiles={uploadedFiles}
-                    onRemoveFile={handleRemoveFile}
-                    disabled={status === "streaming" || status === "submitted"}
-                  />
+                <div className="flex items-center gap-3">
+                  <div className="bg-muted/50 rounded-lg p-1 border border-border/50">
+                    <ChatModelDropdown />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <FileUpload
+                      threadId={threadId}
+                      onFileUpload={handleFileUpload}
+                      uploadedFiles={uploadedFiles}
+                      onRemoveFile={handleRemoveFile}
+                      disabled={status === "streaming" || status === "submitted"}
+                    />
 
-                  {/* Web Search Toggle */}
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          type="button"
-                          variant={webSearchEnabled ? "default" : "ghost"}
-                          size="icon"
-                          onClick={handleWebSearchToggle}
-                          className={cn(
-                            "h-8 w-8 transition-all",
-                            webSearchEnabled &&
-                              currentModelSupportsSearch &&
-                              "bg-blue-500 hover:bg-blue-600 text-white",
-                            webSearchEnabled &&
-                              !currentModelSupportsSearch &&
-                              "bg-orange-500 hover:bg-orange-600 text-white",
-                          )}
-                          aria-label={webSearchEnabled ? "Disable web search" : "Enable web search"}
-                          disabled={status === "streaming" || status === "submitted"}
-                        >
-                          <Search className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <div className="text-center">
-                          <p className="font-medium">{webSearchEnabled ? "Web Search Enabled" : "Enable Web Search"}</p>
-                          {webSearchEnabled && (
-                            <p className="text-xs text-muted-foreground mt-1">
-                              {currentModelSupportsSearch
-                                ? "Real-time search available"
-                                : "Current model doesn't support search"}
+                    {/* Web Search Toggle */}
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant={webSearchEnabled ? "default" : "ghost"}
+                            size="icon"
+                            onClick={handleWebSearchToggle}
+                            className={cn(
+                              "h-9 w-9 transition-all duration-200 rounded-lg",
+                              webSearchEnabled &&
+                                currentModelSupportsSearch &&
+                                "bg-blue-500 hover:bg-blue-600 text-white shadow-md",
+                              webSearchEnabled &&
+                                !currentModelSupportsSearch &&
+                                "bg-orange-500 hover:bg-orange-600 text-white shadow-md",
+                              !webSearchEnabled && "hover:bg-muted border border-border/50",
+                            )}
+                            aria-label={webSearchEnabled ? "Disable web search" : "Enable web search"}
+                            disabled={status === "streaming" || status === "submitted"}
+                          >
+                            <Search className="h-4 w-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <div className="text-center">
+                            <p className="font-medium">
+                              {webSearchEnabled ? "Web Search Enabled" : "Enable Web Search"}
                             </p>
-                          )}
-                          {!webSearchEnabled && !currentModelSupportsSearch && (
-                            <p className="text-xs text-muted-foreground mt-1">Try Gemini models for native search</p>
-                          )}
-                        </div>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                            {webSearchEnabled && (
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {currentModelSupportsSearch
+                                  ? "Real-time search available"
+                                  : "Current model doesn't support search"}
+                              </p>
+                            )}
+                            {!webSearchEnabled && !currentModelSupportsSearch && (
+                              <p className="text-xs text-muted-foreground mt-1">Try Gemini models for native search</p>
+                            )}
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
                 </div>
 
-                {status === "submitted" || status === "streaming" ? (
-                  <StopButton stop={stop} />
-                ) : (
-                  <SendButton onSubmit={handleSubmit} disabled={isDisabled} />
-                )}
+                <div className="flex items-center gap-2">
+                  {status === "submitted" || status === "streaming" ? (
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={stop}
+                      aria-label="Stop generating response"
+                      className="h-10 w-10 rounded-xl border-2 hover:bg-destructive/10 hover:border-destructive/50 transition-all duration-200"
+                    >
+                      <StopIcon size={20} />
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={handleSubmit}
+                      variant="default"
+                      size="icon"
+                      disabled={isDisabled}
+                      aria-label="Send message"
+                      className={cn(
+                        "h-10 w-10 rounded-xl transition-all duration-200 shadow-md",
+                        !isDisabled && "hover:scale-105 hover:shadow-lg",
+                        isDisabled && "opacity-50 cursor-not-allowed",
+                      )}
+                    >
+                      <ArrowUpIcon size={18} />
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -381,19 +413,21 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
 
       {/* Enhanced Web Search Status Indicator */}
       {searchStatusMessage && (
-        <div className="absolute -top-12 left-4 right-4 flex items-center justify-center">
+        <div className="absolute -top-16 left-4 right-4 flex items-center justify-center">
           <div
             className={cn(
-              "text-white text-xs px-4 py-2 rounded-full flex items-center gap-2 shadow-lg border-2",
-              currentModelSupportsSearch ? "bg-blue-500 border-blue-400" : "bg-orange-500 border-orange-400",
+              "text-white text-sm px-4 py-2 rounded-full flex items-center gap-2 shadow-lg border backdrop-blur-sm",
+              "animate-in slide-in-from-bottom-2 duration-300",
+              currentModelSupportsSearch
+                ? "bg-blue-500/90 border-blue-400/50"
+                : "bg-orange-500/90 border-orange-400/50",
             )}
           >
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-2">
               <Search className="h-3 w-3" />
-              {/* Globe2 icon removed to avoid redeclaration */}
+              <span className="font-medium">{searchStatusMessage}</span>
+              {!currentModelSupportsSearch && <Info className="h-3 w-3" />}
             </div>
-            <span className="font-medium">{searchStatusMessage}</span>
-            {!currentModelSupportsSearch && <Info className="h-3 w-3" />}
           </div>
         </div>
       )}
@@ -434,11 +468,11 @@ const PureChatModelDropdown = () => {
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
-            className="flex items-center gap-1 h-8 pl-2 pr-2 text-xs rounded-md text-foreground hover:bg-primary/10 focus-visible:ring-1 focus-visible:ring-offset-0 focus-visible:ring-blue-500"
+            className="flex items-center gap-2 h-8 px-3 text-sm rounded-md text-foreground hover:bg-primary/10 focus-visible:ring-1 focus-visible:ring-offset-0 focus-visible:ring-primary transition-all duration-200"
             aria-label={`Selected model: ${selectedModel}`}
           >
-            <div className="flex items-center gap-1">
-              {selectedModel}
+            <div className="flex items-center gap-2">
+              <span className="font-medium">{selectedModel}</span>
               <ChevronDown className="w-3 h-3 opacity-50" />
             </div>
           </Button>

@@ -1,9 +1,10 @@
 import type React from "react"
 import type { Metadata } from "next"
-import { Geist, Geist_Mono } from "next/font/google"
+import { Geist, Geist_Mono } from 'next/font/google'
 import "./globals.css"
+import "./themes.css" // Add this line to import the themes CSS
 import "katex/dist/katex.min.css"
-import { Toaster } from "@/frontend/components/ui/sonner"
+import { Toaster } from "sonner"
 import { ThemeProvider } from "@/frontend/components/ui/ThemeProvider"
 import { AuthProvider } from "@/frontend/components/AuthProvider"
 import { Analytics } from "@vercel/analytics/react"

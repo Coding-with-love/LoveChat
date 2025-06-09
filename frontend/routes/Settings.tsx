@@ -1,10 +1,23 @@
 "use client"
 
 import APIKeyForm from "@/frontend/components/APIKeyForm"
-import {OllamaSettings} from "@/frontend/components/OllamaSettings"
+import { OllamaSettings } from "@/frontend/components/OllamaSettings"
+import ThemeSettings from "@/frontend/components/ThemeSettings"
 import { Link } from "react-router"
 import { buttonVariants } from "../components/ui/button"
-import { ArrowLeftIcon, User, Share2, Eye, Calendar, Trash2, ExternalLink, SettingsIcon, Key, Bot } from "lucide-react"
+import {
+  ArrowLeftIcon,
+  User,
+  Share2,
+  Eye,
+  Calendar,
+  Trash2,
+  ExternalLink,
+  SettingsIcon,
+  Key,
+  Bot,
+  Paintbrush,
+} from "lucide-react"
 import { useAuth } from "@/frontend/components/AuthProvider"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/frontend/components/ui/card"
 import { getUserSharedThreads, deleteSharedThread } from "@/lib/supabase/queries"
@@ -249,6 +262,24 @@ function Settings() {
           {/* Account Section */}
           <section>
             <UserInfo />
+          </section>
+
+          {/* Theme Settings Section */}
+          <section>
+            <Card className="shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-3 text-lg">
+                  <div className="p-2 rounded-lg bg-muted">
+                    <Paintbrush className="h-4 w-4" />
+                  </div>
+                  Theme Settings
+                </CardTitle>
+                <CardDescription>Customize the appearance of the application</CardDescription>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <ThemeSettings />
+              </CardContent>
+            </Card>
           </section>
 
           {/* Shared Conversations Section */}

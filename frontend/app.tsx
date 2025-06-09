@@ -14,6 +14,7 @@ import SharedConversation from "./routes/SharedConversation"
 import Project from "./routes/Project"
 import { Toaster } from "sonner"
 import { GlobalResumingIndicator } from "./components/ResumingIndicator"
+import ThemeProvider from "./components/ThemeProvider" // Import ThemeProvider
 
 function AuthenticatedApp() {
   return (
@@ -63,19 +64,20 @@ export default function App() {
       }),
   )
 
-  if (loading) {
-    return <LoadingSpinner />
-  }
-
-  if (!user) {
-    return <AuthScreen />
-  }
-
+  // Wrap everything in ThemeProvider to ensure themes work regardless of auth state
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthenticatedApp />
-      <GlobalResumingIndicator />
-      <Toaster position="top-right" />
-    </QueryClientProvider>
+    <ThemeProvider>
+      {loading ? (
+        <LoadingSpinner />
+      ) : !user ? (
+        <AuthScreen />
+      ) : (
+        <QueryClientProvider client={queryClient}>
+          <AuthenticatedApp />
+          <GlobalResumingIndicator />
+          <Toaster position="top-right" />
+        </QueryClientProvider>
+      )}
+    </ThemeProvider>
   )
 }
