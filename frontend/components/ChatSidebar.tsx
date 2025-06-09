@@ -2,7 +2,6 @@
 
 import {
   Sidebar,
-  SidebarHeader,
   SidebarContent,
   SidebarGroup,
   SidebarGroupContent,
@@ -10,15 +9,15 @@ import {
   SidebarMenuItem,
   SidebarFooter,
   SidebarSeparator,
+  SidebarTrigger,
 } from "@/frontend/components/ui/sidebar"
 import { Button, buttonVariants } from "./ui/button"
 import { deleteThread, getThreads, getProjects, moveThreadToProject, deleteProject } from "@/lib/supabase/queries"
 import { supabase } from "@/lib/supabase/client"
 import { useEffect, useState, useCallback } from "react"
-import { Link, useNavigate, useParams } from "react-router"
+import { Link, useNavigate, useParams } from "react-router-dom"
 import { User, LogOut, Share2, FolderOpen, Folder, Plus, MoreHorizontal, Edit, Loader2, Trash } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { memo } from "react"
 import { useAuth } from "@/frontend/components/AuthProvider"
 import { toast } from "sonner"
 import {
@@ -65,28 +64,44 @@ interface Project {
   updated_at: string
 }
 
-function UserMenu() {
+function ProfileSection() {
   const { user, signOut } = useAuth()
 
   if (!user) return null
 
+  const displayName = user.email?.split("@")[0] || "User"
+  // Remove avatar functionality since we don't have profiles table
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="w-full justify-start gap-2 h-10">
-          <User className="h-4 w-4" />
-          <span className="truncate">{user.email}</span>
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-56">
-        <DropdownMenuLabel>My Account</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={signOut} className="gap-2">
-          <LogOut className="h-4 w-4" />
-          Sign out
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <div className="p-4 border-b border-border/50">
+      <div className="flex items-center justify-between mb-3">
+        <h1 className="text-lg font-bold">LoveChat</h1>
+        <SidebarTrigger className="h-8 w-8" />
+      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" className="w-full justify-start gap-3 h-auto p-2 hover:bg-secondary">
+            <div className="relative">
+              <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-foreground">
+                {displayName.charAt(0).toUpperCase()}
+              </div>
+            </div>
+            <div className="flex-1 text-left min-w-0">
+              <p className="font-medium text-sm truncate">{displayName}</p>
+              <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+            </div>
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-56">
+          <DropdownMenuLabel>My Account</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={signOut} className="gap-2">
+            <LogOut className="h-4 w-4" />
+            Sign out
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   )
 }
 
@@ -304,7 +319,13 @@ export default function ChatSidebar() {
               <MoreHorizontal size={16} />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" side="right">
+          <DropdownMenuContent
+            align="end"
+            side="right"
+            className="w-48"
+            container={document.body}
+            style={{ position: "fixed" }}
+          >
             <DropdownMenuItem
               onClick={(e) => {
                 e.preventDefault()
@@ -368,14 +389,13 @@ export default function ChatSidebar() {
   if (authLoading) {
     return (
       <Sidebar>
-        <div className="flex flex-col h-full p-2">
-          <Header />
+        <div className="flex flex-col h-full">
+          <ProfileSection />
           <SidebarContent>
             <div className="flex items-center justify-center p-8">
               <Loader2 className="h-6 w-6 animate-spin" />
             </div>
           </SidebarContent>
-          <Footer />
         </div>
       </Sidebar>
     )
@@ -385,14 +405,13 @@ export default function ChatSidebar() {
   if (!user) {
     return (
       <Sidebar>
-        <div className="flex flex-col h-full p-2">
-          <Header />
+        <div className="flex flex-col h-full">
+          <ProfileSection />
           <SidebarContent>
             <div className="flex items-center justify-center p-8 text-center">
               <p className="text-muted-foreground">Please log in to view your chats</p>
             </div>
           </SidebarContent>
-          <Footer />
         </div>
       </Sidebar>
     )
@@ -400,8 +419,8 @@ export default function ChatSidebar() {
 
   return (
     <Sidebar>
-      <div className="flex flex-col h-full p-2">
-        <Header />
+      <div className="flex flex-col h-full">
+        <ProfileSection />
         <SidebarContent className="no-scrollbar">
           <SidebarGroup>
             <div className="flex items-center justify-between px-2 py-1">
@@ -460,7 +479,13 @@ export default function ChatSidebar() {
                                     <MoreHorizontal className="h-4 w-4" />
                                   </Button>
                                 </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" side="right">
+                                <DropdownMenuContent
+                                  align="end"
+                                  side="right"
+                                  className="w-48"
+                                  container={document.body}
+                                  style={{ position: "fixed" }}
+                                >
                                   <DropdownMenuItem
                                     onClick={(e) => {
                                       e.stopPropagation()
@@ -517,7 +542,12 @@ export default function ChatSidebar() {
             </SidebarGroupContent>
           </SidebarGroup>
         </SidebarContent>
-        <Footer />
+        <SidebarFooter className="space-y-2 p-4">
+          <Link to="/settings" className={buttonVariants({ variant: "outline", className: "w-full" })}>
+            <User className="h-4 w-4 mr-2" />
+            Settings
+          </Link>
+        </SidebarFooter>
       </div>
       {shareThreadId && (
         <ShareDialog
@@ -555,39 +585,3 @@ export default function ChatSidebar() {
     </Sidebar>
   )
 }
-
-function PureHeader() {
-  return (
-    <SidebarHeader className="flex flex-col gap-4 p-4">
-      <div className="flex items-center justify-center">
-        <h1 className="text-2xl font-bold">
-          Love<span className="">Chat</span>
-        </h1>
-      </div>
-      <Link
-        to="/chat"
-        className={buttonVariants({
-          variant: "default",
-          className: "w-full",
-        })}
-      >
-        New Chat
-      </Link>
-    </SidebarHeader>
-  )
-}
-
-const Header = memo(PureHeader)
-
-const PureFooter = () => {
-  return (
-    <SidebarFooter className="space-y-2">
-      <UserMenu />
-      <Link to="/settings" className={buttonVariants({ variant: "outline" })}>
-        Settings
-      </Link>
-    </SidebarFooter>
-  )
-}
-
-const Footer = memo(PureFooter)
