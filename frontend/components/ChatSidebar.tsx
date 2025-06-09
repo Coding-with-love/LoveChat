@@ -16,7 +16,19 @@ import { deleteThread, getThreads, getProjects, moveThreadToProject, deleteProje
 import { supabase } from "@/lib/supabase/client"
 import { useEffect, useState, useCallback } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
-import { User, LogOut, Share2, FolderOpen, Folder, Plus, MoreHorizontal, Edit, Loader2, Trash } from "lucide-react"
+import {
+  User,
+  LogOut,
+  Share2,
+  FolderOpen,
+  Folder,
+  Plus,
+  MoreHorizontal,
+  Edit,
+  Loader2,
+  Trash,
+  MessageSquarePlus,
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/frontend/components/AuthProvider"
 import { toast } from "sonner"
@@ -421,6 +433,12 @@ export default function ChatSidebar() {
     <Sidebar>
       <div className="flex flex-col h-full">
         <ProfileSection />
+        <div className="p-4 border-b border-border/50">
+          <Link to="/chat" className={cn(buttonVariants({ variant: "default" }), "w-full justify-center gap-2")}>
+            <MessageSquarePlus className="h-4 w-4" />
+            New Chat
+          </Link>
+        </div>
         <SidebarContent className="no-scrollbar">
           <SidebarGroup>
             <div className="flex items-center justify-between px-2 py-1">
