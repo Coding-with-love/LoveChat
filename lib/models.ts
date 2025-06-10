@@ -6,11 +6,14 @@ export const AI_MODELS = [
   "gemini-1.5-pro",
   "gemini-1.5-flash",
   "gemini-2.0-flash-thinking-exp",
+  "gemini-2.5-pro-preview-06-05",
   "claude-3-5-sonnet-20241022",
   "claude-3-5-haiku-20241022",
   "llama-3.1-405b-instruct",
   "llama-3.1-70b-instruct",
   "llama-3.1-8b-instruct",
+  "o1-preview",
+  "o1-mini",
   // Ollama models will be added dynamically
 ] as const
 
@@ -25,6 +28,7 @@ interface ModelConfig {
   modelId: string
   headerKey: string
   supportsSearch?: boolean
+  supportsThinking?: boolean
 }
 
 export function getModelConfig(model: AIModel): ModelConfig {
@@ -36,6 +40,7 @@ export function getModelConfig(model: AIModel): ModelConfig {
       modelId: ollamaModelName,
       headerKey: "X-Ollama-Base-URL",
       supportsSearch: false,
+      supportsThinking: false,
     }
   }
 
@@ -47,6 +52,7 @@ export function getModelConfig(model: AIModel): ModelConfig {
         modelId: "gpt-4o",
         headerKey: "X-OpenAI-API-Key",
         supportsSearch: false,
+        supportsThinking: false,
       }
     case "gpt-4o-mini":
       return {
@@ -54,6 +60,7 @@ export function getModelConfig(model: AIModel): ModelConfig {
         modelId: "gpt-4o-mini",
         headerKey: "X-OpenAI-API-Key",
         supportsSearch: false,
+        supportsThinking: false,
       }
     case "gpt-4-turbo":
       return {
@@ -61,6 +68,23 @@ export function getModelConfig(model: AIModel): ModelConfig {
         modelId: "gpt-4-turbo",
         headerKey: "X-OpenAI-API-Key",
         supportsSearch: false,
+        supportsThinking: false,
+      }
+    case "o1-preview":
+      return {
+        provider: "openai",
+        modelId: "o1-preview",
+        headerKey: "X-OpenAI-API-Key",
+        supportsSearch: false,
+        supportsThinking: true,
+      }
+    case "o1-mini":
+      return {
+        provider: "openai",
+        modelId: "o1-mini",
+        headerKey: "X-OpenAI-API-Key",
+        supportsSearch: false,
+        supportsThinking: true,
       }
     case "gemini-2.0-flash-exp":
       return {
@@ -68,6 +92,7 @@ export function getModelConfig(model: AIModel): ModelConfig {
         modelId: "gemini-2.0-flash-exp",
         headerKey: "X-Google-API-Key",
         supportsSearch: true,
+        supportsThinking: false,
       }
     case "gemini-1.5-pro":
       return {
@@ -75,6 +100,7 @@ export function getModelConfig(model: AIModel): ModelConfig {
         modelId: "gemini-1.5-pro",
         headerKey: "X-Google-API-Key",
         supportsSearch: true,
+        supportsThinking: false,
       }
     case "gemini-1.5-flash":
       return {
@@ -82,6 +108,7 @@ export function getModelConfig(model: AIModel): ModelConfig {
         modelId: "gemini-1.5-flash",
         headerKey: "X-Google-API-Key",
         supportsSearch: true,
+        supportsThinking: false,
       }
     case "gemini-2.0-flash-thinking-exp":
       return {
@@ -90,6 +117,15 @@ export function getModelConfig(model: AIModel): ModelConfig {
         headerKey: "X-Google-API-Key",
         // Thinking models support search too
         supportsSearch: true,
+        supportsThinking: true,
+      }
+      case "gemini-2.5-pro-preview-06-05":
+      return {
+        provider: "google",
+        modelId: "gemini-2.5-pro-preview-06-05",
+        headerKey: "X-Google-API-Key",
+        supportsSearch: true,
+        supportsThinking: true,
       }
     case "claude-3-5-sonnet-20241022":
       return {
@@ -97,6 +133,7 @@ export function getModelConfig(model: AIModel): ModelConfig {
         modelId: "anthropic/claude-3.5-sonnet:beta",
         headerKey: "X-OpenRouter-API-Key",
         supportsSearch: false,
+        supportsThinking: false,
       }
     case "claude-3-5-haiku-20241022":
       return {
@@ -104,6 +141,7 @@ export function getModelConfig(model: AIModel): ModelConfig {
         modelId: "anthropic/claude-3.5-haiku",
         headerKey: "X-OpenRouter-API-Key",
         supportsSearch: false,
+        supportsThinking: false,
       }
     case "llama-3.1-405b-instruct":
       return {
@@ -111,6 +149,7 @@ export function getModelConfig(model: AIModel): ModelConfig {
         modelId: "meta-llama/llama-3.1-405b-instruct",
         headerKey: "X-OpenRouter-API-Key",
         supportsSearch: false,
+        supportsThinking: false,
       }
     case "llama-3.1-70b-instruct":
       return {
@@ -118,6 +157,7 @@ export function getModelConfig(model: AIModel): ModelConfig {
         modelId: "meta-llama/llama-3.1-70b-instruct",
         headerKey: "X-OpenRouter-API-Key",
         supportsSearch: false,
+        supportsThinking: false,
       }
     case "llama-3.1-8b-instruct":
       return {
@@ -125,6 +165,7 @@ export function getModelConfig(model: AIModel): ModelConfig {
         modelId: "meta-llama/llama-3.1-8b-instruct",
         headerKey: "X-OpenRouter-API-Key",
         supportsSearch: false,
+        supportsThinking: false,
       }
     default:
       console.error("Available models:", AI_MODELS)

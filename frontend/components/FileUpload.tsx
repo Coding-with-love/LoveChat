@@ -8,6 +8,7 @@ import { Paperclip, X, Loader2 } from "lucide-react"
 import { uploadFile, type FileUploadResult, getFileIcon, formatFileSize, isCodeFile } from "@/lib/supabase/file-upload"
 import { toast } from "sonner"
 import AnimatedHeight from "./ui/AnimatedHeight"
+import { supabase } from "@/lib/supabase/client"
 
 interface FileUploadProps {
   threadId: string
@@ -34,7 +35,7 @@ export default function FileUpload({
     setUploading(true)
 
     try {
-      const uploadPromises = files.map((file) => uploadFile(file, threadId))
+      const uploadPromises = files.map((file) => uploadFile(supabase, file, threadId))
       const results = await Promise.all(uploadPromises)
 
       onFileUpload([...uploadedFiles, ...results])

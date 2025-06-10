@@ -152,20 +152,26 @@ export async function POST(req: Request) {
 
         console.log("✅ Thread title updated successfully")
       } else if (messageId) {
-        // Create message summary
-        const { error: summaryError } = await supabaseServer.from("message_summaries").insert({
-          thread_id: threadId,
-          message_id: messageId,
-          user_id: user.id,
-          content: title,
-        })
+        // Create message summary - add better error handling
+        try {
+          const { error: summaryError } = await supabaseServer.from("message_summaries").insert({
+            thread_id: threadId,
+            message_id: messageId,
+            user_id: user.id,
+            content: title,
+          })
 
-        if (summaryError) {
-          console.error("❌ Failed to create message summary:", summaryError)
-          return NextResponse.json({ error: "Failed to create message summary" }, { status: 500 })
+          if (summaryError) {
+            console.error("❌ Failed to create message summary:", summaryError)
+            // Don't return error for summary creation failure - it's not critical
+            console.log("⚠️ Continuing despite summary creation failure")
+          } else {
+            console.log("✅ Message summary created successfully")
+          }
+        } catch (summaryError) {
+          console.error("❌ Exception creating message summary:", summaryError)
+          // Don't return error - summary creation is not critical
         }
-
-        console.log("✅ Message summary created successfully")
       }
 
       return NextResponse.json({ title, isTitle, messageId, threadId })

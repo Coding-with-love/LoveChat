@@ -2,10 +2,30 @@
 
 import { useState } from "react"
 import Image from "next/image"
-import { Download, X, Maximize2, ExternalLink, Eye } from 'lucide-react'
+import { Download, X, Maximize2, ExternalLink, Eye } from "lucide-react"
 import { Button } from "./ui/button"
 import { Dialog, DialogContent, DialogClose } from "./ui/dialog"
-import { getFileIcon, formatFileSize, canPreviewFile } from "@/lib/supabase/file-upload"
+import { getFileIcon, formatFileSize } from "@/lib/supabase/file-upload"
+
+// Add the canPreviewFile function locally
+const canPreviewFile = (fileType: string): boolean => {
+  const previewableTypes = [
+    "image/jpeg",
+    "image/jpg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+    "application/pdf",
+    "text/plain",
+    "text/html",
+    "text/css",
+    "text/javascript",
+    "application/json",
+    "application/xml",
+  ]
+
+  return previewableTypes.includes(fileType.toLowerCase())
+}
 
 interface FileAttachment {
   id: string
@@ -59,41 +79,28 @@ export default function FileAttachmentViewer({ attachments }: FileAttachmentView
         <div className="flex flex-col items-center flex-1 justify-center">
           <div className="text-2xl mb-1">{icon}</div>
           <p className="text-xs truncate w-full text-center font-medium">
-            {attachment.fileName.length > 15 
-              ? `${attachment.fileName.substring(0, 12)}...` 
-              : attachment.fileName
-            }
+            {attachment.fileName.length > 15 ? `${attachment.fileName.substring(0, 12)}...` : attachment.fileName}
           </p>
           <p className="text-xs text-muted-foreground">{formatFileSize(attachment.fileSize)}</p>
         </div>
-        
+
         <div className="flex gap-1 w-full">
           {canPreview ? (
-            <a 
-              href={attachment.fileUrl} 
-              target="_blank" 
-              rel="noopener noreferrer" 
-              className="flex-1"
-            >
+            <a href={attachment.fileUrl} target="_blank" rel="noopener noreferrer" className="flex-1">
               <Button variant="outline" size="sm" className="h-6 px-2 py-1 text-xs w-full">
                 <Eye className="h-3 w-3 mr-1" />
                 View
               </Button>
             </a>
           ) : (
-            <a 
-              href={attachment.fileUrl} 
-              target="_blank" 
-              rel="noopener noreferrer" 
-              className="flex-1"
-            >
+            <a href={attachment.fileUrl} target="_blank" rel="noopener noreferrer" className="flex-1">
               <Button variant="outline" size="sm" className="h-6 px-2 py-1 text-xs w-full">
                 <ExternalLink className="h-3 w-3 mr-1" />
                 Open
               </Button>
             </a>
           )}
-          
+
           <a href={attachment.fileUrl} download={attachment.fileName}>
             <Button variant="outline" size="sm" className="h-6 w-6 p-0">
               <Download className="h-3 w-3" />

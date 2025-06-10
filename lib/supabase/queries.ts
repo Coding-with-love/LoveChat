@@ -3,6 +3,29 @@ import type { UIMessage } from "ai"
 import { v4 as uuidv4 } from "uuid"
 import type { FileUploadResult } from "./file-upload"
 
+// Helper functions
+function generateShareToken(): string {
+  // Generate a URL-safe random token
+  const array = new Uint8Array(16)
+  crypto.getRandomValues(array)
+  return btoa(String.fromCharCode(...array))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=/g, "")
+}
+
+async function hashPassword(password: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const data = encoder.encode(password)
+  const hash = await crypto.subtle.digest("SHA-256", data)
+  return btoa(String.fromCharCode(...new Uint8Array(hash)))
+}
+
+async function verifyPassword(password: string, hash: string): Promise<boolean> {
+  const hashedPassword = await hashPassword(password)
+  return hashedPassword === hash
+}
+
 export const getThreads = async () => {
   const { data, error } = await supabase.from("threads").select("*").order("last_message_at", { ascending: false })
 
@@ -121,9 +144,11 @@ export const createMessage = async (threadId: string, message: UIMessage, fileAt
         id: attachment.id,
         fileName: attachment.fileName,
         fileType: attachment.fileType,
-        fileSize: attachment.fileSize,
-        fileUrl: attachment.fileUrl,
+        fileSize: attachment.size || 0,
+        fileUrl: attachment.url,
         thumbnailUrl: attachment.thumbnailUrl,
+        content: attachment.content, // Include content in message parts
+        extractedText: attachment.extractedText,
       })),
     })
   }
@@ -147,26 +172,65 @@ export const createMessage = async (threadId: string, message: UIMessage, fileAt
 
   // Insert file attachments if any
   if (fileAttachments && fileAttachments.length > 0) {
-    const attachmentsToInsert = fileAttachments.map((attachment) => ({
-      id: attachment.id,
-      message_id: message.id,
-      thread_id: threadId,
-      user_id: user.id,
-      file_name: attachment.fileName,
-      file_type: attachment.fileType,
-      file_size: attachment.fileSize,
-      file_url: attachment.fileUrl,
-      thumbnail_url: attachment.thumbnailUrl,
-    }))
+    // Log the file attachments for debugging
+    console.log(
+      "📎 File attachments to insert:",
+      fileAttachments.map((f) => ({
+        fileName: f.fileName,
+        fileType: f.fileType,
+        size: f.size,
+        url: f.url,
+      })),
+    )
 
-    const { error: attachmentsError } = await supabase.from("file_attachments").insert(attachmentsToInsert)
+    try {
+      const attachmentsToInsert = fileAttachments
+        .filter((attachment) => {
+          // Only include attachments that have a valid URL
+          if (!attachment.fileUrl && !attachment.url) {
+            console.warn("⚠️ Skipping attachment without URL:", attachment.fileName)
+            return false
+          }
+          return true
+        })
+        .map((attachment) => {
+          // Generate a new ID if one doesn't exist
+          const attachmentId = attachment.id || uuidv4()
 
-    if (attachmentsError) {
-      console.error("❌ Failed to create file attachments:", attachmentsError)
-      throw attachmentsError
+          // Use the correct property names based on the FileUploadResult interface
+          return {
+            id: attachmentId,
+            message_id: message.id,
+            thread_id: threadId,
+            user_id: user.id,
+            file_name: attachment.fileName,
+            file_type: attachment.fileType || "text/plain",
+            file_size: attachment.fileSize || 0,
+            file_url: attachment.fileUrl || attachment.url || "", // Use empty string as fallback instead of null
+            thumbnail_url: attachment.thumbnailUrl || null,
+            created_at: new Date().toISOString(),
+          }
+        })
+
+      // Only proceed if we have valid attachments to insert
+      if (attachmentsToInsert.length > 0) {
+        console.log("💾 Inserting file attachments:", attachmentsToInsert)
+
+        const { error: attachmentsError } = await supabase.from("file_attachments").insert(attachmentsToInsert)
+
+        if (attachmentsError) {
+          console.error("❌ Failed to create file attachments:", attachmentsError)
+          throw attachmentsError
+        }
+
+        console.log("✅ File attachments created successfully")
+      } else {
+        console.log("ℹ️ No valid file attachments to insert")
+      }
+    } catch (error) {
+      console.error("❌ Error processing file attachments:", error)
+      // Don't throw here as the message was created successfully
     }
-
-    console.log("✅ File attachments created successfully")
   }
 
   const { error: threadError } = await supabase
@@ -557,25 +621,59 @@ export const getCodeConversions = async (threadId: string, messageId: string) =>
   }
 }
 
-// Helper functions
-function generateShareToken(): string {
-  // Generate a URL-safe random token
-  const array = new Uint8Array(16)
-  crypto.getRandomValues(array)
-  return btoa(String.fromCharCode(...array))
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=/g, "")
-}
+export const getFileAttachmentsWithContent = async (messageId: string) => {
+  const { data, error } = await supabase
+    .from("file_attachments")
+    .select("*")
+    .eq("message_id", messageId)
+    .order("created_at", { ascending: true })
 
-async function hashPassword(password: string): Promise<string> {
-  const encoder = new TextEncoder()
-  const data = encoder.encode(password)
-  const hash = await crypto.subtle.digest("SHA-256", data)
-  return btoa(String.fromCharCode(...new Uint8Array(hash)))
-}
+  if (error) throw error
 
-async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  const hashedPassword = await hashPassword(password)
-  return hashedPassword === hash
+  // For each attachment, try to fetch the content if we have a URL
+  const attachmentsWithContent = await Promise.all(
+    (data || []).map(async (attachment) => {
+      try {
+        if (attachment.file_url) {
+          // Try to fetch the file content
+          const response = await fetch(attachment.file_url)
+          if (response.ok) {
+            const content = await response.text()
+            return {
+              id: attachment.id,
+              fileName: attachment.file_name,
+              fileType: attachment.file_type,
+              fileSize: attachment.file_size,
+              fileUrl: attachment.file_url,
+              thumbnailUrl: attachment.thumbnail_url,
+              content: content,
+              extractedText: content, // For compatibility
+            }
+          }
+        }
+
+        // Return without content if we can't fetch it
+        return {
+          id: attachment.id,
+          fileName: attachment.file_name,
+          fileType: attachment.file_type,
+          fileSize: attachment.file_size,
+          fileUrl: attachment.file_url,
+          thumbnailUrl: attachment.thumbnail_url,
+        }
+      } catch (error) {
+        console.error("Error fetching file content:", error)
+        return {
+          id: attachment.id,
+          fileName: attachment.file_name,
+          fileType: attachment.file_type,
+          fileSize: attachment.file_size,
+          fileUrl: attachment.file_url,
+          thumbnailUrl: attachment.thumbnail_url,
+        }
+      }
+    }),
+  )
+
+  return attachmentsWithContent
 }

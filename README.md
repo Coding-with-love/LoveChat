@@ -4,6 +4,13 @@ LoveChat is a modern, feature-rich chat application built for the T3Chat Cloneat
 
 ##  Features
 
+### Authentication & Security
+- Secure authentication using Supabase
+- Protected API routes with JWT token validation
+- User session management
+- Role-based access control
+- Secure middleware implementation for API protection
+
 ### Core Chat Features
 - Real-time messaging with instant updates
 - Message history persistence
@@ -13,6 +20,8 @@ LoveChat is a modern, feature-rich chat application built for the T3Chat Cloneat
 - Message search functionality
 - Message interruption capabilities
 - Resumable chat streams
+- Shared conversation support
+- Code conversion and explanation features
 
 ### AI Integration
 - Multiple AI model support (OpenAI, Google AI, OpenRouter)
@@ -20,6 +29,7 @@ LoveChat is a modern, feature-rich chat application built for the T3Chat Cloneat
 - Stream-based responses for real-time interaction
 - AI-powered chat completions
 - Customizable AI parameters
+- Resumable AI streams for long responses
 
 ### User Experience
 - Dark/Light theme support
@@ -32,6 +42,7 @@ LoveChat is a modern, feature-rich chat application built for the T3Chat Cloneat
 - Dialog-based interactions
 - Dropdown menus for actions
 - Scroll area with custom styling
+- Real-time error handling and feedback
 
 ### Data Management
 - Offline support with IndexedDB (via Dexie.js)
@@ -39,6 +50,8 @@ LoveChat is a modern, feature-rich chat application built for the T3Chat Cloneat
 - Efficient state management with Zustand
 - React Query for server state management
 - Form validation with Zod
+- Persistent chat history
+- Shared conversation state management
 
 ## 🛠 Tech Stack
 
@@ -54,11 +67,12 @@ LoveChat is a modern, feature-rich chat application built for the T3Chat Cloneat
 
 ### Backend
 - Next.js API Routes
-- Supabase (Database)
+- Supabase (Authentication & Database)
 - AI SDK Integration
   - OpenAI
   - Google AI
   - OpenRouter
+- Custom middleware for route protection
 
 ### Development Tools
 - ESLint

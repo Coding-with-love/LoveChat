@@ -115,7 +115,6 @@ export const config = {
     "/api/resumable-streams",
     "/api/test-resumable",
     "/api/convert-code",
-    "/api/explain-code",
     // Include shared API routes for processing but they'll be skipped in middleware
     "/api/shared/:path*",
   ],

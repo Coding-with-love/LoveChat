@@ -1,10 +1,17 @@
-import { memo } from "react"
+"use client"
+
+import { memo, useState } from "react"
 import Message from "./Message"
 import type { UIMessage } from "ai"
 import type { UseChatHelpers } from "@ai-sdk/react"
 import equal from "fast-deep-equal"
 import MessageLoading from "./ui/MessageLoading"
 import Error from "./Error"
+
+// Extend UIMessage to include reasoning field
+interface ExtendedUIMessage extends UIMessage {
+  reasoning?: string
+}
 
 function PureMessages({
   threadId,
@@ -19,7 +26,7 @@ function PureMessages({
   resumedMessageId,
 }: {
   threadId: string
-  messages: UIMessage[]
+  messages: ExtendedUIMessage[]
   setMessages: UseChatHelpers["setMessages"]
   reload: UseChatHelpers["reload"]
   status: UseChatHelpers["status"]
@@ -29,6 +36,16 @@ function PureMessages({
   resumeComplete?: boolean
   resumedMessageId?: string | null
 }) {
+  // State to manage thinking visibility for each message
+  const [showThinking, setShowThinking] = useState<Record<string, boolean>>({})
+
+  const toggleThinking = (messageId: string) => {
+    setShowThinking((prev) => ({
+      ...prev,
+      [messageId]: !prev[messageId],
+    }))
+  }
+
   return (
     <section className="flex flex-col space-y-12">
       {messages.map((message, index) => (
@@ -43,6 +60,10 @@ function PureMessages({
           stop={stop}
           resumeComplete={resumeComplete}
           resumedMessageId={resumedMessageId}
+          // Pass thinking-related props
+          showThinking={showThinking[message.id] || false}
+          onToggleThinking={() => toggleThinking(message.id)}
+          hasThinking={!!message.reasoning}
         />
       ))}
       {status === "submitted" && <MessageLoading />}

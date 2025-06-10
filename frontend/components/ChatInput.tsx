@@ -1,8 +1,6 @@
 "use client"
 
 import type React from "react"
-
-import { ChevronDown, Check, ArrowUpIcon, Search, Info } from "lucide-react"
 import { memo, useCallback, useMemo, useState } from "react"
 import { Textarea } from "@/frontend/components/ui/textarea"
 import { cn } from "@/lib/utils"
@@ -32,6 +30,20 @@ import { useMessageSummary } from "../hooks/useMessageSummary"
 import { useAuth } from "@/frontend/components/AuthProvider"
 import FileUpload, { FilePreviewList } from "./FileUpload"
 import type { FileUploadResult } from "@/lib/supabase/file-upload"
+import { ChevronDown, Check, ArrowUpIcon, Search, Info } from 'lucide-react'
+
+interface ChatMessagePart {
+  type: "text" | "file_attachments"
+  content?: string
+  attachments?: { fileName: string; content?: string }[]
+}
+
+interface ChatMessage {
+  role: "user" | "assistant"
+  content?: string
+  parts?: ChatMessagePart[]
+  experimental_attachments?: { name: string; contentType: string; content?: string }[]
+}
 
 interface ChatInputProps {
   threadId: string
@@ -156,39 +168,54 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
         console.log("✅ Thread created successfully")
 
         console.log("📝 Generating thread title...")
-        // Use the new completion API
+        // Use the new completion API - don't await to avoid blocking
         complete(currentInput.trim() || "New chat with attachments", {
           body: { threadId, messageId, isTitle: true },
         }).catch((error) => {
-          console.error("Failed to generate title:", error)
-          // Don't block the message sending if title generation fails
+          console.warn("⚠️ Failed to generate title (non-blocking):", error)
+          // Don't show error toast for title generation failures
         })
       } else {
         console.log("📝 Generating message summary...")
-        // Use the new completion API
+        // Use the new completion API - don't await to avoid blocking
         complete(currentInput.trim() || `Shared ${uploadedFiles.length} file(s)`, {
           body: { messageId, threadId },
         }).catch((error) => {
-          console.error("Failed to generate summary:", error)
-          // Don't block the message sending if summary generation fails
+          console.warn("⚠️ Failed to generate summary (non-blocking):", error)
+          // Don't show error toast for summary generation failures
         })
       }
 
-      // Create message content based on what we have
-      let messageContent = currentInput.trim()
-      if (!messageContent && hasFiles) {
+      // Enhanced file content processing with detailed logging
+      console.log("🔍 Processing uploaded files:", {
+        fileCount: uploadedFiles.length,
+        files: uploadedFiles.map((f) => ({
+          fileName: f.fileName,
+          category: f.category,
+          hasContent: !!f.content,
+          contentLength: f.content?.length || 0,
+          contentPreview: f.content?.substring(0, 100) + (f.content && f.content.length > 100 ? "..." : ""),
+        })),
+      })
+
+      // Create clean message content - just the user's text or a simple file message
+      let displayMessageContent = currentInput.trim()
+
+      // If no text was provided but files were uploaded, create a simple message
+      if (!displayMessageContent && hasFiles) {
         const fileTypes = uploadedFiles.map((f) => f.category).filter((v, i, a) => a.indexOf(v) === i)
         const fileTypeText = fileTypes.length === 1 ? fileTypes[0] : "file"
-        messageContent = `Shared ${uploadedFiles.length} ${fileTypeText}${uploadedFiles.length > 1 ? "s" : ""}`
+        displayMessageContent = `I've shared ${uploadedFiles.length} ${fileTypeText}${uploadedFiles.length > 1 ? "s" : ""} with you.`
       }
 
-      const userMessage = createUserMessage(messageId, messageContent)
+      // Create the user message with CLEAN content for display
+      const userMessage = createUserMessage(messageId, displayMessageContent)
       console.log("📝 Creating user message with attachments:", uploadedFiles.length)
       await createMessage(threadId, userMessage, uploadedFiles)
       console.log("✅ User message created successfully")
 
       console.log("📝 Appending message to chat...")
-      // Update the message parts to include file attachments
+      // Create enhanced message for AI processing (includes file content)
       const messageWithAttachments = {
         ...userMessage,
         parts: [
@@ -197,12 +224,25 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
             ? [
                 {
                   type: "file_attachments" as const,
-                  attachments: uploadedFiles,
+                  attachments: uploadedFiles.map((file) => ({
+                    ...file,
+                    // Ensure content is included and properly formatted
+                    content: file.content || `[NO CONTENT EXTRACTED FOR ${file.fileName}]`,
+                  })),
                 },
               ]
             : []),
         ],
       }
+
+      console.log("📤 Final message being sent to AI:", {
+        hasContent: !!messageWithAttachments.content,
+        contentLength: messageWithAttachments.content?.length || 0,
+        hasParts: !!messageWithAttachments.parts,
+        partsCount: messageWithAttachments.parts?.length || 0,
+        hasExperimentalAttachments: !!messageWithAttachments.experimental_attachments,
+        attachmentCount: messageWithAttachments.experimental_attachments?.length || 0,
+      })
 
       append(messageWithAttachments)
       setInput("")
@@ -289,7 +329,7 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
                 value={input}
                 placeholder={
                   uploadedFiles.length > 0
-                    ? "Add a message or send files without text..."
+                    ? "Ask me anything about your files, or send them without additional text..."
                     : webSearchEnabled && currentModelSupportsSearch
                       ? "Ask anything - I'll search the web for current info..."
                       : webSearchEnabled && !currentModelSupportsSearch
@@ -504,7 +544,7 @@ const PureChatModelDropdown = () => {
 
 const ChatModelDropdown = memo(PureChatModelDropdown)
 
-function PureStopButton({ stop }: StopButtonProps) {
+const PureStopButton = ({ stop }: StopButtonProps) => {
   return (
     <Button variant="outline" size="icon" onClick={stop} aria-label="Stop generating response">
       <StopIcon size={20} />

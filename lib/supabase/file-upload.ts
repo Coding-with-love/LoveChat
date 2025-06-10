@@ -1,82 +1,241 @@
-import { supabase } from "./client"
+import type { SupabaseClient } from "@supabase/supabase-js"
 import { v4 as uuidv4 } from "uuid"
 
-// Maximum file size (50MB to accommodate larger files)
-const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
-
-// File type categories for better handling
-export const FILE_CATEGORIES = {
-  IMAGE: ["image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml", "image/bmp", "image/tiff"],
-  VIDEO: ["video/mp4", "video/avi", "video/mov", "video/wmv", "video/flv", "video/webm", "video/mkv"],
-  AUDIO: ["audio/mp3", "audio/wav", "audio/ogg", "audio/aac", "audio/flac", "audio/m4a"],
-  DOCUMENT: [
-    "application/pdf",
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.ms-excel",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "application/vnd.ms-powerpoint",
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    "application/rtf",
-    "application/vnd.oasis.opendocument.text",
-    "application/vnd.oasis.opendocument.spreadsheet",
-    "application/vnd.oasis.opendocument.presentation",
-  ],
-  ARCHIVE: [
-    "application/zip",
-    "application/x-rar-compressed",
-    "application/x-7z-compressed",
-    "application/x-tar",
-    "application/gzip",
-  ],
-  CODE: [
-    "text/plain",
-    "text/html",
-    "text/css",
-    "text/javascript",
-    "application/javascript",
-    "application/json",
-    "application/xml",
-    "text/xml",
-    "application/x-python",
-    "text/x-python",
-    "text/x-java-source",
-    "text/x-c",
-    "text/x-c++",
-    "text/x-csharp",
-    "text/x-php",
-    "text/x-ruby",
-    "text/x-go",
-    "text/x-rust",
-    "text/x-swift",
-    "text/x-kotlin",
-    "text/x-typescript",
-    "application/typescript",
-    "text/markdown",
-    "text/x-yaml",
-    "application/yaml",
-  ],
-} as const
-
+// Update the FileUploadResult interface to clarify the URL property names
 export interface FileUploadResult {
-  id: string
+  id?: string
   fileName: string
   fileType: string
   fileSize: number
-  fileUrl: string
-  thumbnailUrl?: string
-  category: string
-  lineCount?: number
+  size?: number // For backward compatibility
   content?: string
+  extractedText?: string
+  category?: string
+  lineCount?: number
+  fileUrl?: string
+  url?: string // For backward compatibility
+  thumbnailUrl?: string
 }
 
-export function getFileCategory(mimeType: string): string {
-  for (const [category, types] of Object.entries(FILE_CATEGORIES)) {
-    if (types.includes(mimeType as any)) {
-      return category.toLowerCase()
+export async function uploadFile(
+  supabaseClient: SupabaseClient,
+  file: File,
+  threadId: string,
+): Promise<FileUploadResult> {
+  console.log("🔄 Starting file upload process:", {
+    fileName: file.name,
+    fileType: file.type,
+    fileSize: file.size,
+    threadId,
+  })
+
+  // Check if user is authenticated
+  const {
+    data: { user },
+    error: authError,
+  } = await supabaseClient.auth.getUser()
+  if (authError || !user) {
+    console.error("❌ User not authenticated:", authError)
+    throw new Error("User must be authenticated to upload files")
+  }
+
+  console.log("✅ User authenticated:", user.id)
+
+  // Use user ID in the file path for better organization and permissions
+  const fileName = `${user.id}/${threadId}/${Date.now()}-${file.name}`
+  console.log("📁 Uploading to path:", fileName)
+
+  const { data: uploadData, error: uploadError } = await supabaseClient.storage
+    .from("thread-files")
+    .upload(fileName, file, {
+      cacheControl: "3600",
+      upsert: false,
+    })
+
+  if (uploadError) {
+    console.error("❌ Error uploading file:", uploadError)
+    throw new Error(`Failed to upload file: ${uploadError.message}`)
+  }
+
+  console.log("✅ File uploaded successfully:", uploadData)
+
+  // Get the public URL for the uploaded file
+  const { data: urlData } = supabaseClient.storage.from("thread-files").getPublicUrl(fileName)
+  console.log("🔗 Generated file URL:", urlData.publicUrl)
+
+  let extractedText: string | null = null
+  let content: string | null = null
+
+  // Handle different file types for text extraction
+  if (file.type === "application/pdf") {
+    console.log("📄 Processing PDF file for rendering:", file.name)
+
+    try {
+      // Try Google Docs specific parser first
+      const formData = new FormData()
+      formData.append("file", file)
+
+      console.log("🔄 Trying Google Docs PDF parser...")
+      const googleDocsResponse = await fetch("/api/parse-google-docs-pdf", {
+        method: "POST",
+        body: formData,
+      })
+
+      if (googleDocsResponse.ok) {
+        const googleDocsResult = await googleDocsResponse.json()
+
+        if (googleDocsResult.success && googleDocsResult.text && googleDocsResult.text.trim().length > 10) {
+          console.log("✅ Google Docs parser successful:", {
+            textLength: googleDocsResult.text.length,
+            method: googleDocsResult.method,
+          })
+
+          extractedText = googleDocsResult.text
+          content = `📄 **PDF Content: ${file.name}** (extracted with ${googleDocsResult.method})
+
+${googleDocsResult.text}`
+        } else {
+          console.log("⚠️ Google Docs parser failed, trying general renderer...")
+
+          // Fall back to general PDF renderer
+          const renderResponse = await fetch("/api/render-pdf", {
+            method: "POST",
+            body: formData,
+          })
+
+          if (renderResponse.ok) {
+            const renderResult = await renderResponse.json()
+
+            if (renderResult.success && renderResult.text && renderResult.text.trim().length > 10) {
+              console.log("✅ General PDF renderer successful:", {
+                textLength: renderResult.text.length,
+                method: renderResult.method,
+                pages: renderResult.pages,
+              })
+
+              extractedText = renderResult.text
+              content = `📄 **PDF Content: ${file.name}** (${renderResult.pages} pages, rendered with ${renderResult.method})
+
+${renderResult.text}`
+            }
+          }
+        }
+      }
+
+      // If all parsing methods failed, provide a fallback message
+      if (!extractedText) {
+        console.warn("⚠️ All PDF extraction methods failed")
+        content = `📄 **PDF Document: ${file.name}**
+
+I received your PDF file (${formatFileSize(file.size)}), but I'm unable to automatically extract the text content.
+
+**To discuss this document:**
+- Open the PDF and copy/paste specific sections you'd like to discuss
+- Describe what you see in the document
+- Ask specific questions about the content
+
+The file has been uploaded successfully and is available at: ${urlData.publicUrl}`
+      }
+    } catch (error) {
+      console.error("❌ Error during PDF processing:", error)
+      content = `📄 **PDF Document: ${file.name}**
+
+**File Details:**
+- Size: ${formatFileSize(file.size)}
+- Type: PDF Document
+- Status: Successfully uploaded and stored
+- Error: ${error instanceof Error ? error.message : "Unknown error"}
+
+**To discuss this PDF content with me:**
+
+1. **Copy and paste text**: Open the PDF and copy the sections you want to discuss
+2. **Describe the content**: Tell me what type of document this is (syllabus, report, etc.) and what you'd like to know
+3. **Ask specific questions**: I can help analyze any text you share from the document
+
+The PDF file has been saved and is available at: ${urlData.publicUrl}`
+    }
+  } else if (isTextBasedFile(file.name, file.type)) {
+    try {
+      console.log("📝 Attempting text extraction for text-based file:", file.name)
+      const rawContent = await file.text()
+
+      // Clean the content to remove null bytes and other problematic characters
+      content = cleanTextContent(rawContent)
+
+      console.log("✅ Text extracted and cleaned successfully:", {
+        originalLength: rawContent.length,
+        cleanedLength: content.length,
+        contentPreview: content.substring(0, 500) + "...",
+      })
+    } catch (error) {
+      console.error("❌ Failed to extract text from file:", error)
+      content = null
+    }
+  } else {
+    console.log("📄 Skipping text extraction for binary file:", file.name, file.type)
+    // For other binary files like images, videos, etc., we don't extract text content
+    content = `[${getFileCategory(file.name, file.type)} file uploaded - ${file.name}]`
+  }
+
+  if (content) {
+    try {
+      extractedText = content
+    } catch (extractionError: any) {
+      console.error("❌ Error during text processing:", extractionError)
     }
   }
-  return "other"
+
+  const category = getFileCategory(file.name, file.type)
+  const lineCount = content && isCodeFile(file.name, file.type) ? countLines(content) : undefined
+
+  // In the uploadFile function, update the result object to use consistent property names
+  const result: FileUploadResult = {
+    id: uuidv4(), // Use proper UUID
+    fileName: file.name,
+    fileType: file.type,
+    fileSize: file.size,
+    size: file.size, // For backward compatibility
+    content: content || undefined,
+    extractedText: extractedText || undefined,
+    category,
+    lineCount,
+    fileUrl: urlData.publicUrl,
+    url: urlData.publicUrl, // For backward compatibility
+    thumbnailUrl: undefined, // Could be implemented for images
+  }
+
+  console.log("📤 Returning file upload result:", {
+    fileName: result.fileName,
+    category: result.category,
+    hasContent: !!result.content,
+    contentLength: result.content?.length || 0,
+    hasExtractedText: !!result.extractedText,
+    extractedTextLength: result.extractedText?.length || 0,
+    lineCount: result.lineCount,
+    fileUrl: result.fileUrl,
+  })
+
+  return result
+}
+
+export function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
+}
+
+export function getFileIcon(mimeType: string): string {
+  if (mimeType.startsWith("image/")) return "🖼️"
+  if (mimeType.startsWith("video/")) return "🎥"
+  if (mimeType.startsWith("audio/")) return "🎵"
+  if (mimeType === "application/pdf") return "📄"
+  if (mimeType.startsWith("text/") || mimeType.includes("javascript") || mimeType.includes("json")) return "💻"
+  if (mimeType.includes("zip") || mimeType.includes("rar") || mimeType.includes("tar")) return "📦"
+  if (mimeType.includes("word") || mimeType.includes("document")) return "📝"
+  if (mimeType.includes("excel") || mimeType.includes("spreadsheet")) return "📊"
+  if (mimeType.includes("powerpoint") || mimeType.includes("presentation")) return "📈"
+  return "📎"
 }
 
 export function isCodeFile(fileName: string, mimeType: string): boolean {
@@ -90,7 +249,6 @@ export function isCodeFile(fileName: string, mimeType: string): boolean {
     ".cpp",
     ".c",
     ".h",
-    ".hpp",
     ".cs",
     ".php",
     ".rb",
@@ -98,17 +256,7 @@ export function isCodeFile(fileName: string, mimeType: string): boolean {
     ".rs",
     ".swift",
     ".kt",
-    ".html",
-    ".css",
-    ".scss",
-    ".sass",
-    ".less",
-    ".json",
-    ".xml",
-    ".yaml",
-    ".yml",
-    ".md",
-    ".sql",
+    ".scala",
     ".sh",
     ".bash",
     ".zsh",
@@ -116,193 +264,198 @@ export function isCodeFile(fileName: string, mimeType: string): boolean {
     ".ps1",
     ".bat",
     ".cmd",
+    ".html",
+    ".htm",
+    ".css",
+    ".scss",
+    ".sass",
+    ".less",
+    ".xml",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".ini",
+    ".cfg",
+    ".conf",
+    ".sql",
+    ".md",
+    ".txt",
+    ".log",
+    ".dockerfile",
+    ".gitignore",
+    ".env",
     ".vue",
     ".svelte",
     ".dart",
-    ".scala",
-    ".clj",
-    ".hs",
-    ".elm",
     ".r",
     ".m",
     ".mm",
     ".pl",
-    ".pm",
     ".lua",
     ".vim",
-    ".dockerfile",
-    ".makefile",
+    ".emacs",
+    ".clj",
+    ".cljs",
+    ".ex",
+    ".exs",
+    ".elm",
+    ".hs",
+    ".ml",
+    ".fs",
+    ".fsx",
+    ".jl",
+    ".nim",
+    ".cr",
+    ".zig",
+    ".odin",
   ]
 
   const extension = fileName.toLowerCase().substring(fileName.lastIndexOf("."))
-  return codeExtensions.includes(extension) || FILE_CATEGORIES.CODE.includes(mimeType as any)
+  const isCodeExtension = codeExtensions.includes(extension)
+  const isCodeMimeType =
+    mimeType.includes("javascript") ||
+    mimeType.includes("typescript") ||
+    mimeType.includes("json") ||
+    mimeType.startsWith("text/") ||
+    mimeType.includes("xml") ||
+    mimeType.includes("html")
+
+  return isCodeExtension || isCodeMimeType
 }
 
-export function getFileIcon(mimeType: string): string {
-  const category = getFileCategory(mimeType)
-
-  switch (category) {
-    case "image":
-      return "🖼️"
-    case "video":
-      return "🎥"
-    case "audio":
-      return "🎵"
-    case "document":
-      return "📄"
-    case "archive":
-      return "📦"
-    case "code":
-      return "💻"
-    default:
-      return "📎"
-  }
+export function getFileCategory(fileName: string, mimeType: string): string {
+  if (mimeType.startsWith("image/")) return "image"
+  if (mimeType.startsWith("video/")) return "video"
+  if (mimeType.startsWith("audio/")) return "audio"
+  if (mimeType === "application/pdf") return "document"
+  if (mimeType.includes("zip") || mimeType.includes("rar") || mimeType.includes("tar")) return "archive"
+  if (isCodeFile(fileName, mimeType)) return "code"
+  if (mimeType.includes("word") || mimeType.includes("document") || mimeType.includes("text")) return "document"
+  return "file"
 }
 
-export function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
+export function countLines(content: string): number {
+  return content.split("\n").length
 }
 
-async function readFileContent(file: File): Promise<{ content: string; lineCount: number }> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-
-    reader.onload = (e) => {
-      try {
-        const content = e.target?.result as string
-        const lineCount = content.split("\n").length
-        resolve({ content, lineCount })
-      } catch (error) {
-        reject(error)
-      }
-    }
-
-    reader.onerror = () => reject(new Error("Failed to read file"))
-    reader.readAsText(file)
-  })
-}
-
-export async function uploadFile(file: File, threadId: string): Promise<FileUploadResult> {
-  // Validate file size
-  if (file.size > MAX_FILE_SIZE) {
-    throw new Error(`File size exceeds the maximum limit of ${MAX_FILE_SIZE / (1024 * 1024)}MB.`)
-  }
-
-  // Check for potentially dangerous file types (optional security measure)
-  const dangerousExtensions = [".exe", ".bat", ".cmd", ".scr", ".pif", ".com", ".vbs", ".js", ".jar"]
-  const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf("."))
-
-  if (dangerousExtensions.includes(fileExtension)) {
-    throw new Error("This file type is not allowed for security reasons.")
-  }
-
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser()
-
-  if (userError || !user) {
-    throw new Error("Authentication required")
-  }
-
-  // Generate a unique file name to avoid collisions
-  const fileExtension2 = file.name.split(".").pop()
-  const fileName = `${uuidv4()}.${fileExtension2}`
-  const filePath = `${user.id}/${threadId}/${fileName}`
-
-  // Upload the file to Supabase Storage
-  const { error: uploadError, data: uploadData } = await supabase.storage
-    .from("chat-attachments")
-    .upload(filePath, file, {
-      cacheControl: "3600",
-      upsert: false,
-    })
-
-  if (uploadError) {
-    console.error("File upload error:", uploadError)
-    throw new Error("Failed to upload file")
-  }
-
-  // Get the public URL for the uploaded file
-  const { data: publicUrlData } = supabase.storage.from("chat-attachments").getPublicUrl(filePath)
-
-  let thumbnailUrl: string | undefined = undefined
-  let lineCount: number | undefined = undefined
-  let content: string | undefined = undefined
-
-  // Generate thumbnail for images only
-  if (FILE_CATEGORIES.IMAGE.includes(file.type as any)) {
-    thumbnailUrl = publicUrlData.publicUrl
-  }
-
-  // Read content and count lines for code files
-  if (isCodeFile(file.name, file.type)) {
-    try {
-      const fileData = await readFileContent(file)
-      lineCount = fileData.lineCount
-      content = fileData.content
-    } catch (error) {
-      console.warn("Failed to read file content:", error)
-      // Don't fail the upload if we can't read the content
-    }
-  }
-
-  const category = getFileCategory(file.type)
-
-  return {
-    id: uuidv4(),
-    fileName: file.name,
-    fileType: file.type,
-    fileSize: file.size,
-    fileUrl: publicUrlData.publicUrl,
-    thumbnailUrl,
-    category,
-    lineCount,
-    content,
-  }
-}
-
-export async function deleteFile(filePath: string): Promise<void> {
-  const { error } = await supabase.storage.from("chat-attachments").remove([filePath])
-
-  if (error) {
-    console.error("File deletion error:", error)
-    throw new Error("Failed to delete file")
-  }
-}
-
-export function getFilePathFromUrl(url: string): string {
-  try {
-    // Extract the path from the URL
-    const urlObj = new URL(url)
-    const pathParts = urlObj.pathname.split("/")
-    // Remove the bucket name and "object" from the path
-    const filePath = pathParts.slice(pathParts.indexOf("object") + 1).join("/")
-    return filePath
-  } catch (error) {
-    console.error("Error extracting file path from URL:", error)
-    return ""
-  }
-}
-
-// Helper function to check if a file can be previewed in browser
-export function canPreviewFile(mimeType: string): boolean {
-  const previewableTypes = [
-    ...FILE_CATEGORIES.IMAGE,
-    "application/pdf",
-    "text/plain",
-    "text/html",
-    "text/css",
-    "text/javascript",
-    "application/javascript",
+export function isTextBasedFile(fileName: string, mimeType: string): boolean {
+  // Define file types that are safe for text extraction
+  const textMimeTypes = [
+    "text/",
     "application/json",
-    "text/xml",
+    "application/javascript",
+    "application/typescript",
     "application/xml",
-    "text/markdown",
+    "application/xhtml+xml",
+    "application/x-sh",
+    "application/x-csh",
   ]
 
-  return previewableTypes.includes(mimeType as any)
+  const textExtensions = [
+    ".txt",
+    ".md",
+    ".json",
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".html",
+    ".htm",
+    ".css",
+    ".scss",
+    ".sass",
+    ".less",
+    ".xml",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".ini",
+    ".cfg",
+    ".conf",
+    ".sh",
+    ".bash",
+    ".zsh",
+    ".fish",
+    ".ps1",
+    ".bat",
+    ".cmd",
+    ".py",
+    ".java",
+    ".cpp",
+    ".c",
+    ".h",
+    ".cs",
+    ".php",
+    ".rb",
+    ".go",
+    ".rs",
+    ".swift",
+    ".kt",
+    ".scala",
+    ".sql",
+    ".log",
+    ".dockerfile",
+    ".gitignore",
+    ".env",
+    ".vue",
+    ".svelte",
+    ".dart",
+    ".r",
+    ".m",
+    ".mm",
+    ".pl",
+    ".lua",
+    ".vim",
+    ".emacs",
+    ".clj",
+    ".cljs",
+    ".ex",
+    ".exs",
+    ".elm",
+    ".hs",
+    ".ml",
+    ".fs",
+    ".fsx",
+    ".jl",
+    ".nim",
+    ".cr",
+    ".zig",
+    ".odin",
+  ]
+
+  // Check MIME type
+  const isTextMime = textMimeTypes.some((type) => mimeType.startsWith(type))
+
+  // Check file extension
+  const extension = fileName.toLowerCase().substring(fileName.lastIndexOf("."))
+  const isTextExtension = textExtensions.includes(extension)
+
+  // Exclude known binary types (except PDF which we now handle specially)
+  const binaryMimeTypes = [
+    "application/zip",
+    "application/x-rar",
+    "application/x-tar",
+    "application/gzip",
+    "image/",
+    "video/",
+    "audio/",
+    "application/octet-stream",
+  ]
+
+  const isBinaryMime = binaryMimeTypes.some((type) => mimeType.startsWith(type))
+
+  return (isTextMime || isTextExtension) && !isBinaryMime
+}
+
+export function cleanTextContent(content: string): string {
+  if (!content) return ""
+
+  // Remove null bytes and other problematic characters
+  return content
+    .replace(/\u0000/g, "") // Remove null bytes
+    .replace(/[\u0001-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "") // Remove other control characters except \t, \n, \r
+    .replace(/\uFFFD/g, "") // Remove replacement characters
+    .replace(/\s+/g, " ") // Normalize whitespace
+    .trim()
 }
