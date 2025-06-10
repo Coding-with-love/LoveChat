@@ -328,6 +328,20 @@ You can use rich markdown formatting in your responses:
 - Links [text](url)
 - Horizontal rules using ---
 
+MATHEMATICAL NOTATION:
+For mathematical expressions, use LaTeX notation with double dollar signs for display math:
+- For inline math, use: $$x^2 + y^2 = z^2$$
+- For display math (centered on its own line), use: $$\\int_0^1 x^2 dx = \\frac{1}{3}$$
+- Always use double dollar signs ($$) for both inline and display math
+- Escape backslashes in LaTeX commands: \\alpha instead of \alpha
+- For complex equations, prefer display math
+- Examples:
+  - Fractions: $$\\frac{a}{b}$$
+  - Integrals: $$\\int_a^b f(x) dx$$
+  - Summations: $$\\sum_{i=1}^n i^2$$
+  - Limits: $$\\lim_{x \\to 0} \\frac{\\sin(x)}{x}$$
+  - Matrices: $$\\begin{bmatrix} a & b \\\\ c & d \\end{bmatrix}$$
+
 For code-related questions:
 - Always use appropriate syntax highlighting in code blocks
 - Explain code step by step when helpful

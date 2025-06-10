@@ -9,11 +9,14 @@ import { marked } from "marked"
 import ShikiHighlighter from "react-shiki"
 import type { ComponentProps } from "react"
 import type { ExtraProps } from "react-markdown"
-import { Check, Copy, Code2, ArrowLeft, Loader2 } from "lucide-react"
+import { Check, Copy, Code2, ArrowLeft, Loader2 } from 'lucide-react'
 import CodeConverter from "@/frontend/components/CodeConverter"
 import { cn } from "@/lib/utils"
 import { useCodeConversions } from "@/frontend/hooks/useCodeConversion"
 import { getShikiLanguage } from "@/lib/language-mapping"
+
+// Import KaTeX CSS
+import "katex/dist/katex.min.css"
 
 type CodeComponentProps = ComponentProps<"code"> & ExtraProps
 type MarkdownSize = "default" | "small"
@@ -241,7 +244,28 @@ function parseMarkdownIntoBlocks(markdown: string): string[] {
 
 function PureMarkdownRendererBlock({ content }: { content: string }) {
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm, [remarkMath]]} rehypePlugins={[rehypeKatex]} components={components}>
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, remarkMath]}
+      rehypePlugins={[
+        [
+          rehypeKatex,
+          {
+            strict: false,
+            trust: true,
+            throwOnError: false,
+            errorColor: '#cc0000',
+            macros: {
+              "\\RR": "\\mathbb{R}",
+              "\\ZZ": "\\mathbb{Z}",
+              "\\NN": "\\mathbb{N}",
+              "\\QQ": "\\mathbb{Q}",
+              "\\CC": "\\mathbb{C}",
+            },
+          },
+        ],
+      ]}
+      components={components}
+    >
       {content}
     </ReactMarkdown>
   )
@@ -260,8 +284,8 @@ const MemoizedMarkdown = memo(
 
     const proseClasses =
       size === "small"
-        ? "prose prose-sm dark:prose-invert bread-words max-w-none w-full prose-code:before:content-none prose-code:after:content-none"
-        : "prose prose-base dark:prose-invert bread-words max-w-none w-full prose-code:before:content-none prose-code:after:content-none"
+        ? "prose prose-sm dark:prose-invert max-w-none w-full prose-code:before:content-none prose-code:after:content-none"
+        : "prose prose-base dark:prose-invert max-w-none w-full prose-code:before:content-none prose-code:after:content-none"
 
     return (
       <MarkdownContext.Provider value={{ size, threadId, messageId, onCodeConvert }}>

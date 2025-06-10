@@ -8,10 +8,11 @@ import { useAPIKeyStore } from "@/frontend/stores/APIKeyStore"
 import { useModelStore } from "@/frontend/stores/ModelStore"
 import { SidebarTrigger, useSidebar } from "./ui/sidebar"
 import { Button } from "./ui/button"
-import { ChevronDown, RotateCcw } from "lucide-react"
+import { ChevronDown, RotateCcw, Pin } from "lucide-react"
 import { useCustomResumableChat } from "@/frontend/hooks/useCustomResumableChat"
 import { getModelConfig } from "@/lib/models"
 import { GlobalResumingIndicator } from "./ResumingIndicator"
+import { PinnedMessages } from "./PinnedMessages"
 
 interface ChatProps {
   threadId: string
@@ -25,6 +26,7 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
   const modelConfig = useMemo(() => getModelConfig(selectedModel), [selectedModel])
 
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
+  const [showPinnedMessages, setShowPinnedMessages] = useState(false)
   const isAutoScrolling = useRef(false)
 
   // Use our custom resumable chat hook
@@ -120,6 +122,13 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
 
       {/* Global Resuming Indicator */}
       <GlobalResumingIndicator isResuming={isResuming} resumeProgress={resumeProgress} threadTitle="Current Chat" />
+
+      {/* Pinned Messages Panel */}
+      {showPinnedMessages && (
+        <div className="fixed top-16 right-4 z-40 w-80 max-h-96 bg-background border rounded-lg shadow-lg">
+          <PinnedMessages threadId={threadId} onClose={() => setShowPinnedMessages(false)} />
+        </div>
+      )}
 
       <main className="flex flex-col w-full max-w-3xl pt-10 pb-56 mx-auto transition-all duration-300 ease-in-out">
         <Messages

@@ -1,3 +1,5 @@
+export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[]
+
 export interface FileUploadResult {
   id: string
   fileName: string
@@ -24,9 +26,98 @@ export interface Message {
   updated_at: string
 }
 
+// Add PinnedMessage interface
+export interface PinnedMessage {
+  id: string
+  user_id: string
+  thread_id: string
+  message_id: string
+  note: string | null
+  created_at: string
+  updated_at: string
+}
+
+// Add ConversationSummary interface
+export interface ConversationSummary {
+  id: string
+  thread_id: string
+  user_id: string
+  summary: string
+  action_items: string[]
+  key_points: string[]
+  topics: string[]
+  message_count: number
+  created_at: string
+  updated_at: string
+}
+
 export interface Database {
   public: {
     Tables: {
+      conversation_summaries: {
+        Row: {
+          id: string
+          thread_id: string
+          user_id: string
+          summary: string
+          action_items: string[]
+          key_points: string[]
+          topics: string[]
+          message_count: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          thread_id: string
+          user_id: string
+          summary: string
+          action_items?: string[]
+          key_points?: string[]
+          topics?: string[]
+          message_count?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          thread_id?: string
+          user_id?: string
+          summary?: string
+          action_items?: string[]
+          key_points?: string[]
+          topics?: string[]
+          message_count?: number
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          full_name: string | null
+          id: string
+          updated_at: string | null
+          username: string | null
+          website: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          full_name?: string | null
+          id: string
+          updated_at?: string | null
+          username?: string | null
+          website?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          full_name?: string | null
+          id?: string
+          updated_at?: string | null
+          username?: string | null
+          website?: string | null
+        }
+      }
       messages: {
         Row: {
           id: string
@@ -35,7 +126,7 @@ export interface Database {
           content: string
           role: "user" | "assistant" | "system"
           parts: any[] | null
-          reasoning: string | null // Add this field for thinking content
+          reasoning: string | null
           created_at: string
           updated_at: string
         }
@@ -46,7 +137,7 @@ export interface Database {
           content: string
           role: "user" | "assistant" | "system"
           parts?: any[] | null
-          reasoning?: string | null // Add this field
+          reasoning?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -57,7 +148,7 @@ export interface Database {
           content?: string
           role?: "user" | "assistant" | "system"
           parts?: any[] | null
-          reasoning?: string | null // Add this field
+          reasoning?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -198,7 +289,7 @@ export interface Database {
           id?: string
           thread_id?: string
           user_id?: string
-          share_token?: string | null
+          share_token?: string
           is_public?: boolean
           expires_at?: string | null
           created_at?: string
@@ -262,13 +353,42 @@ export interface Database {
         Update: {
           id?: string
           thread_id?: string
-          message_id?: string
           user_id?: string
+          message_id?: string
           original_code?: string
           converted_code?: string
           source_language?: string
           target_language?: string
           created_at?: string
+        }
+      }
+      pinned_messages: {
+        Row: {
+          id: string
+          user_id: string
+          thread_id: string
+          message_id: string
+          note: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          thread_id: string
+          message_id: string
+          note?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          thread_id?: string
+          message_id?: string
+          note?: string | null
+          created_at?: string
+          updated_at?: string
         }
       }
     }

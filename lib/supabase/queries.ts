@@ -677,3 +677,137 @@ export const getFileAttachmentsWithContent = async (messageId: string) => {
 
   return attachmentsWithContent
 }
+
+// Pinned Messages Functions
+export const pinMessage = async (threadId: string, messageId: string, note?: string) => {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error("User not authenticated")
+
+  const { data, error } = await supabase
+    .from("pinned_messages")
+    .insert({
+      user_id: user.id,
+      thread_id: threadId,
+      message_id: messageId,
+      note: note || null,
+    })
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+export const unpinMessage = async (threadId: string, messageId: string) => {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error("User not authenticated")
+
+  const { error } = await supabase
+    .from("pinned_messages")
+    .delete()
+    .eq("user_id", user.id)
+    .eq("thread_id", threadId)
+    .eq("message_id", messageId)
+
+  if (error) throw error
+}
+
+export const getPinnedMessages = async (threadId: string) => {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error("User not authenticated")
+
+  const { data, error } = await supabase
+    .from("pinned_messages")
+    .select(`
+      *,
+      messages (
+        id,
+        content,
+        role,
+        parts,
+        created_at,
+        user_id
+      )
+    `)
+    .eq("user_id", user.id)
+    .eq("thread_id", threadId)
+    .order("created_at", { ascending: false })
+
+  if (error) throw error
+  return data || []
+}
+
+export const getAllPinnedMessages = async () => {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error("User not authenticated")
+
+  const { data, error } = await supabase
+    .from("pinned_messages")
+    .select(`
+      *,
+      messages (
+        id,
+        content,
+        role,
+        parts,
+        created_at,
+        user_id
+      ),
+      threads (
+        id,
+        title
+      )
+    `)
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
+
+  if (error) throw error
+  return data || []
+}
+
+export const updatePinnedMessageNote = async (pinnedMessageId: string, note: string) => {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error("User not authenticated")
+
+  const { data, error } = await supabase
+    .from("pinned_messages")
+    .update({
+      note,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", pinnedMessageId)
+    .eq("user_id", user.id)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+export const isPinned = async (threadId: string, messageId: string): Promise<boolean> => {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return false
+
+  const { data, error } = await supabase
+    .from("pinned_messages")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("thread_id", threadId)
+    .eq("message_id", messageId)
+    .single()
+
+  if (error && error.code !== "PGRST116") throw error // PGRST116 is "not found"
+  return !!data
+}

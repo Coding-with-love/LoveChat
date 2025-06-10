@@ -12,6 +12,7 @@ import {
   SidebarTrigger,
 } from "@/frontend/components/ui/sidebar"
 import { Button, buttonVariants } from "./ui/button"
+import { Input } from "./ui/input"
 import { deleteThread, getThreads, getProjects, moveThreadToProject, deleteProject } from "@/lib/supabase/queries"
 import { supabase } from "@/lib/supabase/client"
 import { useEffect, useState, useCallback } from "react"
@@ -25,9 +26,12 @@ import {
   Plus,
   MoreHorizontal,
   Edit,
+  Edit2,
   Loader2,
   Trash,
   MessageSquarePlus,
+  Check,
+  X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/frontend/components/AuthProvider"
@@ -82,7 +86,6 @@ function ProfileSection() {
   if (!user) return null
 
   const displayName = user.email?.split("@")[0] || "User"
-  // Remove avatar functionality since we don't have profiles table
 
   return (
     <div className="p-4 border-b border-border/50">
@@ -132,6 +135,8 @@ export default function ChatSidebar() {
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
   const [deleteProjectDialogOpen, setDeleteProjectDialogOpen] = useState(false)
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null)
+  const [editingThreadId, setEditingThreadId] = useState<string | null>(null)
+  const [editingTitle, setEditingTitle] = useState("")
 
   const fetchData = useCallback(async () => {
     if (!user) {
@@ -273,6 +278,37 @@ export default function ChatSidebar() {
     setShareDialogOpen(true)
   }
 
+  const handleStartRename = (threadId: string, currentTitle: string) => {
+    setEditingThreadId(threadId)
+    setEditingTitle(currentTitle)
+  }
+
+  const handleSaveRename = async () => {
+    if (!editingThreadId || !editingTitle.trim()) return
+
+    try {
+      const { error } = await supabase
+        .from("threads")
+        .update({ title: editingTitle.trim(), updated_at: new Date().toISOString() })
+        .eq("id", editingThreadId)
+        .eq("user_id", user?.id)
+
+      if (error) throw error
+
+      setEditingThreadId(null)
+      setEditingTitle("")
+      toast.success("Thread renamed successfully")
+    } catch (error) {
+      console.error("Failed to rename thread:", error)
+      toast.error("Failed to rename thread")
+    }
+  }
+
+  const handleCancelRename = () => {
+    setEditingThreadId(null)
+    setEditingTitle("")
+  }
+
   const handleMoveThread = async (threadId: string, projectId: string | null) => {
     try {
       await moveThreadToProject(threadId, projectId)
@@ -302,100 +338,158 @@ export default function ChatSidebar() {
     return organizedThreads.filter((thread) => thread.project_id === projectId)
   }
 
-  const renderThread = (thread: Thread) => (
-    <SidebarMenuItem key={thread.id}>
-      <div
-        className={cn(
-          "cursor-pointer group/thread h-9 flex items-center px-2 py-1 rounded-[8px] overflow-hidden w-full hover:bg-secondary",
-          id === thread.id && "bg-secondary",
-        )}
-        onClick={() => {
-          if (id === thread.id) {
-            return
-          }
-          navigate(`/chat/${thread.id}`)
-        }}
-      >
-        <span className="truncate block">{thread.title}</span>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="hidden group-hover/thread:flex ml-auto h-7 w-7"
-              onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-              }}
-            >
-              <MoreHorizontal size={16} />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="end"
-            side="right"
-            className="w-48"
-            container={document.body}
-            style={{ position: "fixed" }}
-          >
-            <DropdownMenuItem
-              onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                handleShareThread(thread.id, thread.title)
-              }}
-            >
-              <Share2 className="h-4 w-4 mr-2" />
-              Share
-            </DropdownMenuItem>
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger>
-                <Folder className="h-4 w-4 mr-2" />
-                Move to Project
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent>
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    handleMoveThread(thread.id, null)
-                  }}
-                >
-                  No Project
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                {projects.map((project) => (
-                  <DropdownMenuItem
-                    key={project.id}
+  const renderThread = (thread: Thread) => {
+    const isEditing = editingThreadId === thread.id
+
+    return (
+      <SidebarMenuItem key={thread.id}>
+        <div
+          className={cn(
+            "cursor-pointer group/thread h-9 flex items-center px-2 py-1 rounded-[8px] overflow-hidden w-full hover:bg-secondary",
+            id === thread.id && "bg-secondary",
+            isEditing && "bg-secondary",
+          )}
+          onClick={() => {
+            if (isEditing || id === thread.id) {
+              return
+            }
+            navigate(`/chat/${thread.id}`)
+          }}
+        >
+          {isEditing ? (
+            <div className="flex items-center gap-1 w-full">
+              <Input
+                value={editingTitle}
+                onChange={(e) => setEditingTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handleSaveRename()
+                  } else if (e.key === "Escape") {
+                    handleCancelRename()
+                  }
+                }}
+                className="h-7 text-sm flex-1"
+                autoFocus
+                onBlur={handleSaveRename}
+              />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleSaveRename()
+                }}
+              >
+                <Check className="h-3 w-3" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleCancelRename()
+                }}
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+          ) : (
+            <>
+              <span className="truncate block">{thread.title}</span>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="hidden group-hover/thread:flex ml-auto h-7 w-7"
                     onClick={(e) => {
                       e.preventDefault()
                       e.stopPropagation()
-                      handleMoveThread(thread.id, project.id)
                     }}
                   >
-                    <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: project.color }} />
-                    {project.name}
+                    <MoreHorizontal size={16} />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="end"
+                  side="right"
+                  className="w-48"
+                  container={document.body}
+                  style={{ position: "fixed" }}
+                >
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      handleShareThread(thread.id, thread.title)
+                    }}
+                  >
+                    <Share2 className="h-4 w-4 mr-2" />
+                    Share
                   </DropdownMenuItem>
-                ))}
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                handleDeleteThread(thread.id)
-              }}
-              className="text-destructive"
-            >
-              <Trash className="h-4 w-4 mr-2" />
-              Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </SidebarMenuItem>
-  )
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      handleStartRename(thread.id, thread.title)
+                    }}
+                  >
+                    <Edit2 className="h-4 w-4 mr-2" />
+                    Rename
+                  </DropdownMenuItem>
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
+                      <Folder className="h-4 w-4 mr-2" />
+                      Move to Project
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          handleMoveThread(thread.id, null)
+                        }}
+                      >
+                        No Project
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      {projects.map((project) => (
+                        <DropdownMenuItem
+                          key={project.id}
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            handleMoveThread(thread.id, project.id)
+                          }}
+                        >
+                          <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: project.color }} />
+                          {project.name}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      handleDeleteThread(thread.id)
+                    }}
+                    className="text-destructive"
+                  >
+                    <Trash className="h-4 w-4 mr-2" />
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
+          )}
+        </div>
+      </SidebarMenuItem>
+    )
+  }
 
   // Show loading state while auth is loading
   if (authLoading) {

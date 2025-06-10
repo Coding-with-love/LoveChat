@@ -174,3 +174,67 @@
 .shiki {
   @apply !rounded-none;
 }
+
+/* KaTeX Math Rendering Styles */
+.katex {
+  font-size: 1.1em !important;
+  color: inherit !important;
+}
+
+.katex-display {
+  margin: 1.5em 0 !important;
+  text-align: center !important;
+}
+
+.katex-display > .katex {
+  display: inline-block !important;
+  white-space: nowrap !important;
+}
+
+/* Ensure math renders properly in prose */
+.prose .katex {
+  font-size: inherit !important;
+}
+
+.prose .katex-display {
+  margin: 1.5rem 0 !important;
+}
+
+/* Dark mode math support */
+.dark .katex {
+  color: rgb(229, 231, 235) !important;
+}
+
+.dark .katex .mord {
+  color: rgb(229, 231, 235) !important;
+}
+
+.dark .katex .mbin,
+.dark .katex .mrel {
+  color: rgb(156, 163, 175) !important;
+}
+
+.dark .katex .mop {
+  color: rgb(59, 130, 246) !important;
+}
+
+/* Fix math overflow */
+.katex-html {
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 640px) {
+  .katex-display {
+    font-size: 0.9em !important;
+  }
+}
+
+/* Ensure KaTeX fonts load properly */
+@font-face {
+  font-family: "KaTeX_Main";
+  src: url("https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/fonts/KaTeX_Main-Regular.woff2") format("woff2");
+  font-weight: normal;
+  font-style: normal;
+}
