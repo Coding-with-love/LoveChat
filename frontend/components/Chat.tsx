@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState, useMemo } from "react"
+import { useEffect, useRef, useState, useMemo, useCallback } from "react"
 import Messages from "./Messages"
 import ChatInput from "./ChatInput"
 import type { UIMessage } from "ai"
@@ -13,6 +13,11 @@ import { useCustomResumableChat } from "@/frontend/hooks/useCustomResumableChat"
 import { getModelConfig } from "@/lib/models"
 import { GlobalResumingIndicator } from "./ResumingIndicator"
 import { PinnedMessages } from "./PinnedMessages"
+import { useKeyboardShortcuts } from "@/frontend/hooks/useKeyboardShortcuts"
+import type { Message, CreateMessage, ChatRequestOptions } from "ai"
+import { getMessageParts } from "@ai-sdk/ui-utils"
+import { useKeyboardShortcutManager } from "@/frontend/hooks/useKeyboardShortcutManager"
+import { useNavigate } from "react-router"
 
 interface ChatProps {
   threadId: string
@@ -28,6 +33,9 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
   const [showPinnedMessages, setShowPinnedMessages] = useState(false)
   const isAutoScrolling = useRef(false)
+
+  const navigate = useNavigate()
+  const { toggleSidebar } = useSidebar()
 
   // Use our custom resumable chat hook
   const {
@@ -49,8 +57,17 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
   } = useCustomResumableChat({
     threadId,
     initialMessages,
-    onFinish: (message) => {
+    onFinish: (message: Message | CreateMessage, chatRequestOptions?: ChatRequestOptions) => {
       console.log("🏁 Chat stream finished:", message.id)
+      const parts = message.parts ?? getMessageParts(message) ?? [{ type: 'text', text: message.content || '' }]
+      const uiMessage: UIMessage = {
+        id: message.id,
+        role: message.role,
+        content: message.content || "",
+        createdAt: message.createdAt || new Date(),
+        parts: parts as UIMessage["parts"],
+      }
+      return uiMessage
     },
     autoResume: true,
   })
@@ -108,6 +125,131 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
     }
   }, [messages.length, status, isResuming])
 
+  // Handle keyboard shortcuts
+  const handleClearInput = () => {
+    setInput("")
+  }
+
+  const handleUndoMessage = () => {
+    if (messages.length > 0) {
+      const lastMessage = messages[messages.length - 1]
+      setMessages(messages.slice(0, -1))
+      if (lastMessage.role === "assistant") {
+        reload()
+      }
+    }
+  }
+
+  const handleStopGenerating = () => {
+    if (status === "streaming") {
+      stop()
+    }
+  }
+
+  const handleSubmit = useCallback(() => {
+    // Implementation
+  }, [])
+
+  const handlePin = useCallback(() => {
+    // Implementation
+  }, [])
+
+  const handleCopy = useCallback(() => {
+    // Implementation
+  }, [])
+
+  const handleEdit = useCallback(() => {
+    // Implementation
+  }, [])
+
+  // Define keyboard shortcuts
+  const shortcuts = useMemo(() => [
+    {
+      name: "Navigation",
+      shortcuts: [
+        {
+          key: "n",
+          modifiers: { meta: true, shift: true },
+          description: "New conversation",
+          handler: () => navigate("/chat")
+        },
+        {
+          key: "b",
+          modifiers: { meta: true },
+          description: "Toggle sidebar",
+          handler: () => toggleSidebar()
+        },
+        {
+          key: "k",
+          modifiers: { meta: true },
+          description: "Search conversations",
+          handler: () => {/* TODO: Implement search */}
+        }
+      ]
+    },
+    {
+      name: "Conversation",
+      shortcuts: [
+        {
+          key: "Enter",
+          description: "Send message",
+          handler: handleSubmit,
+          allowInInput: true
+        },
+        {
+          key: "Enter",
+          modifiers: { meta: true },
+          description: "New line",
+          handler: () => {/* Handled in ChatInput */},
+          allowInInput: true
+        },
+        {
+          key: "Backspace",
+          modifiers: { meta: true },
+          description: "Clear input",
+          handler: () => setInput("")
+        },
+        {
+          key: "z",
+          modifiers: { meta: true },
+          description: "Undo last message",
+          handler: handleUndoMessage
+        },
+        {
+          key: "Escape",
+          description: "Stop generating",
+          handler: handleStopGenerating
+        }
+      ]
+    },
+    {
+      name: "Messages",
+      shortcuts: [
+        {
+          key: "p",
+          modifiers: { meta: true, shift: true },
+          description: "Pin/unpin message",
+          handler: handlePin
+        },
+        {
+          key: "c",
+          modifiers: { meta: true },
+          description: "Copy message",
+          handler: handleCopy
+        },
+        {
+          key: "e",
+          modifiers: { meta: true },
+          description: "Edit message",
+          handler: handleEdit
+        }
+      ]
+    }
+  ], [navigate, toggleSidebar, handleSubmit, setInput, handleUndoMessage, handleStopGenerating, handlePin, handleCopy, handleEdit])
+
+  // Use the keyboard shortcut manager
+  useKeyboardShortcutManager(shortcuts)
+
   if (!isAuthenticated) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -164,5 +306,5 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
 const ChatSidebarTrigger = () => {
   const { state } = useSidebar()
 
-  return <SidebarTrigger className={`fixed left-4 top-4 z-50 ${state === "expanded" ? "md:hidden" : ""}`} />
+  return <SidebarTrigger className={`fixed left-4 bottom-4 z-50 ${state === "expanded" ? "md:hidden" : ""}`} />
 }

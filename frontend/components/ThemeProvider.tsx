@@ -19,6 +19,10 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
       "theme-purple",
       "theme-yellow",
       "theme-teal",
+      "theme-cloudmist",
+      "theme-peachmeringue",
+      "theme-cocoadust",
+      "theme-frostedsage",
       "theme-custom",
     )
 

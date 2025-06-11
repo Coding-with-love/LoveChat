@@ -32,6 +32,11 @@ import {
   MessageSquarePlus,
   Check,
   X,
+  HelpCircle,
+  Keyboard,
+  FileText,
+  Bug,
+  Info,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/frontend/components/AuthProvider"
@@ -60,6 +65,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/frontend/components/ui/alert-dialog"
+import { KeyboardShortcutsDialog } from "./KeyboardShortcutsDialog"
 
 interface Thread {
   id: string
@@ -82,6 +88,7 @@ interface Project {
 
 function ProfileSection() {
   const { user, signOut } = useAuth()
+  const navigate = useNavigate()
 
   if (!user) return null
 
@@ -89,9 +96,8 @@ function ProfileSection() {
 
   return (
     <div className="p-4 border-b border-border/50">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center mb-3">
         <h1 className="text-lg font-bold">LoveChat</h1>
-        <SidebarTrigger className="h-8 w-8" />
       </div>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -110,6 +116,10 @@ function ProfileSection() {
         <DropdownMenuContent align="start" className="w-56">
           <DropdownMenuLabel>My Account</DropdownMenuLabel>
           <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => navigate("/settings")} className="gap-2">
+            <User className="h-4 w-4" />
+            Settings
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={signOut} className="gap-2">
             <LogOut className="h-4 w-4" />
             Sign out
@@ -137,6 +147,7 @@ export default function ChatSidebar() {
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null)
   const [editingThreadId, setEditingThreadId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState("")
+  const [isKeyboardShortcutsOpen, setIsKeyboardShortcutsOpen] = useState(false)
 
   const fetchData = useCallback(async () => {
     if (!user) {
@@ -416,7 +427,6 @@ export default function ChatSidebar() {
                   align="end"
                   side="right"
                   className="w-48"
-                  container={document.body}
                   style={{ position: "fixed" }}
                 >
                   <DropdownMenuItem
@@ -595,7 +605,6 @@ export default function ChatSidebar() {
                                   align="end"
                                   side="right"
                                   className="w-48"
-                                  container={document.body}
                                   style={{ position: "fixed" }}
                                 >
                                   <DropdownMenuItem
@@ -654,11 +663,34 @@ export default function ChatSidebar() {
             </SidebarGroupContent>
           </SidebarGroup>
         </SidebarContent>
-        <SidebarFooter className="space-y-2 p-4">
-          <Link to="/settings" className={buttonVariants({ variant: "outline", className: "w-full" })}>
-            <User className="h-4 w-4 mr-2" />
-            Settings
-          </Link>
+        <SidebarFooter className="p-4">
+          <div className="flex items-center justify-between w-full">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon" className="h-8 w-8">
+                  <HelpCircle className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuItem
+                  className="gap-2"
+                  onSelect={(e) => {
+                    e.preventDefault()
+                    setIsKeyboardShortcutsOpen(true)
+                  }}
+                >
+                  <Keyboard className="h-4 w-4" />
+                  Keyboard Shortcuts
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem className="gap-2">
+                  <Info className="h-4 w-4" />
+                  Version 0.0.1
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <SidebarTrigger className="h-8 w-8 md:block hidden" />
+          </div>
         </SidebarFooter>
       </div>
       {shareThreadId && (
@@ -694,6 +726,13 @@ export default function ChatSidebar() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Keyboard Shortcuts Dialog */}
+      <KeyboardShortcutsDialog
+        trigger={<div style={{ display: 'none' }} />}
+        open={isKeyboardShortcutsOpen}
+        onOpenChange={setIsKeyboardShortcutsOpen}
+      />
     </Sidebar>
   )
 }

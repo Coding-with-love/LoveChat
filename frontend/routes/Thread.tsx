@@ -6,6 +6,7 @@ import Chat from "@/frontend/components/Chat"
 import { getMessagesByThreadId } from "@/lib/supabase/queries"
 import { useAuth } from "@/frontend/components/AuthProvider"
 import { useChatNavigator } from "@/frontend/hooks/useChatNavigator"
+import { useAPIKeyStore } from "@/frontend/stores/APIKeyStore"
 import type { UIMessage } from "ai"
 
 interface DBMessage {
@@ -24,28 +25,34 @@ export default function Thread() {
   const [messages, setMessages] = useState<DBMessage[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const loadKeys = useAPIKeyStore((state) => state.loadKeys)
 
   const { registerRef } = useChatNavigator()
 
   useEffect(() => {
     if (!user || !id) return
 
-    const fetchMessages = async () => {
+    const initializeThread = async () => {
       try {
         setLoading(true)
         setError(null)
+        
+        // Load API keys first
+        await loadKeys()
+        
+        // Then fetch messages
         const data = await getMessagesByThreadId(id)
         setMessages(data)
       } catch (err) {
-        console.error("Error fetching messages:", err)
-        setError(err instanceof Error ? err.message : "Failed to load messages")
+        console.error("Error initializing thread:", err)
+        setError(err instanceof Error ? err.message : "Failed to load thread")
       } finally {
         setLoading(false)
       }
     }
 
-    fetchMessages()
-  }, [id, user])
+    initializeThread()
+  }, [id, user, loadKeys])
 
   const convertToUIMessages = (messages: DBMessage[]): UIMessage[] => {
     return messages.map((message) => ({

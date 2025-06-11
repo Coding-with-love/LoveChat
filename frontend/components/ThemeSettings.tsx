@@ -11,7 +11,7 @@ import { Check, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 
 export default function ThemeSettings() {
-  const { theme, customHue, setTheme, setCustomHue } = useThemeStore()
+  const { theme, customHue, setTheme, setCustomHue, reset } = useThemeStore()
   const [selectedTheme, setSelectedTheme] = useState<ThemeName>(theme)
   const [customHueInput, setCustomHueInput] = useState(customHue || "240")
   const [isApplying, setIsApplying] = useState(false)
@@ -58,6 +58,10 @@ export default function ThemeSettings() {
       purple: "oklch(0.55 0.15 300)",
       yellow: "oklch(0.55 0.15 90)",
       teal: "oklch(0.55 0.15 180)",
+      cloudmist: "oklch(0.55 0.15 210)",
+      peachmeringue: "oklch(0.55 0.15 45)",
+      cocoadust: "oklch(0.55 0.15 30)",
+      frostedsage: "oklch(0.55 0.15 135)",
     }
 
     return (
@@ -70,11 +74,23 @@ export default function ThemeSettings() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-medium mb-4">Color Theme</h3>
-        <p className="text-sm text-muted-foreground mb-4">
-          Choose a color theme for your application. The theme will work with both light and dark modes.
-        </p>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="text-lg font-medium">Color Theme</h3>
+          <p className="text-sm text-muted-foreground mt-1">
+            Choose a color theme for your application. The theme will work with both light and dark modes.
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            reset()
+            toast.success("Theme settings reset to default")
+          }}
+        >
+          Reset to Default
+        </Button>
       </div>
 
       <RadioGroup value={selectedTheme} onValueChange={handleThemeChange as (value: string) => void}>

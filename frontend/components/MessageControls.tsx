@@ -21,6 +21,9 @@ interface MessageControlsProps {
   setMode?: Dispatch<SetStateAction<"view" | "edit">>
   reload: UseChatHelpers["reload"]
   stop: UseChatHelpers["stop"]
+  onCopy?: () => void
+  onEdit?: () => void
+  onPin?: () => void
 }
 
 export default function MessageControls({
@@ -31,6 +34,9 @@ export default function MessageControls({
   setMode,
   reload,
   stop,
+  onCopy,
+  onEdit,
+  onPin,
 }: MessageControlsProps) {
   const [copied, setCopied] = useState(false)
   const [isPinned, setIsPinned] = useState(false)
@@ -46,7 +52,13 @@ export default function MessageControls({
     setTimeout(() => {
       setCopied(false)
     }, 2000)
-  }, [content])
+    onCopy?.()
+  }, [content, onCopy])
+
+  const handleEdit = useCallback(() => {
+    setMode?.("edit")
+    onEdit?.()
+  }, [setMode, onEdit])
 
   const handleRegenerate = useCallback(async () => {
     try {
@@ -168,8 +180,9 @@ export default function MessageControls({
       handleUnpin()
     } else {
       setShowPinDialog(true)
+      onPin?.()
     }
-  }, [isPinned])
+  }, [isPinned, onPin])
 
   const handlePin = useCallback(async () => {
     try {
@@ -306,7 +319,7 @@ export default function MessageControls({
       </Dialog>
 
       {setMode && hasRequiredKeys && (
-        <Button variant="ghost" size="icon" onClick={() => setMode("edit")}>
+        <Button variant="ghost" size="icon" onClick={handleEdit}>
           <SquarePen className="w-4 h-4" />
         </Button>
       )}

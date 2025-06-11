@@ -31,6 +31,7 @@ import { useAuth } from "@/frontend/components/AuthProvider"
 import FileUpload, { FilePreviewList } from "./FileUpload"
 import type { FileUploadResult } from "@/lib/supabase/file-upload"
 import { ChevronDown, Check, ArrowUpIcon, Search, Info, Bot } from 'lucide-react'
+import { useKeyboardShortcuts } from "@/frontend/hooks/useKeyboardShortcuts"
 
 interface ChatMessagePart {
   type: "text" | "file_attachments"
@@ -198,84 +199,68 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
         })),
       })
 
-      // Create clean message content - just the user's text or a simple file message
-      let displayMessageContent = currentInput.trim()
+      // Create the message content
+      const messageContent = hasText ? currentInput.trim() : `Shared ${uploadedFiles.length} file(s)`
 
-      // If no text was provided but files were uploaded, create a simple message
-      if (!displayMessageContent && hasFiles) {
-        const fileTypes = uploadedFiles.map((f) => f.category).filter((v, i, a) => a.indexOf(v) === i)
-        const fileTypeText = fileTypes.length === 1 ? fileTypes[0] : "file"
-        displayMessageContent = `I've shared ${uploadedFiles.length} ${fileTypeText}${uploadedFiles.length > 1 ? "s" : ""} with you.`
+      // Create the base message using the helper
+      const message = createUserMessage(messageId, messageContent)
+
+      // Add file parts if there are files
+      if (hasFiles) {
+        await createMessage(threadId, message, uploadedFiles)
+      } else {
+        await createMessage(threadId, message)
       }
 
-      // Create the user message with CLEAN content for display
-      const userMessage = createUserMessage(messageId, displayMessageContent)
-      console.log("📝 Creating user message with attachments:", uploadedFiles.length)
-      await createMessage(threadId, userMessage, uploadedFiles)
-      console.log("✅ User message created successfully")
+      // Send the message
+      await append(message)
 
-      console.log("📝 Appending message to chat...")
-      // Create enhanced message for AI processing (includes file content)
-      const messageWithAttachments = {
-        ...userMessage,
-        parts: [
-          ...userMessage.parts,
-          ...(uploadedFiles.length > 0
-            ? [
-                {
-                  type: "file_attachments" as const,
-                  attachments: uploadedFiles.map((file) => ({
-                    ...file,
-                    // Ensure content is included and properly formatted
-                    content: file.content || `[NO CONTENT EXTRACTED FOR ${file.fileName}]`,
-                  })),
-                },
-              ]
-            : []),
-        ],
-      }
-
-      console.log("📤 Final message being sent to AI:", {
-        hasContent: !!messageWithAttachments.content,
-        contentLength: messageWithAttachments.content?.length || 0,
-        hasParts: !!messageWithAttachments.parts,
-        partsCount: messageWithAttachments.parts?.length || 0,
-        hasExperimentalAttachments: !!messageWithAttachments.experimental_attachments,
-        attachmentCount: messageWithAttachments.experimental_attachments?.length || 0,
-      })
-
-      append(messageWithAttachments)
+      // Clear input and files after successful send
       setInput("")
       setUploadedFiles([])
-      adjustHeight(true)
-      console.log("✅ Message submission completed")
+      adjustHeight()
+
+      console.log("✅ Message sent successfully")
     } catch (error) {
-      console.error("❌ Failed to submit message:", error)
+      console.error("❌ Failed to send message:", error)
       toast.error("Failed to send message")
     }
   }, [
-    input,
-    status,
-    setInput,
-    adjustHeight,
-    append,
-    id,
-    textareaRef,
-    threadId,
-    complete,
-    navigate,
     user,
     isAuthenticated,
+    textareaRef,
+    input,
     uploadedFiles,
+    status,
+    threadId,
+    id,
     webSearchEnabled,
     currentModelSupportsSearch,
+    navigate,
+    complete,
+    append,
+    setInput,
+    adjustHeight,
   ])
+
+  const handleClearInput = useCallback(() => {
+    setInput("")
+    setUploadedFiles([])
+    adjustHeight()
+  }, [setInput, adjustHeight])
+
+  // Use keyboard shortcuts
+  useKeyboardShortcuts({
+    onSendMessage: handleSubmit,
+    onClearInput: handleClearInput,
+    onStopGenerating: status === "streaming" || status === "submitted" ? stop : undefined,
+  })
 
   if (!canChat) {
     return <KeyPrompt />
   }
 
-  if (!user) {
+  if (!user || !isAuthenticated) {
     return (
       <div className="fixed bottom-0 w-full max-w-3xl">
         <div className="bg-secondary rounded-t-[20px] p-4 w-full text-center">
@@ -286,9 +271,35 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault()
-      handleSubmit()
+    if (e.key === "Enter") {
+      if (e.metaKey || e.ctrlKey) {
+        // Insert a new line when Command+Enter is pressed
+        const textarea = e.currentTarget
+        const start = textarea.selectionStart
+        const end = textarea.selectionEnd
+        const value = textarea.value
+        const newValue = value.substring(0, start) + "\n" + value.substring(end)
+        
+        // Update the input value
+        setInput(newValue)
+        
+        // Focus needs to be maintained
+        textarea.focus()
+        
+        // Set cursor position after the new line
+        requestAnimationFrame(() => {
+          textarea.selectionStart = textarea.selectionEnd = start + 1
+        })
+        
+        e.preventDefault()
+      } else if (!e.shiftKey && !isDisabled) {
+        // Submit when Enter is pressed without any modifiers
+        e.preventDefault()
+        // Clear input immediately before submission
+        const currentInput = e.currentTarget.value
+        setInput("")
+        handleSubmit()
+      }
     }
   }
 

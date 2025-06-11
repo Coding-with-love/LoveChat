@@ -12,6 +12,7 @@ import MessageReasoning from "./MessageReasoning"
 import FileAttachmentViewer from "./FileAttachmentViewer"
 import MessageSources from "./MessageSources"
 import WebSearchBanner from "./WebSearchBanner"
+import { useKeyboardShortcuts } from "@/frontend/hooks/useKeyboardShortcuts"
 
 function PureMessage({
   threadId,
@@ -92,6 +93,31 @@ function PureMessage({
     [message.id],
   )
 
+  // Handle keyboard shortcuts
+  const handleCopy = useCallback(() => {
+    const textPart = displayParts.find((part) => part.type === "text")
+    if (textPart) {
+      navigator.clipboard.writeText(textPart.text)
+    }
+  }, [displayParts])
+
+  const handleEdit = useCallback(() => {
+    if (mode === "view") {
+      setMode("edit")
+    }
+  }, [mode])
+
+  const handlePin = useCallback(() => {
+    // Pin functionality is handled in MessageControls
+    // We'll pass this through to MessageControls
+  }, [])
+
+  useKeyboardShortcuts({
+    onCopyMessage: handleCopy,
+    onEditMessage: handleEdit,
+    onPinMessage: handlePin,
+  })
+
   return (
     <div
       ref={messageRef}
@@ -131,7 +157,7 @@ function PureMessage({
                   stop={stop}
                 />
               )}
-              {mode === "view" && <p>{part.text}</p>}
+              {mode === "view" && <p className="whitespace-pre-wrap">{part.text}</p>}
 
               {mode === "view" && (
                 <MessageControls
@@ -142,6 +168,9 @@ function PureMessage({
                   setMessages={setMessages}
                   reload={reload}
                   stop={stop}
+                  onCopy={handleCopy}
+                  onEdit={handleEdit}
+                  onPin={handlePin}
                 />
               )}
             </div>
@@ -180,6 +209,9 @@ function PureMessage({
                   setMessages={setMessages}
                   reload={reload}
                   stop={stop}
+                  onCopy={handleCopy}
+                  onEdit={handleEdit}
+                  onPin={handlePin}
                 />
               )}
             </div>
@@ -202,7 +234,7 @@ function PureMessage({
   )
 }
 
-const PreviewMessage = memo(PureMessage, (prevProps, nextProps) => {
+const Message = memo(PureMessage, (prevProps, nextProps) => {
   if (prevProps.isStreaming !== nextProps.isStreaming) return false
   if (prevProps.message.id !== nextProps.message.id) return false
   if (prevProps.resumeComplete !== nextProps.resumeComplete) return false
@@ -211,6 +243,6 @@ const PreviewMessage = memo(PureMessage, (prevProps, nextProps) => {
   return true
 })
 
-PreviewMessage.displayName = "PreviewMessage"
+Message.displayName = "Message"
 
-export default PreviewMessage
+export default Message
