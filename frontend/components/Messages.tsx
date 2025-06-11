@@ -7,6 +7,8 @@ import type { UseChatHelpers } from "@ai-sdk/react"
 import equal from "fast-deep-equal"
 import MessageLoading from "./ui/MessageLoading"
 import Error from "./Error"
+import ChatLandingPage from "./ChatLandingPage"
+import { useAuth } from "@/frontend/components/AuthProvider"
 
 // Extend UIMessage to include reasoning field
 interface ExtendedUIMessage extends UIMessage {
@@ -24,6 +26,7 @@ function PureMessages({
   registerRef,
   resumeComplete,
   resumedMessageId,
+  onPromptClick,
 }: {
   threadId: string
   messages: ExtendedUIMessage[]
@@ -35,15 +38,27 @@ function PureMessages({
   registerRef: (id: string, ref: HTMLDivElement | null) => void
   resumeComplete?: boolean
   resumedMessageId?: string | null
+  onPromptClick?: (prompt: string) => void
 }) {
   // State to manage thinking visibility for each message
   const [showThinking, setShowThinking] = useState<Record<string, boolean>>({})
+  const { profile } = useAuth()
 
   const toggleThinking = (messageId: string) => {
     setShowThinking((prev) => ({
       ...prev,
       [messageId]: !prev[messageId],
     }))
+  }
+
+  // Show landing page when there are no messages and not loading
+  if (messages.length === 0 && status !== "submitted" && !error) {
+    return (
+      <ChatLandingPage 
+        onPromptClick={onPromptClick || (() => {})}
+        userName={profile?.full_name || profile?.username || ""}
+      />
+    )
   }
 
   return (
@@ -60,10 +75,6 @@ function PureMessages({
           stop={stop}
           resumeComplete={resumeComplete}
           resumedMessageId={resumedMessageId}
-          // Pass thinking-related props
-          showThinking={showThinking[message.id] || false}
-          onToggleThinking={() => toggleThinking(message.id)}
-          hasThinking={!!message.reasoning}
         />
       ))}
       {status === "submitted" && <MessageLoading />}

@@ -120,28 +120,28 @@ export interface Database {
       }
       profiles: {
         Row: {
-          avatar_url: string | null
-          full_name: string | null
           id: string
-          updated_at: string | null
           username: string | null
-          website: string | null
+          full_name: string | null
+          avatar_url: string | null
+          updated_at: string
+          created_at: string
         }
         Insert: {
-          avatar_url?: string | null
-          full_name?: string | null
           id: string
-          updated_at?: string | null
           username?: string | null
-          website?: string | null
+          full_name?: string | null
+          avatar_url?: string | null
+          updated_at?: string
+          created_at?: string
         }
         Update: {
-          avatar_url?: string | null
-          full_name?: string | null
           id?: string
-          updated_at?: string | null
           username?: string | null
-          website?: string | null
+          full_name?: string | null
+          avatar_url?: string | null
+          updated_at?: string
+          created_at?: string
         }
       }
       messages: {

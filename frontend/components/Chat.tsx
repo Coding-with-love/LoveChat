@@ -17,7 +17,10 @@ import { useKeyboardShortcuts } from "@/frontend/hooks/useKeyboardShortcuts"
 import type { Message, CreateMessage, ChatRequestOptions } from "ai"
 import { getMessageParts } from "@ai-sdk/ui-utils"
 import { useKeyboardShortcutManager } from "@/frontend/hooks/useKeyboardShortcutManager"
-import { useNavigate } from "react-router"
+import { useNavigate, useParams } from "react-router"
+import { createMessage, createThread } from "@/lib/supabase/queries"
+import { v4 as uuidv4 } from "uuid"
+import { toast } from "sonner"
 
 interface ChatProps {
   threadId: string
@@ -36,6 +39,7 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
 
   const navigate = useNavigate()
   const { toggleSidebar } = useSidebar()
+  const { id } = useParams()
 
   // Use our custom resumable chat hook
   const {
@@ -57,11 +61,11 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
   } = useCustomResumableChat({
     threadId,
     initialMessages,
-    onFinish: (message: Message | CreateMessage, chatRequestOptions?: ChatRequestOptions) => {
+    onFinish: (message: Message | CreateMessage) => {
       console.log("🏁 Chat stream finished:", message.id)
-      const parts = message.parts ?? getMessageParts(message) ?? [{ type: 'text', text: message.content || '' }]
+      const parts = message.parts ?? getMessageParts(message) ?? [{ type: 'text' as const, text: message.content || '' }]
       const uiMessage: UIMessage = {
-        id: message.id,
+        id: message.id || crypto.randomUUID(),
         role: message.role,
         content: message.content || "",
         createdAt: message.createdAt || new Date(),
@@ -161,6 +165,38 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
   const handleEdit = useCallback(() => {
     // Implementation
   }, [])
+
+  const handlePromptClick = useCallback(async (prompt: string) => {
+    try {
+      // Set the prompt as the input and append it as a user message
+      setInput("")
+      const messageId = uuidv4()
+      const message = {
+        id: messageId,
+        role: "user" as const,
+        content: prompt,
+        createdAt: new Date(),
+        parts: [{ type: 'text' as const, text: prompt }]
+      }
+      
+      // Create thread if needed
+      if (!id) {
+        console.log("📝 Creating new thread...")
+        navigate(`/chat/${threadId}`)
+        await createThread(threadId)
+        console.log("✅ Thread created successfully")
+      }
+      
+      // Save to database first
+      await createMessage(threadId, message)
+      
+      // Then append to chat
+      await append(message)
+    } catch (error) {
+      console.error("Error sending prompt:", error)
+      toast.error("Failed to send message")
+    }
+  }, [append, setInput, threadId, id, navigate])
 
   // Define keyboard shortcuts
   const shortcuts = useMemo(() => [
@@ -284,6 +320,7 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
           stop={stop}
           resumeComplete={resumeComplete}
           resumedMessageId={resumedMessageId}
+          onPromptClick={handlePromptClick}
         />
         <ChatInput threadId={threadId} input={input} status={status} append={append} setInput={setInput} stop={stop} />
       </main>

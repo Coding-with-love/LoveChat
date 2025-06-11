@@ -405,9 +405,11 @@ export function useCustomResumableChat({
   }, [user, autoResume, threadId, manualResume])
 
   // Enhanced append function
-  const enhancedAppend = async (message: UIMessage) => {
-    console.log("🚀 Starting new chat message:", message.id)
-    onStart?.(message)
+  const enhancedAppend = async (message: UIMessage | CreateMessage) => {
+    console.log("🚀 Starting new chat message:", 'id' in message ? message.id : 'new message')
+    if ('id' in message) {
+      onStart?.(message)
+    }
     return chat.append(message)
   }
 

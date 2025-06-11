@@ -87,12 +87,13 @@ interface Project {
 }
 
 function ProfileSection() {
-  const { user, signOut } = useAuth()
+  const { user, profile, signOut } = useAuth()
   const navigate = useNavigate()
 
   if (!user) return null
 
-  const displayName = user.email?.split("@")[0] || "User"
+  const displayName = profile?.full_name || profile?.username || user.email?.split("@")[0] || "User"
+  const avatarUrl = profile?.avatar_url
 
   return (
     <div className="p-4 border-b border-border/50">
@@ -103,9 +104,17 @@ function ProfileSection() {
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" className="w-full justify-start gap-3 h-auto p-2 hover:bg-secondary">
             <div className="relative">
-              <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-foreground">
-                {displayName.charAt(0).toUpperCase()}
-              </div>
+              {avatarUrl ? (
+                <img
+                  src={avatarUrl}
+                  alt={displayName}
+                  className="w-8 h-8 rounded-full object-cover"
+                />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-foreground">
+                  {displayName.charAt(0).toUpperCase()}
+                </div>
+              )}
             </div>
             <div className="flex-1 text-left min-w-0">
               <p className="font-medium text-sm truncate">{displayName}</p>
