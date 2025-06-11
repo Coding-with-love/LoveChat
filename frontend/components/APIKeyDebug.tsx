@@ -6,7 +6,7 @@ import { getModelConfig } from "@/lib/models"
 import { useEffect } from "react"
 
 export default function APIKeyDebug() {
-  const { keys, hasRequiredKeys, debug } = useAPIKeyStore()
+  const { keys, hasRequiredKeys, debug, isLoading } = useAPIKeyStore()
   const { selectedModel } = useModelStore()
 
   const modelConfig = getModelConfig(selectedModel)
@@ -16,16 +16,6 @@ export default function APIKeyDebug() {
   useEffect(() => {
     // Run debug on mount
     debug()
-
-    // Check localStorage directly
-    try {
-      const rawStorage = localStorage.getItem("api-keys-storage")
-      console.log("Raw localStorage:", rawStorage)
-      const parsedStorage = rawStorage ? JSON.parse(rawStorage) : null
-      console.log("Parsed localStorage:", parsedStorage)
-    } catch (error) {
-      console.error("Error reading localStorage:", error)
-    }
   }, [debug])
 
   const debugInfo = {
@@ -35,6 +25,7 @@ export default function APIKeyDebug() {
     hasRequiredKeys: hasRequiredKeys(),
     hasKeyForModel,
     keyLengths: Object.fromEntries(Object.entries(keys).map(([key, value]) => [key, value ? value.length : 0])),
+    isLoading,
   }
 
   return (

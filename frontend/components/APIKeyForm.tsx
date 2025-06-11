@@ -10,7 +10,7 @@ import { Eye, EyeOff, Check, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export default function APIKeyForm() {
-  const { getKey, setKey, removeKey, getAllKeys } = useAPIKeyStore()
+  const { getKey, setKey, removeKey, getAllKeys, loadKeys, isLoading: storeLoading, error: storeError } = useAPIKeyStore()
 
   const [openaiKey, setOpenaiKey] = useState("")
   const [googleKey, setGoogleKey] = useState("")
@@ -23,8 +23,11 @@ export default function APIKeyForm() {
 
   // Load keys on mount
   useEffect(() => {
-    const loadKeys = () => {
+    const initializeKeys = async () => {
       try {
+        setIsLoading(true)
+        await loadKeys()
+        
         console.log("🔄 Loading API keys from store...")
         const openaiKeyValue = getKey("openai") || ""
         const googleKeyValue = getKey("google") || ""
@@ -41,15 +44,23 @@ export default function APIKeyForm() {
         setOpenrouterKey(openrouterKeyValue)
       } catch (error) {
         console.error("❌ Error loading API keys:", error)
+        toast.error("Failed to load API keys")
       } finally {
         setIsLoading(false)
       }
     }
 
-    loadKeys()
-  }, [getKey])
+    initializeKeys()
+  }, [getKey, loadKeys])
 
-  const handleSaveKeys = () => {
+  // Show error toast when store error occurs
+  useEffect(() => {
+    if (storeError) {
+      toast.error(storeError)
+    }
+  }, [storeError])
+
+  const handleSaveKeys = async () => {
     setIsSaving(true)
 
     try {
@@ -57,17 +68,17 @@ export default function APIKeyForm() {
 
       // Only save non-empty keys
       if (openaiKey.trim()) {
-        setKey("openai", openaiKey.trim())
+        await setKey("openai", openaiKey.trim())
         console.log("✅ OpenAI key saved")
       }
 
       if (googleKey.trim()) {
-        setKey("google", googleKey.trim())
+        await setKey("google", googleKey.trim())
         console.log("✅ Google key saved")
       }
 
       if (openrouterKey.trim()) {
-        setKey("openrouter", openrouterKey.trim())
+        await setKey("openrouter", openrouterKey.trim())
         console.log("✅ OpenRouter key saved")
       }
 
@@ -83,17 +94,17 @@ export default function APIKeyForm() {
     }
   }
 
-  const handleClearKey = (provider: string) => {
+  const handleClearKey = async (provider: string) => {
     try {
       if (provider === "openai") {
         setOpenaiKey("")
-        removeKey("openai")
+        await removeKey("openai")
       } else if (provider === "google") {
         setGoogleKey("")
-        removeKey("google")
+        await removeKey("google")
       } else if (provider === "openrouter") {
         setOpenrouterKey("")
-        removeKey("openrouter")
+        await removeKey("openrouter")
       }
 
       console.log(`🗑️ ${provider} key removed`)
@@ -104,7 +115,7 @@ export default function APIKeyForm() {
     }
   }
 
-  if (isLoading) {
+  if (isLoading || storeLoading) {
     return (
       <div className="flex items-center justify-center p-8">
         <div className="animate-spin rounded-full h-8 w-8 border-2 border-foreground border-t-transparent"></div>
@@ -265,7 +276,7 @@ export default function APIKeyForm() {
       </div>
 
       {/* Save Button */}
-      <Button onClick={handleSaveKeys} className="w-full" disabled={isSaving}>
+      <Button onClick={handleSaveKeys} className="w-full" disabled={isSaving || storeLoading}>
         {isSaving ? (
           <>
             <span className="animate-spin mr-2">⟳</span>
