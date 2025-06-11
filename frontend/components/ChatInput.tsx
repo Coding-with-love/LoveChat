@@ -30,7 +30,7 @@ import { useMessageSummary } from "../hooks/useMessageSummary"
 import { useAuth } from "@/frontend/components/AuthProvider"
 import FileUpload, { FilePreviewList } from "./FileUpload"
 import type { FileUploadResult } from "@/lib/supabase/file-upload"
-import { ChevronDown, Check, ArrowUpIcon, Search, Info } from 'lucide-react'
+import { ChevronDown, Check, ArrowUpIcon, Search, Info, Bot } from 'lucide-react'
 
 interface ChatMessagePart {
   type: "text" | "file_attachments"
@@ -82,7 +82,7 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
   const canChat = useMemo(() => {
     const modelConfig = getModelConfig(selectedModel)
     const apiKey = getKey(modelConfig.provider)
-    const hasKey = !!apiKey
+    const hasKey = modelConfig.provider === "ollama" ? true : !!apiKey
 
     console.log("🔍 Chat availability check:", {
       selectedModel,
@@ -483,13 +483,13 @@ const ChatInput = memo(PureChatInput, (prevProps, nextProps) => {
 
 const PureChatModelDropdown = () => {
   const getKey = useAPIKeyStore((state) => state.getKey)
-  const { selectedModel, setModel } = useModelStore()
+  const { selectedModel, setModel, customModels } = useModelStore()
 
   const isModelEnabled = useCallback(
     (model: AIModel) => {
       const modelConfig = getModelConfig(model)
       const apiKey = getKey(modelConfig.provider)
-      return !!apiKey
+      return modelConfig.provider === "ollama" ? true : !!apiKey
     },
     [getKey],
   )
@@ -499,8 +499,16 @@ const PureChatModelDropdown = () => {
     if (modelConfig.supportsSearch) {
       return <Search className="w-3 h-3 text-blue-500" />
     }
+    if (modelConfig.provider === "ollama") {
+      return <Bot className="w-3 h-3 text-green-500" />
+    }
     return null
   }, [])
+
+  // Combine standard and custom models
+  const allModels = useMemo(() => {
+    return [...AI_MODELS, ...customModels]
+  }, [customModels])
 
   return (
     <div className="flex items-center gap-2">
@@ -518,6 +526,10 @@ const PureChatModelDropdown = () => {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent className={cn("min-w-[10rem]", "border-border", "bg-popover")}>
+          {/* Standard Models */}
+          <DropdownMenuItem disabled className="text-xs text-muted-foreground">
+            Standard Models
+          </DropdownMenuItem>
           {AI_MODELS.map((model) => {
             const isEnabled = isModelEnabled(model)
             const modelIcon = getModelIcon(model)
@@ -536,6 +548,32 @@ const PureChatModelDropdown = () => {
               </DropdownMenuItem>
             )
           })}
+
+          {/* Ollama Models */}
+          {customModels.length > 0 && (
+            <>
+              <DropdownMenuItem disabled className="text-xs text-muted-foreground mt-2">
+                Ollama Models
+              </DropdownMenuItem>
+              {customModels.map((model) => {
+                const modelName = model.replace("ollama:", "")
+                const modelIcon = getModelIcon(model)
+                return (
+                  <DropdownMenuItem
+                    key={model}
+                    onSelect={() => setModel(model)}
+                    className={cn("flex items-center justify-between gap-2", "cursor-pointer")}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span>{modelName}</span>
+                      {modelIcon}
+                    </div>
+                    {selectedModel === model && <Check className="w-4 h-4 text-blue-500" aria-label="Selected" />}
+                  </DropdownMenuItem>
+                )
+              })}
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

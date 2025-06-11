@@ -14,6 +14,8 @@ import CodeConverter from "@/frontend/components/CodeConverter"
 import { cn } from "@/lib/utils"
 import { useCodeConversions } from "@/frontend/hooks/useCodeConversion"
 import { getShikiLanguage } from "@/lib/language-mapping"
+import katex from 'katex'
+import { InlineMath } from './InlineMath'
 
 // Import KaTeX CSS
 import "katex/dist/katex.min.css"
@@ -43,6 +45,20 @@ interface MarkdownProps {
 const components: Components = {
   code: CodeBlock as Components["code"],
   pre: ({ children }) => <>{children}</>,
+}
+
+type MathComponentProps = {
+  value: string;
+}
+
+type ExtendedCodeProps = CodeComponentProps & {
+  inline?: boolean;
+  node?: any;
+}
+
+type ExtendedComponents = Components & {
+  math: React.ComponentType<MathComponentProps>;
+  inlineMath: React.ComponentType<MathComponentProps>;
 }
 
 function CodeBlock({ children, className, ...props }: CodeComponentProps) {
@@ -243,6 +259,26 @@ function parseMarkdownIntoBlocks(markdown: string): string[] {
 }
 
 function PureMarkdownRendererBlock({ content }: { content: string }) {
+  const renderMath = (tex: string, displayMode: boolean) => {
+    try {
+      return katex.renderToString(tex, {
+        displayMode,
+        throwOnError: false,
+        output: 'html',
+        strict: false,
+        trust: true,
+      });
+    } catch (error) {
+      console.error('KaTeX error:', error);
+      return tex;
+    }
+  };
+
+  // Pre-process content to ensure proper math formatting
+  const processedContent = content
+    .replace(/\\\((.*?)\\\)/g, '$$$1$$')  // Convert \(...\) to $...$ for inline math
+    .replace(/\$\$([\s\S]*?)\$\$/g, (_, tex) => `\n\n$$${tex.trim()}$$\n\n`); // Add newlines around display math
+
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkMath]}
@@ -254,6 +290,12 @@ function PureMarkdownRendererBlock({ content }: { content: string }) {
             trust: true,
             throwOnError: false,
             errorColor: '#cc0000',
+            globalGroup: true,
+            fleqn: false,
+            leqno: false,
+            minRuleThickness: 0.05,
+            maxSize: 10,
+            maxExpand: 1000,
             macros: {
               "\\RR": "\\mathbb{R}",
               "\\ZZ": "\\mathbb{Z}",
@@ -264,11 +306,41 @@ function PureMarkdownRendererBlock({ content }: { content: string }) {
           },
         ],
       ]}
-      components={components}
+      components={{
+        ...components,
+        code: ({ node, inline, className, children, ...props }: ExtendedCodeProps) => {
+          const match = /language-(\w+)/.exec(className || '');
+          const isDisplayMath = !inline && !match && String(children).startsWith('$$');
+          
+          if (isDisplayMath) {
+            const mathContent = String(children).slice(2, -2).trim();
+            return (
+              <div className="math-wrapper">
+                <div
+                  className="katex-display"
+                  dangerouslySetInnerHTML={{
+                    __html: renderMath(mathContent, true),
+                  }}
+                />
+              </div>
+            );
+          }
+          
+          return <CodeBlock className={className} {...props}>{children}</CodeBlock>;
+        },
+        inlineMath: ({ value }: MathComponentProps) => (
+          <span
+            className="katex-inline"
+            dangerouslySetInnerHTML={{
+              __html: renderMath(value, false),
+            }}
+          />
+        ),
+      } as ExtendedComponents}
     >
-      {content}
+      {processedContent}
     </ReactMarkdown>
-  )
+  );
 }
 
 const MarkdownRendererBlock = memo(PureMarkdownRendererBlock, (prevProps, nextProps) => {

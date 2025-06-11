@@ -180,7 +180,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Unsupported model provider" }, { status: 400 })
     }
 
-    const threadId = req.nextUrl.searchParams.get("threadId")
+    const threadId = req.nextUrl.searchParams.get("threadId") as string
     const aiMessageId = uuidv4()
 
     // Process messages - create AI-specific content with file data
@@ -329,18 +329,21 @@ You can use rich markdown formatting in your responses:
 - Horizontal rules using ---
 
 MATHEMATICAL NOTATION:
-For mathematical expressions, use LaTeX notation with double dollar signs for display math:
-- For inline math, use: $$x^2 + y^2 = z^2$$
-- For display math (centered on its own line), use: $$\\int_0^1 x^2 dx = \\frac{1}{3}$$
-- Always use double dollar signs ($$) for both inline and display math
+For mathematical expressions, use LaTeX notation:
+- For inline math, use single dollar signs: $x^2 + y^2 = z^2$
+- For display math (centered on its own line), use double dollar signs: $$\\int_0^1 x^2 dx$$
 - Escape backslashes in LaTeX commands: \\alpha instead of \alpha
 - For complex equations, prefer display math
 - Examples:
-  - Fractions: $$\\frac{a}{b}$$
-  - Integrals: $$\\int_a^b f(x) dx$$
-  - Summations: $$\\sum_{i=1}^n i^2$$
-  - Limits: $$\\lim_{x \\to 0} \\frac{\\sin(x)}{x}$$
-  - Matrices: $$\\begin{bmatrix} a & b \\\\ c & d \\end{bmatrix}$$
+  - Inline fraction: $\\frac{a}{b}$
+  - Display fraction: $$\\frac{a}{b}$$
+  - Inline integral: $\\int_a^b f(x) dx$
+  - Display integral: $$\\int_a^b f(x) dx$$
+  - Inline summation: $\\sum_{i=1}^n i^2$
+  - Display summation: $$\\sum_{i=1}^n i^2$$
+  - Inline limit: $\\lim_{x \\to 0} \\frac{\\sin(x)}{x}$
+  - Display limit: $$\\lim_{x \\to 0} \\frac{\\sin(x)}{x}$$
+  - Display matrix: $$\\begin{bmatrix} a & b \\\\ c & d \\end{bmatrix}$$
 
 For code-related questions:
 - Always use appropriate syntax highlighting in code blocks
@@ -418,33 +421,76 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
 
     console.log(`🦙 Handling Ollama chat with model: ${actualModel}`)
 
+    // Get user from auth token
+    const authHeader = headersList.get("authorization")
+    if (!authHeader?.startsWith("Bearer ")) {
+      return NextResponse.json({ error: "Authentication required" }, { status: 401 })
+    }
+
+    const token = authHeader.substring(7)
+    const {
+      data: { user },
+      error: authError,
+    } = await supabaseServer.auth.getUser(token)
+
+    if (authError || !user) {
+      return NextResponse.json({ error: "Invalid authentication token" }, { status: 401 })
+    }
+
+    // Add system message with formatting instructions
+    const systemMessage = {
+      role: "system",
+      content: `You are a helpful AI assistant. When using mathematical notation:
+- Always use double dollar signs ($$) for both inline and display math
+- Escape backslashes in LaTeX commands: \\alpha instead of \alpha
+- For complex equations, prefer display math
+Examples:
+- Fractions: $$\\frac{a}{b}$$
+- Integrals: $$\\int_a^b f(x) dx$$
+- Summations: $$\\sum_{i=1}^n i^2$$
+- Limits: $$\\lim_{x \\to 0} \\frac{\\sin(x)}{x}$$
+- Matrices: $$\\begin{bmatrix} a & b \\\\ c & d \\end{bmatrix}$$`,
+    }
+
+    // Extract thread ID from URL query parameters
+    const threadId = req.nextUrl.searchParams.get("threadId") as string
+    const messageId = crypto.randomUUID() // Generate a new message ID
+
+    if (!threadId) {
+      console.error("❌ Missing threadId in request")
+      return NextResponse.json({ error: "Missing threadId" }, { status: 400 })
+    }
+
     // Process messages for Ollama - also clean format
-    const ollamaMessages = messages.map((msg: any) => {
-      let content = typeof msg.content === "string" ? msg.content : ""
+    const ollamaMessages = [
+      systemMessage,
+      ...messages.map((msg: any) => {
+        let content = typeof msg.content === "string" ? msg.content : ""
 
-      // Handle file attachments for Ollama too
-      if (msg.parts) {
-        const fileAttachmentPart = msg.parts.find((part: any) => part.type === "file_attachments")
-        if (fileAttachmentPart?.attachments) {
-          if (content) content += "\n\n"
-          content += "[SYSTEM: Files shared by user]\n\n"
+        // Handle file attachments for Ollama too
+        if (msg.parts) {
+          const fileAttachmentPart = msg.parts.find((part: any) => part.type === "file_attachments")
+          if (fileAttachmentPart?.attachments) {
+            if (content) content += "\n\n"
+            content += "[SYSTEM: Files shared by user]\n\n"
 
-          for (const attachment of fileAttachmentPart.attachments) {
-            content += `**File: ${attachment.fileName}**\n`
-            if (attachment.content) {
-              const fileExtension = attachment.fileName.split(".").pop() || ""
-              content += `\`\`\`${fileExtension}\n${attachment.content}\n\`\`\`\n\n`
+            for (const attachment of fileAttachmentPart.attachments) {
+              content += `**File: ${attachment.fileName}**\n`
+              if (attachment.content) {
+                const fileExtension = attachment.fileName.split(".").pop() || ""
+                content += `\`\`\`${fileExtension}\n${attachment.content}\n\`\`\`\n\n`
+              }
             }
+            content += "[END OF FILES]\n"
           }
-          content += "[END OF FILES]\n"
         }
-      }
 
-      return {
-        role: msg.role,
-        content: content,
-      }
-    })
+        return {
+          role: msg.role,
+          content: content,
+        }
+      }),
+    ]
 
     const response = await fetch(`${ollamaBaseUrl}/api/chat`, {
       method: "POST",
@@ -461,6 +507,9 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
       return NextResponse.json({ error: `Ollama API error: ${response.statusText}` }, { status: response.status })
     }
 
+    // Variable to accumulate the full response
+    let fullResponse = ""
+
     const readable = new ReadableStream({
       async start(controller) {
         const reader = response.body?.getReader()
@@ -472,7 +521,38 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
         try {
           while (true) {
             const { done, value } = await reader.read()
-            if (done) break
+            if (done) {
+              // Save the complete message to the database
+              if (threadId && fullResponse) {
+                const aiMessage = {
+                  id: messageId,
+                  thread_id: threadId,
+                  user_id: user.id,
+                  parts: [{ type: "text", text: fullResponse }],
+                  content: fullResponse,
+                  role: "assistant" as const,
+                  created_at: new Date().toISOString(),
+                }
+
+                const { error } = await supabaseServer
+                  .from("messages")
+                  .upsert(aiMessage, { onConflict: "id", ignoreDuplicates: false })
+
+                if (error) {
+                  console.error("❌ Failed to save Ollama message:", error)
+                } else {
+                  console.log("✅ Ollama message saved successfully")
+                }
+
+                // Update thread timestamp
+                await supabaseServer
+                  .from("threads")
+                  .update({ last_message_at: new Date().toISOString() })
+                  .eq("id", threadId)
+                  .eq("user_id", user.id)
+              }
+              break
+            }
 
             const text = new TextDecoder().decode(value)
             const lines = text.split("\n").filter(Boolean)
@@ -483,6 +563,8 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
                 if (data.done) {
                   controller.enqueue(new TextEncoder().encode(`0:""\n`))
                 } else if (data.message?.content) {
+                  // Accumulate the response
+                  fullResponse += data.message.content
                   controller.enqueue(new TextEncoder().encode(`0:${JSON.stringify(data.message.content)}\n`))
                 }
               } catch (parseError) {

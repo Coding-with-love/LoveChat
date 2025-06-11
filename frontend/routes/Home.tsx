@@ -6,10 +6,13 @@ import { v4 as uuidv4 } from "uuid"
 import { useAPIKeyStore } from "../stores/APIKeyStore"
 import { useModelStore } from "../stores/ModelStore"
 import { useAuth } from "@/frontend/components/AuthProvider"
+import { useMemo } from "react"
 
 export default function Home() {
   const { user } = useAuth()
-  const hasRequiredKeys = useAPIKeyStore((state) => state.hasRequiredKeys())
+  const selectedModel = useModelStore((state) => state.selectedModel)
+  const modelConfig = useMemo(() => useModelStore.getState().getModelConfig(), [selectedModel])
+  const hasRequiredKeys = useAPIKeyStore((state) => state.hasRequiredKeys(modelConfig.provider))
 
   const isAPIKeysHydrated = useAPIKeyStore.persist?.hasHydrated()
   const isModelStoreHydrated = useModelStore.persist?.hasHydrated()

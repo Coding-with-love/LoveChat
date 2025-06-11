@@ -7,7 +7,7 @@ interface APIKeyStore {
   setKey: (provider: string, key: string) => void
   removeKey: (provider: string) => void
   hasKey: (provider: string) => boolean
-  hasRequiredKeys: () => boolean
+  hasRequiredKeys: (provider?: string) => boolean
   getAllKeys: () => Record<string, string>
   debug: () => void
 }
@@ -63,12 +63,15 @@ export const useAPIKeyStore = create<APIKeyStore>()(
         console.log("🔍 Checking if key exists for provider:", provider, "→", normalizedProvider, "Has key:", hasKey)
         return hasKey
       },
-      hasRequiredKeys: () => {
+      hasRequiredKeys: (provider?: string) => {
         const state = get()
-        const keys = Object.keys(state.keys)
-        const hasAnyKey = keys.length > 0
-        console.log("🔍 Checking if any API keys exist:", hasAnyKey, "Keys:", keys)
-        return hasAnyKey
+        if (!provider || provider === "ollama") {
+          return true
+        }
+        const normalizedProvider = provider.toLowerCase()
+        const hasKey = !!state.keys[normalizedProvider]
+        console.log("🔍 Checking if required API key exists for provider:", provider, "Has key:", hasKey)
+        return hasKey
       },
       getAllKeys: () => {
         const state = get()

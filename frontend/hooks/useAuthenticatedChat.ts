@@ -61,7 +61,8 @@ export function useAuthenticatedChat({
 
         // Add model-specific API key
         const apiKey = getKey(modelConfig.provider)
-        if (!apiKey) {
+        // Only require API key for providers that need it
+        if (modelConfig.provider !== "ollama" && !apiKey) {
           throw new Error(`${modelConfig.provider} API key is required`)
         }
 

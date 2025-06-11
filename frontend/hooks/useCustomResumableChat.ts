@@ -11,6 +11,8 @@ import { getActiveStreamsForThread, resumeStream } from "./resumable-streams-cli
 import type { UIMessage } from "ai"
 import { toast } from "sonner"
 import { v4 as uuidv4 } from "uuid"
+import { createMessage } from "@/lib/supabase/queries"
+import { getMessageParts } from "@ai-sdk/ui-utils"
 
 interface UseCustomResumableChatProps {
   threadId: string
@@ -53,8 +55,27 @@ export function useCustomResumableChat({
     id: threadId,
     initialMessages,
     experimental_throttle: 50,
-    onFinish: (message) => {
+    onFinish: async (message) => {
       console.log("🏁 Chat finished:", message.id)
+      // Save Ollama assistant message after normal chat
+      const { getModelConfig } = useModelStore.getState()
+      const modelConfig = getModelConfig()
+      if (modelConfig.provider === "ollama" && message.role === "assistant") {
+        try {
+          const parts = message.parts ?? getMessageParts(message) ?? [{ type: 'text', text: message.content || '' }]
+          const messageToSave: UIMessage = {
+            id: message.id || uuidv4(),
+            role: "assistant",
+            content: message.content || "",
+            createdAt: message.createdAt || new Date(),
+            parts: parts as UIMessage["parts"],
+          }
+          await createMessage(threadId, messageToSave)
+          console.log("✅ Ollama assistant message saved to DB (onFinish)")
+        } catch (e) {
+          console.error("❌ Failed to save Ollama assistant message to DB (onFinish):", e)
+        }
+      }
       onFinish?.(message)
     },
     fetch: async (url, options) => {
@@ -66,7 +87,8 @@ export function useCustomResumableChat({
         const apiKey = getKey(modelConfig.provider)
         console.log("🔑 API key found:", !!apiKey, "Length:", apiKey?.length || 0)
 
-        if (!apiKey) {
+        // Only require API key for providers that need it
+        if (modelConfig.provider !== "ollama" && !apiKey) {
           throw new Error(`${modelConfig.provider} API key is required`)
         }
 
@@ -288,6 +310,24 @@ export function useCustomResumableChat({
           const finalMessage = {
             ...targetMessage,
             content: fullContent,
+          }
+
+          // Save assistant message to the database
+          if (finalMessage.role === "assistant") {
+            try {
+              const parts = finalMessage.parts ?? getMessageParts(finalMessage) ?? [{ type: 'text', text: finalMessage.content || '' }]
+              const messageToSave: UIMessage = {
+                id: finalMessage.id || uuidv4(),
+                role: "assistant",
+                content: finalMessage.content || "",
+                createdAt: finalMessage.createdAt || new Date(),
+                parts: parts as UIMessage["parts"],
+              }
+              await createMessage(threadId, messageToSave)
+              console.log("✅ Assistant message saved to DB")
+            } catch (e) {
+              console.error("❌ Failed to save assistant message to DB:", e)
+            }
           }
 
           // Update both local and chat messages

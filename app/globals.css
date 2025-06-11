@@ -175,59 +175,60 @@
   @apply !rounded-none;
 }
 
-/* KaTeX Math Rendering Styles */
-.katex {
-  font-size: 1.1em !important;
-  color: inherit !important;
+/* KaTeX Math Styling */
+.prose, 
+.markdown,
+[class*="content"] {
+  --math-display-size: 1.4em;
 }
 
-.katex-display {
-  margin: 1.5em 0 !important;
-  text-align: center !important;
+/* Inline math styling */
+.katex-inline {
+  font-size: inherit !important;
+  line-height: inherit !important;
+  vertical-align: -0.25em;
 }
 
-.katex-display > .katex {
-  display: inline-block !important;
-  white-space: nowrap !important;
-}
-
-/* Ensure math renders properly in prose */
-.prose .katex {
+.katex-inline > .katex {
   font-size: inherit !important;
 }
 
-.prose .katex-display {
-  margin: 1.5rem 0 !important;
+/* Display math styling */
+.math-display-wrapper {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  margin: 1.5em 0;
+  overflow-x: auto;
 }
 
-/* Dark mode math support */
+.katex-display {
+  text-align: center;
+  max-width: fit-content;
+  margin: 0 auto;
+  font-size: var(--math-display-size) !important;
+}
+
+/* Ensure display math is centered in all contexts */
+.prose .katex-display,
+.markdown .katex-display,
+[class*="content"] .katex-display {
+  text-align: center !important;
+  margin: 0 auto !important;
+  font-size: var(--math-display-size) !important;
+}
+
+/* Dark mode support */
 .dark .katex {
-  color: rgb(229, 231, 235) !important;
-}
-
-.dark .katex .mord {
-  color: rgb(229, 231, 235) !important;
-}
-
-.dark .katex .mbin,
-.dark .katex .mrel {
-  color: rgb(156, 163, 175) !important;
-}
-
-.dark .katex .mop {
-  color: rgb(59, 130, 246) !important;
-}
-
-/* Fix math overflow */
-.katex-html {
-  overflow-x: auto !important;
-  overflow-y: hidden !important;
+  color: rgb(229, 231, 235);
 }
 
 /* Mobile responsiveness */
 @media (max-width: 640px) {
-  .katex-display {
-    font-size: 0.9em !important;
+  .prose, 
+  .markdown,
+  [class*="content"] {
+    --math-display-size: 1.2em;
   }
 }
 
