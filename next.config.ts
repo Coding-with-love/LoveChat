@@ -5,8 +5,6 @@ const nextConfig: NextConfig = {
     domains: ["bczxumlinvewyplybksk.supabase.co"],
   },
   serverExternalPackages: ["pdf-parse"],
-  // disable eslint
-
   eslint: {
     ignoreDuringBuilds: true,
   },
