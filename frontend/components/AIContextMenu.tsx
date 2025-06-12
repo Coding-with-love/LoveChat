@@ -1,23 +1,18 @@
 "use client"
 
-import type React from "react"
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "./ui/button"
-import { Card, CardContent } from "./ui/card"
-import { Separator } from "./ui/separator"
-import { MessageSquare, Languages, RefreshCw, FileText, X, Loader2 } from "lucide-react"
-import LanguageSelectionDialog from "./LanguageSelectionDialog"
+import { Card } from "./ui/card"
+import { Loader2, Languages, RefreshCw, FileText, MessageSquare } from 'lucide-react'
+import { useLanguageDialogStore } from "@/frontend/stores/LanguageDialogStore"
+import InlineReplacement from "./InlineReplacement"
 
 interface AIContextMenuProps {
   selectedText: string
   position: { x: number; y: number }
   onClose: () => void
-  onAction: (
-    action: "explain" | "translate" | "rephrase" | "summarize",
-    text: string,
-    targetLanguage?: string,
-  ) => Promise<void>
-  isProcessing?: boolean
+  onAction: (action: "explain" | "translate" | "rephrase" | "summarize", text: string, targetLanguage?: string) => void
+  isProcessing: boolean
 }
 
 const AIContextMenu: React.FC<AIContextMenuProps> = ({
@@ -25,131 +20,169 @@ const AIContextMenu: React.FC<AIContextMenuProps> = ({
   position,
   onClose,
   onAction,
-  isProcessing = false,
+  isProcessing,
 }) => {
-  const [showLanguageDialog, setShowLanguageDialog] = useState(false)
+  const { openLanguageDialog } = useLanguageDialogStore()
+  const [showReplacement, setShowReplacement] = useState(false)
+  const [replacementText, setReplacementText] = useState("")
+  const [isReplacing, setIsReplacing] = useState(false)
+  const [replacementPosition, setReplacementPosition] = useState({ x: 0, y: 0 })
+  const menuRef = useRef<HTMLDivElement>(null)
 
-  const handleAction = async (action: "explain" | "translate" | "rephrase" | "summarize") => {
-    console.log("🎯 AI Action clicked:", action)
+  // Handle clicks outside the menu
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        if (!showReplacement) {
+          onClose()
+        }
+      }
+    }
 
-    if (action === "translate") {
-      console.log("🌍 Opening language selection dialog")
-      setShowLanguageDialog(true)
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside)
+    }
+  }, [onClose, showReplacement])
+
+  // Handle escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose()
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown)
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown)
+    }
+  }, [onClose])
+
+  const handleTranslate = () => {
+    console.log("🌍 Translate button clicked!")
+    openLanguageDialog(selectedText, (language) => {
+      console.log(`🌍 Selected language: ${language}`)
+      onAction("translate", selectedText, language)
+    })
+  }
+
+  const handleRephrase = async () => {
+    console.log("🔄 Rephrase button clicked!")
+    setIsReplacing(true)
+    
+    // Calculate position for the replacement dialog
+    // Use selection position if available
+    const selection = window.getSelection()
+    if (selection && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0)
+      const rect = range.getBoundingClientRect()
+      setReplacementPosition({
+        x: rect.left,
+        y: rect.bottom + 10
+      })
     } else {
-      await onAction(action, selectedText)
+      // Fallback to context menu position
+      setReplacementPosition({
+        x: position.x,
+        y: position.y + 50
+      })
+    }
+    
+    try {
+      // Call the action handler with a callback to get the result
+      onAction("rephrase", selectedText, undefined)
+    } catch (error) {
+      console.error("Failed to rephrase:", error)
+      setIsReplacing(false)
     }
   }
 
-  const handleLanguageSelect = async (language: string) => {
-    console.log("🌍 Language selected for translation:", language)
-    setShowLanguageDialog(false)
-    await onAction("translate", selectedText, language)
+  if (showReplacement) {
+    return (
+      <InlineReplacement
+        newText={replacementText}
+        onAccept={() => {
+          // Replace the selected text
+          const selection = window.getSelection()
+          if (selection && selection.rangeCount > 0) {
+            const range = selection.getRangeAt(0)
+            range.deleteContents()
+            range.insertNode(document.createTextNode(replacementText))
+            selection.removeAllRanges()
+          }
+          setShowReplacement(false)
+          onClose()
+        }}
+        onReject={() => {
+          setShowReplacement(false)
+          onClose()
+        }}
+        onRetry={async () => {
+          setIsReplacing(true)
+          try {
+            onAction("rephrase", selectedText, undefined)
+          } catch (error) {
+            console.error("Failed to retry rephrase:", error)
+            setIsReplacing(false)
+          }
+        }}
+        isProcessing={isReplacing}
+      />
+    )
   }
-
-  const handleLanguageDialogClose = () => {
-    console.log("🌍 Language dialog closed")
-    setShowLanguageDialog(false)
-  }
-
-  console.log("🎯 AIContextMenu render - showLanguageDialog:", showLanguageDialog)
 
   return (
-    <>
-      {/* Backdrop to close menu */}
-      <div className="fixed inset-0 z-40" onClick={onClose} style={{ backgroundColor: "transparent" }} />
-
-      {/* Context Menu */}
-      <Card
-        className="fixed z-50 w-64 shadow-lg border"
-        style={{
-          left: position.x,
-          top: position.y,
-        }}
-      >
-        <CardContent className="p-3">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-medium text-muted-foreground">AI Actions</span>
-            <Button variant="ghost" size="sm" onClick={onClose} className="h-6 w-6 p-0">
-              <X className="h-3 w-3" />
-            </Button>
-          </div>
-
-          <div className="space-y-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start h-8"
-              onClick={() => handleAction("explain")}
-              disabled={isProcessing}
-            >
-              {isProcessing ? (
-                <Loader2 className="h-3 w-3 mr-2 animate-spin" />
-              ) : (
-                <MessageSquare className="h-3 w-3 mr-2" />
-              )}
-              Explain
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start h-8"
-              onClick={() => handleAction("translate")}
-              disabled={isProcessing}
-            >
-              {isProcessing ? (
-                <Loader2 className="h-3 w-3 mr-2 animate-spin" />
-              ) : (
-                <Languages className="h-3 w-3 mr-2" />
-              )}
-              Translate
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start h-8"
-              onClick={() => handleAction("rephrase")}
-              disabled={isProcessing}
-            >
-              {isProcessing ? (
-                <Loader2 className="h-3 w-3 mr-2 animate-spin" />
-              ) : (
-                <RefreshCw className="h-3 w-3 mr-2" />
-              )}
-              Rephrase
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start h-8"
-              onClick={() => handleAction("summarize")}
-              disabled={isProcessing}
-            >
-              {isProcessing ? <Loader2 className="h-3 w-3 mr-2 animate-spin" /> : <FileText className="h-3 w-3 mr-2" />}
-              Summarize
-            </Button>
-          </div>
-
-          <Separator className="my-2" />
-
-          <div className="text-xs text-muted-foreground">Selected: "{selectedText.slice(0, 30)}..."</div>
-        </CardContent>
-      </Card>
-
-      {/* Language Selection Dialog */}
-      {console.log("🌍 Rendering LanguageSelectionDialog with props:", {
-        isOpen: showLanguageDialog,
-        onClose: handleLanguageDialogClose,
-        onSelect: handleLanguageSelect,
-      })}
-      <LanguageSelectionDialog
-        isOpen={showLanguageDialog}
-        onClose={handleLanguageDialogClose}
-        onSelect={handleLanguageSelect}
-      />
-    </>
+    <Card
+      ref={menuRef}
+      className="fixed z-50 p-2 shadow-lg border"
+      style={{
+        left: position.x,
+        top: position.y,
+      }}
+    >
+      <div className="flex flex-col gap-1">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="justify-start"
+          onClick={() => onAction("explain", selectedText)}
+          disabled={isProcessing}
+        >
+          {isProcessing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <FileText className="h-4 w-4 mr-2" />}
+          Explain
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="justify-start"
+          onClick={handleTranslate}
+          disabled={isProcessing}
+        >
+          {isProcessing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Languages className="h-4 w-4 mr-2" />}
+          Translate
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="justify-start"
+          onClick={handleRephrase}
+          disabled={isProcessing}
+        >
+          {isProcessing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+          Rephrase
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="justify-start"
+          onClick={() => onAction("summarize", selectedText)}
+          disabled={isProcessing}
+        >
+          {isProcessing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <MessageSquare className="h-4 w-4 mr-2" />}
+          Summarize
+        </Button>
+      </div>
+    </Card>
   )
 }
 

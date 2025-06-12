@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { memo, useCallback, useMemo, useState, useEffect } from "react"
+import { memo, useCallback, useMemo, useState, useEffect, useRef } from "react"
 import { Textarea } from "@/frontend/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import { Button } from "@/frontend/components/ui/button"
@@ -43,6 +43,8 @@ import { EditTemplateDialog } from "./EditTemplateDialog"
 import type { Persona } from "@/lib/supabase/types"
 import type { PromptTemplate } from "@/frontend/stores/PersonaStore"
 import { Badge } from "./ui/badge"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "./ui/alert-dialog"
+import { usePersonas } from "@/frontend/hooks/usePersonas"
 
 interface ChatMessagePart {
   type: "text" | "file_attachments"
@@ -95,6 +97,12 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
   const [editTemplateOpen, setEditTemplateOpen] = useState(false)
   const [editingPersona, setEditingPersona] = useState<Persona | null>(null)
   const [editingTemplate, setEditingTemplate] = useState<PromptTemplate | null>(null)
+  
+  // Delete confirmation states
+  const [deletePersonaOpen, setDeletePersonaOpen] = useState(false)
+  const [deleteTemplateOpen, setDeleteTemplateOpen] = useState(false)
+  const [deletingPersona, setDeletingPersona] = useState<Persona | null>(null)
+  const [deletingTemplate, setDeletingTemplate] = useState<PromptTemplate | null>(null)
 
   // Ensure the selected model is valid on component mount
   useEffect(() => {
@@ -161,6 +169,7 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
   }
 
   const { currentPersona } = useThreadPersona(threadId)
+  const { deletePersona, deleteTemplate } = usePersonas()
 
   const handleEditPersona = (persona: Persona) => {
     setEditingPersona(persona)
@@ -186,6 +195,40 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
     setTimeout(() => {
       textareaRef.current?.focus()
     }, 100)
+  }
+
+  const handleDeletePersona = (persona: Persona) => {
+    setDeletingPersona(persona)
+    setDeletePersonaOpen(true)
+  }
+
+  const handleDeleteTemplate = (template: PromptTemplate) => {
+    setDeletingTemplate(template)
+    setDeleteTemplateOpen(true)
+  }
+
+  const confirmDeletePersona = async () => {
+    if (!deletingPersona) return
+    
+    try {
+      await deletePersona(deletingPersona.id)
+      setDeletePersonaOpen(false)
+      setDeletingPersona(null)
+    } catch (error) {
+      // Error handling is done in the deletePersona function
+    }
+  }
+
+  const confirmDeleteTemplate = async () => {
+    if (!deletingTemplate) return
+    
+    try {
+      await deleteTemplate(deletingTemplate.id)
+      setDeleteTemplateOpen(false)
+      setDeletingTemplate(null)
+    } catch (error) {
+      // Error handling is done in the deleteTemplate function
+    }
   }
 
   const handleSubmit = useCallback(async () => {
@@ -471,6 +514,8 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
                         onCreateTemplate={() => setCreateTemplateOpen(true)}
                         onEditPersona={handleEditPersona}
                         onEditTemplate={handleEditTemplate}
+                        onDeletePersona={handleDeletePersona}
+                        onDeleteTemplate={handleDeleteTemplate}
                       />
                     </PopoverContent>
                   </Popover>
@@ -595,6 +640,41 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
       />
       <EditPersonaDialog open={editPersonaOpen} onOpenChange={setEditPersonaOpen} persona={editingPersona} />
       <EditTemplateDialog open={editTemplateOpen} onOpenChange={setEditTemplateOpen} template={editingTemplate} />
+
+      {/* Delete Confirmation Dialogs */}
+      <AlertDialog open={deletePersonaOpen} onOpenChange={setDeletePersonaOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Persona</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{deletingPersona?.name}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeletePersona} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={deleteTemplateOpen} onOpenChange={setDeleteTemplateOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Template</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{deletingTemplate?.title}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteTemplate} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

@@ -77,8 +77,20 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
       const parts = message.parts ??
         getMessageParts(message) ?? [{ type: "text" as const, text: message.content || "" }]
 
-      // Extract reasoning if available
+      // Extract reasoning if available from parts or content
       const reasoningPart = parts.find((part) => part.type === "reasoning")
+      let reasoning = reasoningPart?.reasoning
+
+      // Also check if thinking content is embedded in the text content
+      const textContent = message.content || ""
+      if (!reasoning && textContent.includes("<think>") && textContent.includes("</think>")) {
+        console.log("🧠 Extracting thinking content from message content")
+        const thinkMatch = textContent.match(/<think>([\s\S]*?)<\/think>/)
+        if (thinkMatch) {
+          reasoning = thinkMatch[1].trim()
+          console.log("🧠 Extracted reasoning from content:", reasoning.substring(0, 100) + "...")
+        }
+      }
 
       const uiMessage: ExtendedUIMessage = {
         id: message.id || crypto.randomUUID(),
@@ -87,7 +99,7 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
         createdAt: message.createdAt || new Date(),
         parts: parts as UIMessage["parts"],
         model: selectedModel,
-        reasoning: reasoningPart?.reasoning,
+        reasoning: reasoning,
       }
       return uiMessage
     },
@@ -110,12 +122,17 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
   // Handle thinking state during streaming
   useEffect(() => {
     if (status === "streaming" && supportsThinking) {
-      // Show thinking indicator at the start of streaming
       const lastMessage = messages[messages.length - 1]
-      const hasContent = lastMessage?.content?.trim().length > 0
 
-      if (!hasContent) {
-        setIsThinking(true)
+      // Show thinking indicator if:
+      // 1. We're streaming
+      // 2. It's an assistant message
+      // 3. The content is empty or only contains thinking tags
+      if (lastMessage?.role === "assistant") {
+        const content = lastMessage.content || ""
+        const hasVisibleContent = content.replace(/<think>[\s\S]*?<\/think>/g, "").trim().length > 0
+
+        setIsThinking(!hasVisibleContent)
       } else {
         setIsThinking(false)
       }
@@ -351,7 +368,7 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
 
   return (
     <div className="relative w-full">
-      <ChatSidebarTrigger />
+      <SidebarTrigger />
 
       {/* Global Resuming Indicator */}
       <GlobalResumingIndicator isResuming={isResuming} resumeProgress={resumeProgress} threadTitle="Current Chat" />
@@ -400,10 +417,4 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
       )}
     </div>
   )
-}
-
-const ChatSidebarTrigger = () => {
-  const { state } = useSidebar()
-
-  return <SidebarTrigger className={`fixed left-4 bottom-4 z-50 ${state === "expanded" ? "md:hidden" : ""}`} />
 }

@@ -16,7 +16,7 @@ import { useKeyboardShortcuts } from "@/frontend/hooks/useKeyboardShortcuts"
 import { useTextSelection } from "@/frontend/hooks/useTextSelection"
 import { useAIActions } from "@/frontend/hooks/useAIActions"
 import AIContextMenu from "./AIContextMenu"
-import { AIActionResultDialog } from "./AIActionResultDialog"
+import AIActionResultDialog from "./AIActionResultDialog"
 import { ThinkingToggle } from "./ThinkingToggle"
 import { ThinkingContent } from "./ThinkingContent"
 import { ThinkingIndicator } from "./ThinkingIndicator"
@@ -79,7 +79,7 @@ function PureMessage({
   useEffect(() => {
     if (isStreaming && isThinkingModel && message.role === "assistant") {
       // Show thinking indicator while streaming and no content yet
-      const hasContent = message.parts?.some(part => part.type === "text" && part.text.trim())
+      const hasContent = message.parts?.some((part) => part.type === "text" && part.text.trim())
       setIsCurrentlyThinking(!hasContent)
     } else {
       setIsCurrentlyThinking(false)
@@ -110,8 +110,18 @@ function PureMessage({
   // Check if this message used web search
   const usedWebSearch = sources.length > 0
 
-  // Extract reasoning from message
-  const reasoning = message.reasoning || message.parts?.find((part) => part.type === "reasoning")?.reasoning
+  // Extract reasoning from message - check multiple sources
+  const reasoning = message.reasoning || 
+  message.parts?.find((part) => part.type === "reasoning")?.reasoning ||
+  (() => {
+    // Also check if thinking content is embedded in text parts
+    const textPart = message.parts?.find((part) => part.type === "text")
+    if (textPart?.text?.includes('<think>') && textPart?.text?.includes('</think>')) {
+      const thinkMatch = textPart.text.match(/<think>([\s\S]*?)<\/think>/)
+      return thinkMatch ? thinkMatch[1].trim() : null
+    }
+    return null
+  })()
 
   // Filter out tool calls and other non-user-facing parts
   const displayParts =
@@ -225,6 +235,12 @@ function PureMessage({
         }
 
         if (type === "text") {
+          // Clean the text content by removing thinking tags
+          let cleanText = part.text
+          if (cleanText.includes('<think>') && cleanText.includes('</think>')) {
+            cleanText = cleanText.replace(/<think>[\s\S]*?<\/think>/g, '').trim()
+          }
+
           return message.role === "user" ? (
             <div
               key={key}
@@ -234,19 +250,19 @@ function PureMessage({
                 <MessageEditor
                   threadId={threadId}
                   message={message}
-                  content={part.text}
+                  content={cleanText}
                   setMessages={setMessages}
                   reload={reload}
                   setMode={setMode}
                   stop={stop}
                 />
               )}
-              {mode === "view" && <p className="whitespace-pre-wrap select-text">{part.text}</p>}
+              {mode === "view" && <p className="whitespace-pre-wrap select-text">{cleanText}</p>}
 
               {mode === "view" && (
                 <MessageControls
                   threadId={threadId}
-                  content={part.text}
+                  content={cleanText}
                   message={message}
                   setMode={setMode}
                   setMessages={setMessages}
@@ -273,10 +289,7 @@ function PureMessage({
 
               {/* Thinking Content - Show when expanded */}
               {message.role === "assistant" && reasoning && showThinking && (
-                <ThinkingContent
-                  reasoning={reasoning}
-                  isExpanded={showThinking}
-                />
+                <ThinkingContent reasoning={reasoning} isExpanded={showThinking} />
               )}
 
               <div
@@ -293,7 +306,7 @@ function PureMessage({
                 )}
               >
                 <MarkdownRenderer
-                  content={part.text}
+                  content={cleanText}
                   id={message.id}
                   threadId={threadId}
                   messageId={message.id}
@@ -307,7 +320,7 @@ function PureMessage({
               {!isStreaming && (
                 <MessageControls
                   threadId={threadId}
-                  content={part.text}
+                  content={cleanText}
                   message={message}
                   setMessages={setMessages}
                   reload={reload}
@@ -346,12 +359,7 @@ function PureMessage({
       )}
 
       {/* AI Action Result Dialog */}
-      <AIActionResultDialog 
-        isOpen={showAIResult} 
-        onClose={closeAIResult} 
-        result={aiResult} 
-        onRetry={retryAction} 
-      />
+      <AIActionResultDialog isOpen={showAIResult} onClose={closeAIResult} result={aiResult} onRetry={retryAction} />
     </div>
   )
 }

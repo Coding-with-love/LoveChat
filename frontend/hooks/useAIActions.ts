@@ -22,7 +22,12 @@ export function useAIActions() {
   const { getKey } = useAPIKeyStore()
 
   const processAction = useCallback(
-    async (action: "explain" | "translate" | "rephrase" | "summarize", text: string, targetLanguage?: string) => {
+    async (
+      action: "explain" | "translate" | "rephrase" | "summarize",
+      text: string,
+      targetLanguage?: string,
+      showDialog: boolean = true,
+    ): Promise<string | null> => {
       setIsProcessing(true)
 
       try {
@@ -81,8 +86,12 @@ export function useAIActions() {
           modelUsed: data.modelUsed || selectedModel,
         }
 
-        setResult(actionResult)
-        setShowResult(true)
+        if (showDialog) {
+          setResult(actionResult)
+          setShowResult(true)
+        }
+
+        return data.result
       } catch (error) {
         console.error("AI Action error:", error)
 
@@ -93,8 +102,12 @@ export function useAIActions() {
           error: error instanceof Error ? error.message : "Unknown error occurred",
         }
 
-        setResult(errorResult)
-        setShowResult(true)
+        if (showDialog) {
+          setResult(errorResult)
+          setShowResult(true)
+        }
+
+        return null
       } finally {
         setIsProcessing(false)
       }

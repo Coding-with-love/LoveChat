@@ -1,80 +1,79 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { getMessagesByThreadId } from "@/lib/supabase/queries"
-import { useAuth } from "@/frontend/components/AuthProvider"
-import { useSupabaseSubscription } from "./useSupabaseSubscription"
-import type { UIMessage } from "ai"
+import { supabase } from "@/lib/supabase/client"
+import type { Message } from "@/lib/supabase/types"
 
-interface DBMessage {
-  id: string
-  thread_id: string
-  user_id: string
-  parts: any
-  content: string
-  role: "user" | "assistant" | "system" | "data"
-  created_at: string
+interface UseMessagesWithRealtimeProps {
+  channelId: string
 }
 
-export function useMessagesWithRealtime(threadId: string) {
-  const { user } = useAuth()
-  const [messages, setMessages] = useState<DBMessage[]>([])
+const useMessagesWithRealtime = ({ channelId }: UseMessagesWithRealtimeProps) => {
+  const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Fetch initial messages
   useEffect(() => {
-    if (!user || !threadId) return
-
-    const fetchMessages = async () => {
+    const fetchInitialMessages = async () => {
+      setLoading(true)
       try {
-        setLoading(true)
-        setError(null)
-        const data = await getMessagesByThreadId(threadId)
-        setMessages(data)
-      } catch (err) {
-        console.error("Failed to fetch messages:", err)
-        setError(err instanceof Error ? err.message : "Failed to load messages")
+        const { data, error } = await supabase
+          .from("messages")
+          .select("*")
+          .eq("channel_id", channelId)
+          .order("created_at", { ascending: true })
+
+        if (error) {
+          setError(error.message)
+        } else {
+          setMessages(data || [])
+        }
+      } catch (err: any) {
+        setError(err.message)
       } finally {
         setLoading(false)
       }
     }
 
-    fetchMessages()
-  }, [threadId, user])
+    fetchInitialMessages()
+  }, [channelId])
 
-  // Set up real-time subscription for messages in this thread
-  useSupabaseSubscription({
-    table: "messages",
-    filter: `thread_id=eq.${threadId}`,
-    onInsert: (payload) => {
-      setMessages((prev) => [...prev, payload.new as DBMessage])
-    },
-    onUpdate: (payload) => {
-      setMessages((prev) =>
-        prev.map((message) => (message.id === payload.new.id ? (payload.new as DBMessage) : message)),
+  useEffect(() => {
+    const messagesSubscription = supabase
+      .channel(`channel_${channelId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "messages", filter: `channel_id=eq.${channelId}` },
+        (payload) => {
+          console.log("🔄 Real-time message update received:", {
+            eventType: payload.eventType,
+            messageId: payload.new?.id || payload.old?.id,
+            contentPreview: payload.new?.content?.substring(0, 100),
+          })
+
+          switch (payload.eventType) {
+            case "INSERT":
+              setMessages((prevMessages) => [...prevMessages, payload.new as Message])
+              break
+            case "UPDATE":
+              setMessages((prevMessages) =>
+                prevMessages.map((msg) => (msg.id === payload.new?.id ? { ...msg, ...payload.new } : msg)),
+              )
+              break
+            case "DELETE":
+              setMessages((prevMessages) => prevMessages.filter((msg) => msg.id !== payload.old?.id))
+              break
+          }
+        },
       )
-    },
-    onDelete: (payload) => {
-      setMessages((prev) => prev.filter((message) => message.id !== payload.old.id))
-    },
-  })
+      .subscribe()
 
-  const convertToUIMessages = (messages: DBMessage[]): UIMessage[] => {
-    return messages.map((message) => ({
-      id: message.id,
-      role: message.role,
-      parts: message.parts as UIMessage["parts"],
-      content: message.content || "",
-      createdAt: new Date(message.created_at),
-    }))
-  }
+    return () => {
+      supabase.removeChannel(messagesSubscription)
+    }
+  }, [channelId])
 
-  return {
-    messages,
-    uiMessages: convertToUIMessages(messages),
-    loading,
-    error,
-    setMessages,
-  }
+  return { messages, loading, error }
 }
+
+export default useMessagesWithRealtime

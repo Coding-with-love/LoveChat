@@ -830,13 +830,11 @@ export const setThreadPersona = async (threadId: string, personaId: string) => {
   if (threadCheckError && threadCheckError.code === "PGRST116") {
     // Thread doesn't exist, create it
     console.log("🔗 Thread doesn't exist, creating it before setting persona...")
-    const { error: createError } = await supabase
-      .from("threads")
-      .insert({
-        id: threadId,
-        title: "New Chat",
-        user_id: user.id,
-      })
+    const { error: createError } = await supabase.from("threads").insert({
+      id: threadId,
+      title: "New Chat",
+      user_id: user.id,
+    })
 
     if (createError) {
       console.error("❌ Failed to create thread:", createError)
@@ -849,11 +847,7 @@ export const setThreadPersona = async (threadId: string, personaId: string) => {
   }
 
   // First, delete any existing thread persona for this user and thread
-  await supabase
-    .from("thread_personas")
-    .delete()
-    .eq("thread_id", threadId)
-    .eq("user_id", user.id)
+  await supabase.from("thread_personas").delete().eq("thread_id", threadId).eq("user_id", user.id)
 
   // Then insert the new thread persona
   const { data, error } = await supabase
@@ -905,24 +899,16 @@ export const removeThreadPersona = async (threadId: string) => {
   } = await supabase.auth.getUser()
   if (!user) throw new Error("User not authenticated")
 
-  const { error } = await supabase
-    .from("thread_personas")
-    .delete()
-    .eq("thread_id", threadId)
-    .eq("user_id", user.id)
+  const { error } = await supabase.from("thread_personas").delete().eq("thread_id", threadId).eq("user_id", user.id)
 
   if (error) throw error
 }
 
 export const getUserProfile = async (userId: string) => {
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", userId)
-    .single()
+  const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single()
 
-  if (error) throw error
-  return data
+  if (error && error.code !== "PGRST116") throw error // PGRST116 is "not found"
+  return data || null // Explicitly return null if no data
 }
 
 export const updateUserProfile = async (updates: {
@@ -935,13 +921,154 @@ export const updateUserProfile = async (updates: {
   } = await supabase.auth.getUser()
   if (!user) throw new Error("User not authenticated")
 
-  const { data, error } = await supabase
-    .from("profiles")
-    .update(updates)
-    .eq("id", user.id)
-    .select()
-    .single()
+  const { data, error } = await supabase.from("profiles").update(updates).eq("id", user.id).select().single()
 
   if (error) throw error
   return data
+}
+
+// Function to update a message in the database
+export const updateMessageInDatabase = async (messageId: string, newContent: string): Promise<boolean> => {
+  console.log("🔄 updateMessageInDatabase called for message:", messageId)
+  console.log("📝 New content preview:", newContent.substring(0, 200))
+
+  try {
+    // Get current user
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      console.error("❌ User not authenticated:", authError)
+      return false
+    }
+
+    console.log("👤 User authenticated:", user.id)
+
+    // First, let's check what message we're trying to update
+    const { data: messageCheck, error: checkError } = await supabase
+      .from("messages")
+      .select("id, user_id, thread_id, role, content")
+      .eq("id", messageId)
+      .single()
+
+    if (checkError) {
+      console.error("❌ Failed to check message:", checkError)
+      return false
+    }
+
+    console.log("📄 Message to update:", {
+      id: messageCheck.id,
+      user_id: messageCheck.user_id,
+      thread_id: messageCheck.thread_id,
+      role: messageCheck.role,
+      contentLength: messageCheck.content.length,
+      contentPreview: messageCheck.content.substring(0, 100),
+    })
+
+    // Check if this is a user message or assistant message
+    const isUserMessage = messageCheck.user_id === user.id
+    const isAssistantMessage = messageCheck.role === "assistant"
+
+    console.log("🔍 Message type analysis:", {
+      isUserMessage,
+      isAssistantMessage,
+      messageUserId: messageCheck.user_id,
+      currentUserId: user.id,
+      messageRole: messageCheck.role,
+    })
+
+    let updateResult
+
+    if (isUserMessage) {
+      console.log("👤 Updating user message...")
+      // Update user message
+      updateResult = await supabase
+        .from("messages")
+        .update({ content: newContent })
+        .eq("id", messageId)
+        .eq("user_id", user.id)
+        .select()
+    } else if (isAssistantMessage) {
+      console.log("🤖 Updating assistant message...")
+      // For assistant messages, verify the thread belongs to the user
+      const { data: threadCheck, error: threadError } = await supabase
+        .from("threads")
+        .select("id, user_id")
+        .eq("id", messageCheck.thread_id)
+        .eq("user_id", user.id)
+        .single()
+
+      if (threadError) {
+        console.error("❌ Thread verification failed:", threadError)
+        return false
+      }
+
+      console.log("✅ Thread verified, belongs to user:", threadCheck.user_id)
+
+      // Update assistant message in user's thread
+      updateResult = await supabase
+        .from("messages")
+        .update({ content: newContent })
+        .eq("id", messageId)
+        .eq("thread_id", messageCheck.thread_id)
+        .select()
+    } else {
+      console.error("❌ Unknown message type or permission denied")
+      return false
+    }
+
+    const { data: updatedData, error: updateError } = updateResult
+
+    if (updateError) {
+      console.error("❌ Failed to update message:", updateError)
+      console.error("❌ Update error details:", {
+        code: updateError.code,
+        message: updateError.message,
+        details: updateError.details,
+        hint: updateError.hint,
+      })
+      return false
+    }
+
+    if (!updatedData || updatedData.length === 0) {
+      console.error("❌ No rows were updated - this might indicate a permission issue")
+      return false
+    }
+
+    console.log("✅ Message updated successfully:", {
+      updatedRows: updatedData.length,
+      newContentLength: updatedData[0].content.length,
+      newContentPreview: updatedData[0].content.substring(0, 100),
+    })
+
+    // Double-check by fetching the message again
+    const { data: verifyData, error: verifyError } = await supabase
+      .from("messages")
+      .select("content")
+      .eq("id", messageId)
+      .single()
+
+    if (verifyError) {
+      console.error("❌ Failed to verify update:", verifyError)
+      return false
+    }
+
+    if (verifyData.content === newContent) {
+      console.log("✅ Update verified - content matches expected value")
+      return true
+    } else {
+      console.error("❌ Update verification failed - content doesn't match:", {
+        expected: newContent.substring(0, 100),
+        actual: verifyData.content.substring(0, 100),
+        expectedLength: newContent.length,
+        actualLength: verifyData.content.length,
+      })
+      return false
+    }
+  } catch (error) {
+    console.error("❌ Unexpected error in updateMessageInDatabase:", error)
+    return false
+  }
 }

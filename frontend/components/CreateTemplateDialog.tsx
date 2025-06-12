@@ -61,13 +61,15 @@ export function CreateTemplateDialog({ open, onOpenChange, selectedPersonaId }: 
     try {
       const templateData = {
         ...formData,
-        persona_id: formData.persona_id === "none" ? "" : formData.persona_id,
+        persona_id: formData.persona_id === "none" ? null : formData.persona_id,
         tags: formData.tags
           .split(",")
           .map((tag) => tag.trim())
           .filter(Boolean),
         variables: [], // TODO: Extract variables from template
       }
+      
+      console.log("Submitting template data:", templateData)
       await createTemplate(templateData)
       toast.success("Template created successfully!")
       onOpenChange(false)
@@ -81,6 +83,7 @@ export function CreateTemplateDialog({ open, onOpenChange, selectedPersonaId }: 
         is_public: false,
       })
     } catch (error) {
+      console.error("Template creation error:", error)
       toast.error("Failed to create template")
     } finally {
       setLoading(false)

@@ -12,7 +12,7 @@ import { Badge } from "./ui/badge"
 import { usePersonas } from "@/frontend/hooks/usePersonas"
 import { usePersonaStore } from "@/frontend/stores/PersonaStore"
 import type { PromptTemplate } from "@/frontend/stores/PersonaStore"
-import { User, FileText, Plus, Bot, Pencil } from "lucide-react"
+import { User, FileText, Plus, Bot, Pencil, Trash2 } from "lucide-react"
 
 interface PersonaTemplateSelectorProps {
   threadId: string
@@ -22,6 +22,8 @@ interface PersonaTemplateSelectorProps {
   onCreateTemplate?: () => void
   onEditPersona?: (persona: Persona) => void
   onEditTemplate?: (template: PromptTemplate) => void
+  onDeletePersona?: (persona: Persona) => void
+  onDeleteTemplate?: (template: PromptTemplate) => void
 }
 
 const PersonaTemplateSelector: React.FC<PersonaTemplateSelectorProps> = ({
@@ -32,6 +34,8 @@ const PersonaTemplateSelector: React.FC<PersonaTemplateSelectorProps> = ({
   onCreateTemplate,
   onEditPersona,
   onEditTemplate,
+  onDeletePersona,
+  onDeleteTemplate,
 }) => {
   const [activeTab, setActiveTab] = useState("personas")
   const { personas, loading: personasLoading, promptTemplates, templatesLoading } = usePersonas()
@@ -75,6 +79,16 @@ const PersonaTemplateSelector: React.FC<PersonaTemplateSelectorProps> = ({
       onEditPersona(item as Persona)
     } else if (!isPersona && onEditTemplate) {
       onEditTemplate(item as PromptTemplate)
+    }
+  }
+
+  // Handle delete button click without propagating to the parent button
+  const handleDeleteClick = (e: React.MouseEvent, item: Persona | PromptTemplate, isPersona: boolean) => {
+    e.stopPropagation()
+    if (isPersona && onDeletePersona) {
+      onDeletePersona(item as Persona)
+    } else if (!isPersona && onDeleteTemplate) {
+      onDeleteTemplate(item as PromptTemplate)
     }
   }
 
@@ -158,7 +172,7 @@ const PersonaTemplateSelector: React.FC<PersonaTemplateSelectorProps> = ({
                     `}
                     onClick={() => handlePersonaSelect(persona)}
                   >
-                    <div className="flex items-center gap-2 w-full pr-8">
+                    <div className="flex items-center gap-2 w-full pr-16">
                       <div className="text-sm">{persona.avatar_emoji || "🤖"}</div>
                       <div className="flex-1 min-w-0">
                         <div className="text-xs font-medium flex items-center gap-1">
@@ -177,15 +191,26 @@ const PersonaTemplateSelector: React.FC<PersonaTemplateSelectorProps> = ({
                         <div className="text-[10px] text-muted-foreground truncate">{persona.description}</div>
                       </div>
                     </div>
-                    {onEditPersona && (
-                      <button
-                        className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 hover:bg-background rounded-sm flex items-center justify-center"
-                        onClick={(e) => handleEditClick(e, persona, true)}
-                        aria-label={`Edit ${persona.name}`}
-                      >
-                        <Pencil className="h-3 w-3" />
-                      </button>
-                    )}
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {onEditPersona && (
+                        <button
+                          className="h-6 w-6 p-0 bg-background/80 hover:bg-background rounded-sm flex items-center justify-center"
+                          onClick={(e) => handleEditClick(e, persona, true)}
+                          aria-label={`Edit ${persona.name}`}
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </button>
+                      )}
+                      {onDeletePersona && (
+                        <button
+                          className="h-6 w-6 p-0 bg-background/80 hover:bg-background rounded-sm flex items-center justify-center text-destructive hover:text-destructive"
+                          onClick={(e) => handleDeleteClick(e, persona, true)}
+                          aria-label={`Delete ${persona.name}`}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
 
@@ -237,7 +262,7 @@ const PersonaTemplateSelector: React.FC<PersonaTemplateSelectorProps> = ({
                       className="relative group cursor-pointer rounded-md p-2 hover:bg-accent hover:text-accent-foreground transition-colors"
                       onClick={() => handleTemplateSelect(template)}
                     >
-                      <div className="flex items-center gap-2 w-full pr-8">
+                      <div className="flex items-center gap-2 w-full pr-16">
                         <div className="p-1 rounded bg-muted">
                           <FileText className="h-3 w-3" />
                         </div>
@@ -253,15 +278,26 @@ const PersonaTemplateSelector: React.FC<PersonaTemplateSelectorProps> = ({
                           <div className="text-[10px] text-muted-foreground truncate">{template.description}</div>
                         </div>
                       </div>
-                      {onEditTemplate && (
-                        <button
-                          className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 hover:bg-background rounded-sm flex items-center justify-center"
-                          onClick={(e) => handleEditClick(e, template, false)}
-                          aria-label={`Edit ${template.title}`}
-                        >
-                          <Pencil className="h-3 w-3" />
-                        </button>
-                      )}
+                      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {onEditTemplate && (
+                          <button
+                            className="h-6 w-6 p-0 bg-background/80 hover:bg-background rounded-sm flex items-center justify-center"
+                            onClick={(e) => handleEditClick(e, template, false)}
+                            aria-label={`Edit ${template.title}`}
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </button>
+                        )}
+                        {onDeleteTemplate && (
+                          <button
+                            className="h-6 w-6 p-0 bg-background/80 hover:bg-background rounded-sm flex items-center justify-center text-destructive hover:text-destructive"
+                            onClick={(e) => handleDeleteClick(e, template, false)}
+                            aria-label={`Delete ${template.title}`}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))
                 )}

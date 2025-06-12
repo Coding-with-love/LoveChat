@@ -1,13 +1,13 @@
 import { createGoogleGenerativeAI } from "@ai-sdk/google"
 import { openai } from "@ai-sdk/openai"
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
-import { streamText, smoothStream } from "ai"
+import { streamText } from "ai"
 import { headers } from "next/headers"
 import { getModelConfig, type AIModel } from "@/lib/models"
 import { type NextRequest, NextResponse } from "next/server"
 import { supabaseServer } from "@/lib/supabase/server"
 import { v4 as uuidv4 } from "uuid"
-import { CustomResumableStream } from "@/lib/resumable-streams-server" // Declare the CustomResumableStream variable
+import { CustomResumableStream } from "@/lib/resumable-streams-server"
 
 export const runtime = "nodejs"
 export const maxDuration = 60
@@ -147,10 +147,36 @@ export async function POST(req: NextRequest) {
 
     if (!apiKey) {
       console.log("❌ Missing API key for provider:", modelConfig.provider)
+
+      // Try to get the API key from the database as fallback
+      try {
+        console.log("🔍 Looking for API key in database for user:", user.id, "provider:", modelConfig.provider)
+        const { data: dbApiKey, error: dbError } = await supabaseServer
+          .from("api_keys")
+          .select("provider, api_key")
+          .eq("user_id", user.id)
+          .eq("provider", modelConfig.provider.toLowerCase())
+          .maybeSingle()
+
+        if (dbError) {
+          console.error("❌ Database error fetching API key:", dbError)
+        } else if (dbApiKey?.api_key) {
+          apiKey = dbApiKey.api_key
+          console.log("✅ Found API key in database for provider:", modelConfig.provider)
+        } else {
+          console.log("❌ No API key found in database for provider:", modelConfig.provider)
+        }
+      } catch (dbError) {
+        console.error("❌ Error fetching API key from database:", dbError)
+      }
+    }
+
+    if (!apiKey) {
+      console.log("❌ No API key available for provider:", modelConfig.provider)
       return NextResponse.json({ error: `${modelConfig.provider} API key is required` }, { status: 400 })
     }
 
-    console.log("✅ API key found, length:", apiKey.length)
+    console.log("✅ API key found, length:", apiKey?.length || 0)
 
     // Create AI model
     let aiModel
@@ -158,7 +184,7 @@ export async function POST(req: NextRequest) {
 
     switch (modelConfig.provider) {
       case "google":
-        const google = createGoogleGenerativeAI({ apiKey })
+        const google = createGoogleGenerativeAI({ apiKey: apiKey! })
         if (webSearchEnabled && modelConfig.supportsSearch) {
           aiModel = google(modelConfig.modelId, { useSearchGrounding: true })
           modelSupportsSearch = true
@@ -168,11 +194,11 @@ export async function POST(req: NextRequest) {
         break
 
       case "openai":
-        aiModel = openai("gpt-4o")
+        aiModel = openai(modelConfig.modelId)
         break
 
       case "openrouter":
-        const openrouter = createOpenRouter({ apiKey })
+        const openrouter = createOpenRouter({ apiKey: apiKey! })
         aiModel = openrouter(modelConfig.modelId)
         break
 
@@ -188,7 +214,7 @@ export async function POST(req: NextRequest) {
     if (threadId) {
       try {
         console.log("🎭 Looking up persona for thread:", threadId)
-        
+
         const { data: threadPersonaData, error: personaError } = await supabaseServer
           .from("thread_personas")
           .select(`
@@ -280,40 +306,178 @@ export async function POST(req: NextRequest) {
     console.log("📨 Processed messages for AI:", processedMessages.length)
 
     // Create system prompt with persona integration
-    const systemPrompt = getSystemPrompt(webSearchEnabled, modelSupportsSearch, user.email, threadPersona)
+    const systemPrompt = getSystemPrompt(webSearchEnabled, modelSupportsSearch, user.email || "", threadPersona)
 
-    // Create stream options with clean message format
-    const streamOptions = {
-      model: aiModel,
-      messages: processedMessages,
-      system: systemPrompt,
-      experimental_transform: [smoothStream({ chunking: "word" })],
-      onFinish: async ({ text, finishReason, usage, sources, providerMetadata }) => {
-        console.log("🏁 AI generation finished")
-        await handleMessageSave(threadId, aiMessageId, user.id, text, sources, providerMetadata, modelConfig, apiKey)
-      },
+    // Check if this is a thinking model
+    const isThinkingModel = modelConfig.supportsThinking
+
+    // For thinking models, we need to handle the stream completely differently
+    if (isThinkingModel) {
+      console.log("🧠 Using thinking model - custom stream handling")
+
+      // Create stream options without any transforms
+      const streamOptions = {
+        model: aiModel,
+        messages: processedMessages,
+        system: systemPrompt,
+        onFinish: async ({ text, finishReason, usage, sources, providerMetadata }: any) => {
+          console.log("🏁 AI generation finished")
+
+          // Parse thinking content from text
+          let cleanedText = text
+          let reasoning = null
+
+          if (text.includes("<think>") && text.includes("</think>")) {
+            console.log("🧠 Detected thinking content in response")
+
+            // Extract thinking content (note: using <Thinking> not <Thinking>)
+            const thinkMatch = text.match(/<think>([\s\S]*?)<\/think>/)
+            if (thinkMatch) {
+              reasoning = thinkMatch[1].trim()
+              console.log("🧠 Extracted reasoning:", reasoning.substring(0, 100) + "...")
+            }
+
+            // Remove thinking tags from the main content
+            cleanedText = text.replace(/<think>[\s\S]*?<\/think>/g, "").trim()
+            console.log("🧠 Cleaned text length:", cleanedText.length)
+          }
+
+          await handleMessageSave(
+            threadId,
+            aiMessageId,
+            user.id,
+            cleanedText,
+            sources,
+            providerMetadata,
+            modelConfig,
+            apiKey!,
+            reasoning,
+          )
+        },
+      }
+
+      console.log("🚀 Starting AI generation...")
+      const result = streamText(streamOptions)
+
+      // Create a custom readable stream that filters out thinking content
+      const customStream = new ReadableStream({
+        async start(controller) {
+          const reader = result.toDataStream().getReader()
+          let buffer = ""
+          let insideThinking = false
+
+          try {
+            while (true) {
+              const { done, value } = await reader.read()
+              if (done) break
+
+              const chunk = new TextDecoder().decode(value)
+              buffer += chunk
+
+              // Process the buffer to filter out thinking content
+              let processedChunk = ""
+              let i = 0
+
+              while (i < buffer.length) {
+                if (!insideThinking) {
+                  // Look for start of thinking
+                  const thinkStart = buffer.indexOf("<think>", i)
+                  if (thinkStart !== -1 && thinkStart < buffer.length) {
+                    // Add content before thinking
+                    processedChunk += buffer.substring(i, thinkStart)
+                    insideThinking = true
+                    i = thinkStart + 10 // Skip "<Thinking>"
+                  } else {
+                    // No thinking tag found, add rest of buffer
+                    processedChunk += buffer.substring(i)
+                    break
+                  }
+                } else {
+                  // Look for end of thinking
+                  const thinkEnd = buffer.indexOf("</think>", i)
+                  if (thinkEnd !== -1) {
+                    // Skip thinking content
+                    insideThinking = false
+                    i = thinkEnd + 11 // Skip "</Thinking>"
+                  } else {
+                    // Still inside thinking, skip rest of buffer
+                    break
+                  }
+                }
+              }
+
+              // Update buffer to keep unprocessed content
+              if (i < buffer.length) {
+                buffer = buffer.substring(i)
+              } else {
+                buffer = ""
+              }
+
+              // Send processed chunk if we have content
+              if (processedChunk) {
+                // Re-encode as proper data stream format
+                const encodedChunk = `0:"${processedChunk.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
+                controller.enqueue(new TextEncoder().encode(encodedChunk))
+              }
+            }
+
+            // Send any remaining buffer content (outside thinking)
+            if (buffer && !insideThinking) {
+              const encodedChunk = `0:"${buffer.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
+              controller.enqueue(new TextEncoder().encode(encodedChunk))
+            }
+
+            // Send completion marker
+            controller.enqueue(new TextEncoder().encode('d:""\n'))
+          } catch (error) {
+            console.error("❌ Error in thinking stream processing:", error)
+            controller.error(error)
+          } finally {
+            controller.close()
+          }
+        },
+      })
+
+      return new Response(customStream, {
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        },
+      })
+    } else {
+      // Regular models - use standard processing
+      const streamOptions = {
+        model: aiModel,
+        messages: processedMessages,
+        system: systemPrompt,
+        onFinish: async ({ text, finishReason, usage, sources, providerMetadata }: any) => {
+          console.log("🏁 AI generation finished")
+          await handleMessageSave(threadId, aiMessageId, user.id, text, sources, providerMetadata, modelConfig, apiKey!)
+        },
+      }
+
+      console.log("🚀 Starting AI generation...")
+      const result = streamText(streamOptions)
+      const responseStream = result.toDataStream()
+
+      return new Response(responseStream, {
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        },
+      })
     }
-
-    console.log("🚀 Starting AI generation...")
-    const result = streamText(streamOptions)
-    const responseStream = result.toDataStream()
-
-    return new Response(responseStream, {
-      headers: {
-        "Content-Type": "text/plain; charset=utf-8",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-      },
-    })
   } catch (error) {
     console.error("💥 Unhandled Chat API error:", error)
-    console.error("💥 Error stack:", error?.stack)
+    console.error("💥 Error stack:", (error as Error)?.stack)
 
     return NextResponse.json(
       {
         error: "Internal Server Error",
-        details: error?.message || "Unknown error",
-        stack: process.env.NODE_ENV === "development" ? error?.stack : undefined,
+        details: (error as Error)?.message || "Unknown error",
+        stack: process.env.NODE_ENV === "development" ? (error as Error)?.stack : undefined,
       },
       { status: 500 },
     )
@@ -419,6 +583,7 @@ async function handleMessageSave(
   providerMetadata: any,
   modelConfig: any,
   apiKey: string,
+  reasoning?: string | null,
 ) {
   try {
     console.log("💾 Saving AI message...")
@@ -430,6 +595,11 @@ async function handleMessageSave(
         messageParts.push({ type: "sources", sources } as any)
       }
 
+      if (reasoning) {
+        messageParts.push({ type: "reasoning", reasoning } as any)
+        console.log("🧠 Added reasoning to message parts")
+      }
+
       const aiMessage = {
         id: aiMessageId,
         thread_id: threadId,
@@ -437,6 +607,7 @@ async function handleMessageSave(
         parts: messageParts,
         content: text,
         role: "assistant" as const,
+        reasoning: reasoning, // Store reasoning at message level too
         created_at: new Date().toISOString(),
       }
 
@@ -473,6 +644,14 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
     const ollamaUrl = process.env.OLLAMA_URL || "http://localhost:11434"
     console.log("🦙 Ollama URL:", ollamaUrl)
 
+    // Get model config to check if this is a thinking model
+    const modelConfig = getModelConfig(model as AIModel)
+    const isThinkingModel = modelConfig.supportsThinking
+    console.log("🧠 Ollama model supports thinking:", isThinkingModel)
+
+    const threadId = req.nextUrl.searchParams.get("threadId") as string
+    const aiMessageId = uuidv4()
+
     const response = await fetch(`${ollamaUrl}/api/chat`, {
       method: "POST",
       headers: {
@@ -492,56 +671,270 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
 
     console.log("✅ Ollama response received, streaming...")
 
-    // Create a readable stream from the Ollama response
-    const stream = new ReadableStream({
-      async start(controller) {
-        const reader = response.body?.getReader()
-        if (!reader) {
-          controller.close()
-          return
-        }
+    // For thinking models, we need special handling
+    if (isThinkingModel) {
+      console.log("🧠 Using thinking-aware stream processing for Ollama")
 
-        try {
-          while (true) {
-            const { done, value } = await reader.read()
-            if (done) break
+      // Create a readable stream from the Ollama response with thinking handling
+      const stream = new ReadableStream({
+        async start(controller) {
+          const reader = response.body?.getReader()
+          if (!reader) {
+            controller.close()
+            return
+          }
 
-            // Parse the Ollama response chunks
-            const chunk = new TextDecoder().decode(value)
-            const lines = chunk.split("\n").filter((line) => line.trim())
+          let isClosed = false
+          let buffer = ""
+          let insideThinking = false
+          let fullResponse = ""
+          let reasoning = null
 
-            for (const line of lines) {
+          const safeEnqueue = (chunk: Uint8Array) => {
+            if (!isClosed) {
               try {
-                const data = JSON.parse(line)
-                if (data.message?.content) {
-                  // Format as AI SDK compatible stream
-                  const streamChunk = `0:"${data.message.content.replace(/"/g, '\\"')}"\n`
-                  controller.enqueue(new TextEncoder().encode(streamChunk))
-                }
-                if (data.done) {
-                  controller.enqueue(new TextEncoder().encode('d:""\n'))
-                }
-              } catch (parseError) {
-                console.warn("⚠️ Failed to parse Ollama chunk:", parseError)
+                controller.enqueue(chunk)
+              } catch (error) {
+                console.warn("⚠️ Controller already closed, ignoring chunk")
+                isClosed = true
               }
             }
           }
-        } catch (error) {
-          console.error("❌ Error reading Ollama stream:", error)
-          controller.error(error)
-        } finally {
-          controller.close()
-        }
-      },
-    })
 
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "text/plain; charset=utf-8",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-      },
-    })
+          const safeClose = () => {
+            if (!isClosed) {
+              try {
+                controller.close()
+                isClosed = true
+              } catch (error) {
+                console.warn("⚠️ Controller already closed")
+              }
+            }
+          }
+
+          try {
+            while (true) {
+              const { done, value } = await reader.read()
+              if (done) break
+
+              // Parse the Ollama response chunks
+              const chunk = new TextDecoder().decode(value)
+              const lines = chunk.split("\n").filter((line) => line.trim())
+
+              for (const line of lines) {
+                if (isClosed) break
+
+                try {
+                  const data = JSON.parse(line)
+                  if (data.message?.content) {
+                    const content = data.message.content
+                    fullResponse += content
+
+                    // Process for thinking tags
+                    buffer += content
+                    let processedContent = ""
+
+                    // Simple state machine to extract thinking content
+                    let i = 0
+                    while (i < buffer.length) {
+                      if (!insideThinking) {
+                        // Look for start of thinking
+                        const thinkStart = buffer.indexOf("<think>", i)
+                        if (thinkStart !== -1) {
+                          // Add content before thinking
+                          processedContent += buffer.substring(i, thinkStart)
+                          insideThinking = true
+                          i = thinkStart + 10 // Skip "<think>"
+                        } else {
+                          // No thinking tag found, add rest of buffer
+                          processedContent += buffer.substring(i)
+                          break
+                        }
+                      } else {
+                        // Look for end of thinking
+                        const thinkEnd = buffer.indexOf("</think>", i)
+                        if (thinkEnd !== -1) {
+                          // Capture thinking content
+                          const thinkingContent = buffer.substring(i, thinkEnd)
+                          if (!reasoning) reasoning = thinkingContent
+                          else reasoning += thinkingContent
+
+                          // Skip thinking content
+                          insideThinking = false
+                          i = thinkEnd + 11 // Skip "</think>"
+                        } else {
+                          // Still inside thinking, skip rest of buffer
+                          break
+                        }
+                      }
+                    }
+
+                    // Update buffer to keep unprocessed content
+                    if (i < buffer.length) {
+                      buffer = buffer.substring(i)
+                    } else {
+                      buffer = ""
+                    }
+
+                    // Only send non-thinking content
+                    if (processedContent) {
+                      // Format as AI SDK compatible stream
+                      const streamChunk = `0:"${processedContent.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
+                      safeEnqueue(new TextEncoder().encode(streamChunk))
+                    }
+                  }
+
+                  if (data.done) {
+                    safeEnqueue(new TextEncoder().encode('d:""\n'))
+
+                    // Save the message with reasoning
+                    if (threadId) {
+                      // Clean the full response by removing thinking tags
+                      const cleanedText = fullResponse.replace(/<think>[\s\S]*?<\/think>/g, "").trim()
+
+                      // Get user ID from auth
+                      const authHeader = headersList.get("authorization")
+                      if (authHeader?.startsWith("Bearer ")) {
+                        const token = authHeader.substring(7)
+                        const {
+                          data: { user },
+                        } = await supabaseServer.auth.getUser(token)
+
+                        if (user) {
+                          await handleMessageSave(
+                            threadId,
+                            aiMessageId,
+                            user.id,
+                            cleanedText,
+                            null, // sources
+                            null, // providerMetadata
+                            modelConfig,
+                            "", // apiKey
+                            reasoning,
+                          )
+                        }
+                      }
+                    }
+
+                    safeClose()
+                    return
+                  }
+                } catch (parseError) {
+                  console.warn("⚠️ Failed to parse Ollama chunk:", parseError)
+                }
+              }
+            }
+          } catch (error) {
+            console.error("❌ Error reading Ollama stream:", error)
+            if (!isClosed) {
+              try {
+                controller.error(error)
+              } catch (controllerError) {
+                console.warn("⚠️ Failed to signal error to controller")
+              }
+            }
+          } finally {
+            safeClose()
+          }
+        },
+      })
+
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        },
+      })
+    } else {
+      // Regular non-thinking Ollama model
+      console.log("🦙 Using standard stream processing for Ollama")
+
+      // Create a readable stream from the Ollama response
+      const stream = new ReadableStream({
+        async start(controller) {
+          const reader = response.body?.getReader()
+          if (!reader) {
+            controller.close()
+            return
+          }
+
+          let isClosed = false
+
+          const safeEnqueue = (chunk: Uint8Array) => {
+            if (!isClosed) {
+              try {
+                controller.enqueue(chunk)
+              } catch (error) {
+                console.warn("⚠️ Controller already closed, ignoring chunk")
+                isClosed = true
+              }
+            }
+          }
+
+          const safeClose = () => {
+            if (!isClosed) {
+              try {
+                controller.close()
+                isClosed = true
+              } catch (error) {
+                console.warn("⚠️ Controller already closed")
+              }
+            }
+          }
+
+          try {
+            while (true) {
+              const { done, value } = await reader.read()
+              if (done) break
+
+              // Parse the Ollama response chunks
+              const chunk = new TextDecoder().decode(value)
+              const lines = chunk.split("\n").filter((line) => line.trim())
+
+              for (const line of lines) {
+                if (isClosed) break
+
+                try {
+                  const data = JSON.parse(line)
+                  if (data.message?.content) {
+                    // Format as AI SDK compatible stream
+                    const streamChunk = `0:"${data.message.content.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
+                    safeEnqueue(new TextEncoder().encode(streamChunk))
+                  }
+                  if (data.done) {
+                    safeEnqueue(new TextEncoder().encode('d:""\n'))
+                    safeClose()
+                    return
+                  }
+                } catch (parseError) {
+                  console.warn("⚠️ Failed to parse Ollama chunk:", parseError)
+                }
+              }
+            }
+          } catch (error) {
+            console.error("❌ Error reading Ollama stream:", error)
+            if (!isClosed) {
+              try {
+                controller.error(error)
+              } catch (controllerError) {
+                console.warn("⚠️ Failed to signal error to controller")
+              }
+            }
+          } finally {
+            safeClose()
+          }
+        },
+      })
+
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        },
+      })
+    }
   } catch (error) {
     console.error("💥 Ollama handler error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

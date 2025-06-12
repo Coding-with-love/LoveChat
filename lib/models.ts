@@ -31,17 +31,46 @@ interface ModelConfig {
   supportsThinking?: boolean
 }
 
+// List of Ollama models known to support thinking
+const OLLAMA_THINKING_MODELS = [
+  "deepseek-r1:7b",
+  "deepseek-coder",
+  "llama3",
+  "mistral",
+  "mixtral",
+  "phi3",
+  "qwen2",
+  "yi",
+  "codellama",
+  "wizardcoder",
+  "solar",
+  "nous-hermes2",
+  "openchat",
+  "vicuna"
+]
+
 export function getModelConfig(model: AIModel): ModelConfig {
   // Check if it's an Ollama model
   if (typeof model === "string" && model.startsWith("ollama:")) {
     const ollamaModelName = model.replace("ollama:", "")
+    
+    // Check if this Ollama model supports thinking
+    // Either by exact match or by checking if it starts with any of the thinking model prefixes
+    const supportsThinking = OLLAMA_THINKING_MODELS.some(thinkingModel => 
+      ollamaModelName === thinkingModel || 
+      ollamaModelName.startsWith(`${thinkingModel}:`) ||
+      ollamaModelName.startsWith(`${thinkingModel}-`)
+    )
+    
+    console.log(`🧠 Ollama model ${ollamaModelName} supports thinking: ${supportsThinking}`)
+    
     return {
       provider: "ollama",
       modelId: ollamaModelName,
       name: model,
       headerKey: "X-Ollama-Base-URL",
       supportsSearch: false,
-      supportsThinking: false,
+      supportsThinking: supportsThinking,
     }
   }
 

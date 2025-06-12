@@ -1,18 +1,13 @@
 "use client"
 
-import type React from "react"
-import { useState, useEffect } from "react"
+import { useEffect } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog"
 import { Input } from "./ui/input"
 import { Button } from "./ui/button"
 import { ScrollArea } from "./ui/scroll-area"
 import { Search, X } from "lucide-react"
-
-interface LanguageSelectionDialogProps {
-  isOpen: boolean
-  onClose: () => void
-  onSelect: (language: string) => void
-}
+import { useLanguageDialogStore } from "../stores/LanguageDialogStore"
+import { useState } from "react"
 
 const LANGUAGES = [
   "Arabic",
@@ -49,47 +44,30 @@ const LANGUAGES = [
   "Vietnamese",
 ]
 
-const LanguageSelectionDialog: React.FC<LanguageSelectionDialogProps> = ({ isOpen, onClose, onSelect }) => {
-  console.log("🌍 LanguageSelectionDialog render - props:", {
-    isOpen,
-    onClose: !!onClose,
-    onSelect: !!onSelect,
-  })
+export default function GlobalLanguageDialog() {
+  const { isOpen, selectedText, onSelectLanguage, closeDialog } = useLanguageDialogStore()
   const [searchTerm, setSearchTerm] = useState("")
 
+  // Reset search term when dialog opens/closes
   useEffect(() => {
-    console.log("🌍 Language dialog state changed:", { isOpen })
+    if (!isOpen) {
+      setSearchTerm("")
+    }
   }, [isOpen])
 
   const filteredLanguages = LANGUAGES.filter((language) => language.toLowerCase().includes(searchTerm.toLowerCase()))
 
   const handleSelect = (language: string) => {
-    console.log("🌍 Language selected:", language)
-    onSelect(language)
-    setSearchTerm("") // Reset search when closing
+    console.log("🌍 Language selected:", language, "for text:", selectedText)
+    onSelectLanguage(language)
+    closeDialog()
   }
-
-  const handleClose = () => {
-    console.log("🌍 Language dialog closing")
-    onClose()
-    setSearchTerm("") // Reset search when closing
-  }
-
-  const handleOpenChange = (open: boolean) => {
-    console.log("🌍 Dialog open change:", open)
-    if (!open) {
-      handleClose()
-    }
-  }
-
-  console.log("🌍 Rendering LanguageSelectionDialog with isOpen:", isOpen)
 
   return (
-    <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      {console.log("🌍 Dialog rendering with open:", isOpen)}
+    <Dialog open={isOpen} onOpenChange={(open) => !open && closeDialog()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Select Language</DialogTitle>
+          <DialogTitle>Select Language for Translation</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -136,5 +114,3 @@ const LanguageSelectionDialog: React.FC<LanguageSelectionDialogProps> = ({ isOpe
     </Dialog>
   )
 }
-
-export default LanguageSelectionDialog

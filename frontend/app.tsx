@@ -1,5 +1,4 @@
 "use client"
-
 import { BrowserRouter, Route, Routes } from "react-router"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { useState } from "react"
@@ -14,7 +13,8 @@ import SharedConversation from "./routes/SharedConversation"
 import Project from "./routes/Project"
 import { Toaster } from "sonner"
 import { GlobalResumingIndicator } from "./components/ResumingIndicator"
-import ThemeProvider from "./components/ThemeProvider" // Import ThemeProvider
+import ThemeProvider from "./components/ThemeProvider"
+import GlobalLanguageDialog from "./components/GlobalLanguageDialog"
 
 function AuthenticatedApp() {
   return (
@@ -78,6 +78,8 @@ export default function App() {
           <Toaster position="top-right" />
         </QueryClientProvider>
       )}
+      {/* Add GlobalLanguageDialog outside of auth check so it's always available */}
+      <GlobalLanguageDialog />
     </ThemeProvider>
   )
 }
