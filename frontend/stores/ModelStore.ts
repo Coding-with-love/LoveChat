@@ -7,99 +7,151 @@ import { useAPIKeyStore } from "./APIKeyStore"
 
 interface ModelState {
   selectedModel: AIModel
+  enabledModels: AIModel[]
   setModel: (model: AIModel) => void
+  toggleModel: (model: AIModel) => void
   getModelConfig: () => ReturnType<typeof getModelConfig>
   customModels: OllamaModel[]
   addCustomModel: (model: OllamaModel) => void
   removeCustomModel: (model: OllamaModel) => void
   findFirstAvailableModel: () => AIModel
+  getEnabledModels: () => AIModel[]
+  ensureValidSelectedModel: () => void
 }
 
 const DEFAULT_MODEL = "gemini-2.0-flash-exp" as const
+
+// Default enabled models - a curated selection
+const DEFAULT_ENABLED_MODELS: AIModel[] = [
+  "gemini-2.0-flash-exp",
+  "gpt-4o",
+  "gpt-4o-mini",
+  "claude-3-5-sonnet-20241022",
+]
 
 export const useModelStore = create<ModelState>()(
   persist(
     (set, get) => ({
       selectedModel: DEFAULT_MODEL,
+      enabledModels: DEFAULT_ENABLED_MODELS,
       customModels: [] as OllamaModel[],
+      
       setModel: (model: AIModel) => set({ selectedModel: model }),
+      
+      toggleModel: (model: AIModel) => {
+        set((state) => {
+          const isEnabled = state.enabledModels.includes(model)
+          const newEnabledModels = isEnabled
+            ? state.enabledModels.filter(m => m !== model)
+            : [...state.enabledModels, model]
+          
+          // If we're disabling the currently selected model, switch to first available
+          let newSelectedModel = state.selectedModel
+          if (isEnabled && state.selectedModel === model) {
+            const availableModels = newEnabledModels.filter(m => {
+              try {
+                const modelConfig = getModelConfig(m)
+                if (modelConfig.provider === "ollama") return true
+                return !!useAPIKeyStore.getState().getKey(modelConfig.provider)
+              } catch {
+                return false
+              }
+            })
+            if (availableModels.length > 0) {
+              newSelectedModel = availableModels[0]
+            }
+          }
+          
+          return { 
+            enabledModels: newEnabledModels,
+            selectedModel: newSelectedModel
+          }
+        })
+      },
+      
       getModelConfig: () => getModelConfig(get().selectedModel),
+      
       addCustomModel: (model: OllamaModel) => {
         set((state) => ({
           customModels: [...state.customModels, model],
         }))
       },
+      
       removeCustomModel: (model: OllamaModel) => {
         set((state) => ({
           customModels: state.customModels.filter((m) => m !== model),
-          // If the selected model is being removed, find first available model
+          enabledModels: state.enabledModels.filter((m) => m !== model),
           selectedModel: state.selectedModel === model ? get().findFirstAvailableModel() : state.selectedModel,
         }))
       },
-      findFirstAvailableModel: () => {
-        // First try Ollama models as they don't require API keys
+      
+      getEnabledModels: () => {
         const state = get()
-        if (state.customModels.length > 0) {
-          return state.customModels[0] as AIModel // Safe cast since OllamaModel is part of AIModel
+        const getKey = useAPIKeyStore.getState().getKey
+        
+        return [...state.enabledModels, ...state.customModels].filter(model => {
+          try {
+            const modelConfig = getModelConfig(model)
+            if (modelConfig.provider === "ollama") return true
+            return !!getKey(modelConfig.provider)
+          } catch {
+            // If getModelConfig throws an error, exclude this model
+            return false
+          }
+        })
+      },
+      
+      findFirstAvailableModel: () => {
+        const state = get()
+        const enabledModels = state.getEnabledModels()
+        
+        if (enabledModels.length > 0) {
+          return enabledModels[0]
         }
-
-        // Then try standard models
+        
+        // Fallback to any available model
         const getKey = useAPIKeyStore.getState().getKey
         for (const model of AI_MODELS) {
-          const modelConfig = getModelConfig(model)
-          // Ollama models don't need API keys
-          if (modelConfig.provider === "ollama") {
-            return model
-          }
-          // Check if we have the API key for this model
-          const apiKey = getKey(modelConfig.provider)
-          if (apiKey) {
-            return model
+          try {
+            const modelConfig = getModelConfig(model)
+            if (modelConfig.provider === "ollama" || getKey(modelConfig.provider)) {
+              return model
+            }
+          } catch {
+            // Skip models that cause errors
+            continue
           }
         }
-
-        // If no model is available, return the default
+        
         return DEFAULT_MODEL
+      },
+
+      ensureValidSelectedModel: () => {
+        const state = get()
+        const enabledModels = state.getEnabledModels()
+        
+        // Check if current selected model is available
+        const isCurrentModelAvailable = enabledModels.includes(state.selectedModel)
+        
+        if (!isCurrentModelAvailable && enabledModels.length > 0) {
+          // Switch to first available model
+          set({ selectedModel: enabledModels[0] })
+        }
       }
     }),
     {
       name: "model-settings",
-      // Add migration to handle old model names and missing API keys
-      migrate: (persistedState: unknown): ModelState => {
-        const state = persistedState as ModelState
-        
-        // If the persisted model doesn't exist in current models, find first available
-        if (
-          state?.selectedModel &&
-          !AI_MODELS.includes(state.selectedModel as (typeof AI_MODELS)[number]) &&
-          !(typeof state.selectedModel === "string" && state.selectedModel.startsWith("ollama:"))
-        ) {
-          console.log("🔄 Migrating old model:", state.selectedModel, "to first available")
-          const store = useModelStore.getState()
+      version: 2,
+      migrate: (persistedState: any, version: number) => {
+        if (version < 2) {
+          // Migration for new enabledModels feature
           return {
-            ...state,
-            selectedModel: store.findFirstAvailableModel(),
+            ...persistedState,
+            enabledModels: DEFAULT_ENABLED_MODELS,
           }
         }
-
-        // Check if we have the API key for the selected model
-        const modelConfig = getModelConfig(state.selectedModel)
-        if (modelConfig.provider !== "ollama") {
-          const getKey = useAPIKeyStore.getState().getKey
-          const apiKey = getKey(modelConfig.provider)
-          if (!apiKey) {
-            console.log("🔄 Selected model requires API key, switching to first available")
-            const store = useModelStore.getState()
-            return {
-              ...state,
-              selectedModel: store.findFirstAvailableModel(),
-            }
-          }
-        }
-
-        return state
+        return persistedState
       },
-      version: 1,
     },
   ),
 )

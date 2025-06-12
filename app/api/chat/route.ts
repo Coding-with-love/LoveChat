@@ -183,6 +183,42 @@ export async function POST(req: NextRequest) {
     const threadId = req.nextUrl.searchParams.get("threadId") as string
     const aiMessageId = uuidv4()
 
+    // Get thread persona if one is assigned
+    let threadPersona = null
+    if (threadId) {
+      try {
+        console.log("🎭 Looking up persona for thread:", threadId)
+        
+        const { data: threadPersonaData, error: personaError } = await supabaseServer
+          .from("thread_personas")
+          .select(`
+            *,
+            personas (
+              id,
+              name,
+              description,
+              system_prompt,
+              avatar_emoji,
+              color,
+              is_default,
+              is_public
+            )
+          `)
+          .eq("thread_id", threadId)
+          .eq("user_id", user.id)
+          .single()
+
+        if (!personaError && threadPersonaData?.personas) {
+          threadPersona = threadPersonaData.personas
+          console.log("✅ Found persona for thread:", threadPersona.name)
+        } else {
+          console.log("ℹ️ No persona assigned to thread")
+        }
+      } catch (error) {
+        console.log("⚠️ Error looking up persona:", error)
+      }
+    }
+
     // Process messages - create AI-specific content with file data
     const processedMessages = []
 
@@ -243,8 +279,8 @@ export async function POST(req: NextRequest) {
 
     console.log("📨 Processed messages for AI:", processedMessages.length)
 
-    // Create system prompt
-    const systemPrompt = getSystemPrompt(webSearchEnabled, modelSupportsSearch, user.email)
+    // Create system prompt with persona integration
+    const systemPrompt = getSystemPrompt(webSearchEnabled, modelSupportsSearch, user.email, threadPersona)
 
     // Create stream options with clean message format
     const streamOptions = {
@@ -284,12 +320,25 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Helper function to get system prompt
-function getSystemPrompt(webSearchEnabled: boolean, modelSupportsSearch: boolean, userEmail: string) {
-  return `You are LoveChat, an AI assistant that can answer questions and help with tasks.
+// Helper function to get system prompt with persona integration
+function getSystemPrompt(
+  webSearchEnabled: boolean,
+  modelSupportsSearch: boolean,
+  userEmail: string,
+  persona: any = null,
+) {
+  let basePrompt = `You are LoveChat, an AI assistant that can answer questions and help with tasks.
 Be helpful and provide relevant information.
 Be respectful and polite in all interactions.
-Be engaging and maintain a conversational tone.
+Be engaging and maintain a conversational tone.`
+
+  // If a persona is active, replace the base prompt with the persona's system prompt
+  if (persona && persona.system_prompt) {
+    console.log("🎭 Using persona system prompt:", persona.name)
+    basePrompt = persona.system_prompt
+  }
+
+  return `${basePrompt}
 
 ${
   webSearchEnabled && modelSupportsSearch
@@ -409,108 +458,42 @@ async function handleMessageSave(
         .eq("user_id", userId)
     }
   } catch (error) {
-    console.error("💥 Error saving message:", error)
+    console.error("💥 Error saving AI message:", error)
   }
 }
 
-// Handler for Ollama models
+// Ollama handler function
 async function handleOllamaChat(req: NextRequest, messages: any[], model: string, headersList: Headers) {
   try {
-    const ollamaBaseUrl = headersList.get("x-ollama-base-url") || "http://localhost:11434"
-    const actualModel = model.replace("ollama:", "")
+    console.log("🦙 Handling Ollama chat request")
 
-    console.log(`🦙 Handling Ollama chat with model: ${actualModel}`)
+    const ollamaModel = model.replace("ollama:", "")
+    console.log("🦙 Using Ollama model:", ollamaModel)
 
-    // Get user from auth token
-    const authHeader = headersList.get("authorization")
-    if (!authHeader?.startsWith("Bearer ")) {
-      return NextResponse.json({ error: "Authentication required" }, { status: 401 })
-    }
+    const ollamaUrl = process.env.OLLAMA_URL || "http://localhost:11434"
+    console.log("🦙 Ollama URL:", ollamaUrl)
 
-    const token = authHeader.substring(7)
-    const {
-      data: { user },
-      error: authError,
-    } = await supabaseServer.auth.getUser(token)
-
-    if (authError || !user) {
-      return NextResponse.json({ error: "Invalid authentication token" }, { status: 401 })
-    }
-
-    // Add system message with formatting instructions
-    const systemMessage = {
-      role: "system",
-      content: `You are a helpful AI assistant. When using mathematical notation:
-- Always use double dollar signs ($$) for both inline and display math
-- Escape backslashes in LaTeX commands: \\alpha instead of \alpha
-- For complex equations, prefer display math
-Examples:
-- Fractions: $$\\frac{a}{b}$$
-- Integrals: $$\\int_a^b f(x) dx$$
-- Summations: $$\\sum_{i=1}^n i^2$$
-- Limits: $$\\lim_{x \\to 0} \\frac{\\sin(x)}{x}$$
-- Matrices: $$\\begin{bmatrix} a & b \\\\ c & d \\end{bmatrix}$$`,
-    }
-
-    // Extract thread ID from URL query parameters
-    const threadId = req.nextUrl.searchParams.get("threadId") as string
-    const messageId = crypto.randomUUID() // Generate a new message ID
-
-    if (!threadId) {
-      console.error("❌ Missing threadId in request")
-      return NextResponse.json({ error: "Missing threadId" }, { status: 400 })
-    }
-
-    // Process messages for Ollama - also clean format
-    const ollamaMessages = [
-      systemMessage,
-      ...messages.map((msg: any) => {
-        let content = typeof msg.content === "string" ? msg.content : ""
-
-        // Handle file attachments for Ollama too
-        if (msg.parts) {
-          const fileAttachmentPart = msg.parts.find((part: any) => part.type === "file_attachments")
-          if (fileAttachmentPart?.attachments) {
-            if (content) content += "\n\n"
-            content += "[SYSTEM: Files shared by user]\n\n"
-
-            for (const attachment of fileAttachmentPart.attachments) {
-              content += `**File: ${attachment.fileName}**\n`
-              if (attachment.content) {
-                const fileExtension = attachment.fileName.split(".").pop() || ""
-                content += `\`\`\`${fileExtension}\n${attachment.content}\n\`\`\`\n\n`
-              }
-            }
-            content += "[END OF FILES]\n"
-          }
-        }
-
-        return {
-          role: msg.role,
-          content: content,
-        }
-      }),
-    ]
-
-    const response = await fetch(`${ollamaBaseUrl}/api/chat`, {
+    const response = await fetch(`${ollamaUrl}/api/chat`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({
-        model: actualModel,
-        messages: ollamaMessages,
+        model: ollamaModel,
+        messages: messages,
         stream: true,
-        options: { temperature: 0.7 },
       }),
     })
 
     if (!response.ok) {
-      return NextResponse.json({ error: `Ollama API error: ${response.statusText}` }, { status: response.status })
+      console.error("❌ Ollama API error:", response.status, response.statusText)
+      return NextResponse.json({ error: "Ollama API error" }, { status: response.status })
     }
 
-    // Variable to accumulate the full response
-    let fullResponse = ""
+    console.log("✅ Ollama response received, streaming...")
 
-    const readable = new ReadableStream({
+    // Create a readable stream from the Ollama response
+    const stream = new ReadableStream({
       async start(controller) {
         const reader = response.body?.getReader()
         if (!reader) {
@@ -521,66 +504,38 @@ Examples:
         try {
           while (true) {
             const { done, value } = await reader.read()
-            if (done) {
-              // Save the complete message to the database
-              if (threadId && fullResponse) {
-                const aiMessage = {
-                  id: messageId,
-                  thread_id: threadId,
-                  user_id: user.id,
-                  parts: [{ type: "text", text: fullResponse }],
-                  content: fullResponse,
-                  role: "assistant" as const,
-                  created_at: new Date().toISOString(),
-                }
+            if (done) break
 
-                const { error } = await supabaseServer
-                  .from("messages")
-                  .upsert(aiMessage, { onConflict: "id", ignoreDuplicates: false })
-
-                if (error) {
-                  console.error("❌ Failed to save Ollama message:", error)
-                } else {
-                  console.log("✅ Ollama message saved successfully")
-                }
-
-                // Update thread timestamp
-                await supabaseServer
-                  .from("threads")
-                  .update({ last_message_at: new Date().toISOString() })
-                  .eq("id", threadId)
-                  .eq("user_id", user.id)
-              }
-              break
-            }
-
-            const text = new TextDecoder().decode(value)
-            const lines = text.split("\n").filter(Boolean)
+            // Parse the Ollama response chunks
+            const chunk = new TextDecoder().decode(value)
+            const lines = chunk.split("\n").filter((line) => line.trim())
 
             for (const line of lines) {
               try {
                 const data = JSON.parse(line)
+                if (data.message?.content) {
+                  // Format as AI SDK compatible stream
+                  const streamChunk = `0:"${data.message.content.replace(/"/g, '\\"')}"\n`
+                  controller.enqueue(new TextEncoder().encode(streamChunk))
+                }
                 if (data.done) {
-                  controller.enqueue(new TextEncoder().encode(`0:""\n`))
-                } else if (data.message?.content) {
-                  // Accumulate the response
-                  fullResponse += data.message.content
-                  controller.enqueue(new TextEncoder().encode(`0:${JSON.stringify(data.message.content)}\n`))
+                  controller.enqueue(new TextEncoder().encode('d:""\n'))
                 }
               } catch (parseError) {
-                console.error("Error parsing Ollama response:", parseError)
+                console.warn("⚠️ Failed to parse Ollama chunk:", parseError)
               }
             }
           }
         } catch (error) {
-          console.error("Error reading Ollama stream:", error)
+          console.error("❌ Error reading Ollama stream:", error)
+          controller.error(error)
         } finally {
           controller.close()
         }
       },
     })
 
-    return new Response(readable, {
+    return new Response(stream, {
       headers: {
         "Content-Type": "text/plain; charset=utf-8",
         "Cache-Control": "no-cache",
@@ -588,7 +543,7 @@ Examples:
       },
     })
   } catch (error) {
-    console.error("Error in Ollama chat handler:", error)
-    return NextResponse.json({ error: "Failed to process Ollama chat request" }, { status: 500 })
+    console.error("💥 Ollama handler error:", error)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

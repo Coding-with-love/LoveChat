@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { memo, useCallback, useMemo, useState } from "react"
+import { memo, useCallback, useMemo, useState, useEffect } from "react"
 import { Textarea } from "@/frontend/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import { Button } from "@/frontend/components/ui/button"
@@ -10,6 +10,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/frontend/components/ui/dropdown-menu"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/frontend/components/ui/tooltip"
 import useAutoResizeTextarea from "@/hooks/useAutoResizeTextArea"
@@ -30,8 +31,18 @@ import { useMessageSummary } from "../hooks/useMessageSummary"
 import { useAuth } from "@/frontend/components/AuthProvider"
 import FileUpload, { FilePreviewList } from "./FileUpload"
 import type { FileUploadResult } from "@/lib/supabase/file-upload"
-import { ChevronDown, Check, ArrowUpIcon, Search, Info, Bot } from 'lucide-react'
+import { ChevronDown, Check, ArrowUpIcon, Search, Info, Bot, Settings, Sparkles, Zap, Brain, Globe } from 'lucide-react'
 import { useKeyboardShortcuts } from "@/frontend/hooks/useKeyboardShortcuts"
+import PersonaTemplateSelector from "./PersonaTemplateSelector"
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover"
+import { CreatePersonaDialog } from "./CreatePersonaDialog"
+import { CreateTemplateDialog } from "./CreateTemplateDialog"
+import { useThreadPersona } from "@/frontend/hooks/useThreadPersona"
+import { EditPersonaDialog } from "./EditPersonaDialog"
+import { EditTemplateDialog } from "./EditTemplateDialog"
+import type { Persona } from "@/lib/supabase/types"
+import type { PromptTemplate } from "@/frontend/stores/PersonaStore"
+import { Badge } from "./ui/badge"
 
 interface ChatMessagePart {
   type: "text" | "file_attachments"
@@ -75,22 +86,31 @@ const createUserMessage = (id: string, text: string): UIMessage => ({
 function PureChatInput({ threadId, input, status, setInput, append, stop }: ChatInputProps) {
   const { user } = useAuth()
   const getKey = useAPIKeyStore((state) => state.getKey)
-  const selectedModel = useModelStore((state) => state.selectedModel)
+  const { selectedModel, setModel, getEnabledModels, ensureValidSelectedModel } = useModelStore()
   const [uploadedFiles, setUploadedFiles] = useState<FileUploadResult[]>([])
   const { enabled: webSearchEnabled, toggle: toggleWebSearch } = useWebSearchStore()
+  const [createPersonaOpen, setCreatePersonaOpen] = useState(false)
+  const [createTemplateOpen, setCreateTemplateOpen] = useState(false)
+  const [editPersonaOpen, setEditPersonaOpen] = useState(false)
+  const [editTemplateOpen, setEditTemplateOpen] = useState(false)
+  const [editingPersona, setEditingPersona] = useState<Persona | null>(null)
+  const [editingTemplate, setEditingTemplate] = useState<PromptTemplate | null>(null)
+
+  // Ensure the selected model is valid on component mount
+  useEffect(() => {
+    ensureValidSelectedModel()
+  }, [])
+
+  // Get enabled models that have API keys
+  const enabledModels = useMemo(() => {
+    return getEnabledModels()
+  }, [getEnabledModels])
 
   // Check if we have an API key for the currently selected model
   const canChat = useMemo(() => {
     const modelConfig = getModelConfig(selectedModel)
     const apiKey = getKey(modelConfig.provider)
     const hasKey = modelConfig.provider === "ollama" ? true : !!apiKey
-
-    console.log("🔍 Chat availability check:", {
-      selectedModel,
-      provider: modelConfig.provider,
-      hasKey,
-      keyLength: apiKey?.length || 0,
-    })
 
     return hasKey
   }, [selectedModel, getKey])
@@ -104,7 +124,10 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
   const { id } = useParams()
 
   const isDisabled = useMemo(
-    () => (!input.trim() && uploadedFiles.length === 0) || status === "streaming" || status === "submitted",
+    () =>
+      (!(typeof input === "string" ? input.trim() : input) && uploadedFiles.length === 0) ||
+      status === "streaming" ||
+      status === "submitted",
     [input, status, uploadedFiles.length],
   )
 
@@ -137,14 +160,42 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
     toast.success(webSearchEnabled ? "Web search disabled" : "Web search enabled")
   }
 
+  const { currentPersona } = useThreadPersona(threadId)
+
+  const handleEditPersona = (persona: Persona) => {
+    setEditingPersona(persona)
+    setEditPersonaOpen(true)
+  }
+
+  const handleEditTemplate = (template: PromptTemplate) => {
+    setEditingTemplate(template)
+    setEditTemplateOpen(true)
+  }
+
+  const handleTemplateSelect = (template: any) => {
+    // Handle both old string format and new PromptTemplate object format
+    const templateContent = typeof template === "string" ? template : template.template
+
+    // If there's existing input, append the template with a newline
+    const currentInput = typeof input === "string" ? input : ""
+    const newInput = currentInput ? `${currentInput}\n\n${templateContent}` : templateContent
+    setInput(newInput)
+    adjustHeight()
+
+    // Focus the textarea after a short delay to ensure the content is set
+    setTimeout(() => {
+      textareaRef.current?.focus()
+    }, 100)
+  }
+
   const handleSubmit = useCallback(async () => {
     if (!user || !isAuthenticated) {
       toast.error("Please sign in to send messages")
       return
     }
 
-    const currentInput = textareaRef.current?.value || input
-    const hasText = currentInput.trim().length > 0
+    const currentInput = textareaRef.current?.value || (typeof input === "string" ? input : "")
+    const hasText = typeof currentInput === "string" && currentInput.trim().length > 0
     const hasFiles = uploadedFiles.length > 0
 
     if ((!hasText && !hasFiles) || status === "streaming" || status === "submitted") return
@@ -160,6 +211,7 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
         hasFiles,
         webSearchEnabled,
         modelSupportsSearch: currentModelSupportsSearch,
+        personaActive: !!currentPersona,
       })
 
       if (!id) {
@@ -205,7 +257,10 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
       // Create the base message using the helper
       const message = createUserMessage(messageId, messageContent)
 
-      // Add file parts if there are files
+      // NOTE: Personas work by modifying the system prompt in the chat API route
+      // The persona's system_prompt is automatically added when a persona is active for this thread
+      // This happens in the chat API route by checking the thread's assigned persona
+
       if (hasFiles) {
         await createMessage(threadId, message, uploadedFiles)
       } else {
@@ -241,6 +296,7 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
     append,
     setInput,
     adjustHeight,
+    currentPersona,
   ])
 
   const handleClearInput = useCallback(() => {
@@ -279,18 +335,18 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
         const end = textarea.selectionEnd
         const value = textarea.value
         const newValue = value.substring(0, start) + "\n" + value.substring(end)
-        
+
         // Update the input value
         setInput(newValue)
-        
+
         // Focus needs to be maintained
         textarea.focus()
-        
+
         // Set cursor position after the new line
         requestAnimationFrame(() => {
           textarea.selectionStart = textarea.selectionEnd = start + 1
         })
-        
+
         e.preventDefault()
       } else if (!e.shiftKey && !isDisabled) {
         // Submit when Enter is pressed without any modifiers
@@ -323,6 +379,17 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
   return (
     <div className="fixed bottom-0 w-full max-w-3xl">
       <div className="bg-background/95 backdrop-blur-sm border border-border rounded-t-2xl shadow-2xl pb-0 w-full">
+        {/* Active Persona Indicator - only show for non-default personas */}
+        {currentPersona && !currentPersona.is_default && (
+          <div className="px-4 pt-3">
+            <div className="bg-primary/10 border border-primary/20 rounded-lg px-3 py-2 flex items-center gap-2">
+              <span className="text-sm">{currentPersona.avatar_emoji}</span>
+              <span className="text-sm font-medium text-primary">{currentPersona.name} is active</span>
+              <span className="text-xs text-muted-foreground ml-auto">System prompt enhanced</span>
+            </div>
+          </div>
+        )}
+
         {/* File preview area - appears above the input */}
         {hasFiles && (
           <div className="pt-4 px-4">
@@ -339,13 +406,15 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
                 id="chat-input"
                 value={input}
                 placeholder={
-                  uploadedFiles.length > 0
-                    ? "Ask me anything about your files, or send them without additional text..."
-                    : webSearchEnabled && currentModelSupportsSearch
-                      ? "Ask anything - I'll search the web for current info..."
-                      : webSearchEnabled && !currentModelSupportsSearch
-                        ? "Web search enabled but current model doesn't support it..."
-                        : "What can I do for you?"
+                  currentPersona
+                    ? `Ask ${currentPersona.name} anything...`
+                    : uploadedFiles.length > 0
+                      ? "Ask me anything about your files, or send them without additional text..."
+                      : webSearchEnabled && currentModelSupportsSearch
+                        ? "Ask anything - I'll search the web for current info..."
+                        : webSearchEnabled && !currentModelSupportsSearch
+                          ? "Web search enabled but current model doesn't support it..."
+                          : "What can I do for you?"
                 }
                 className={cn(
                   "w-full px-4 py-4 border-none shadow-none bg-transparent",
@@ -372,6 +441,40 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
                   <div className="bg-muted/50 rounded-lg p-1 border border-border/50">
                     <ChatModelDropdown />
                   </div>
+
+                  {/* Persona & Template Selector */}
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className="flex items-center gap-2">
+                        {currentPersona && !currentPersona.is_default ? (
+                          <>
+                            <span>{currentPersona.avatar_emoji}</span>
+                            <span className="hidden sm:inline">{currentPersona.name}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Settings className="h-4 w-4" />
+                          </>
+                        )}
+                        <ChevronDown className="h-3 w-3 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[400px] p-0" align="start">
+                      <PersonaTemplateSelector
+                        threadId={threadId}
+                        onPersonaSelect={(persona) => {
+                          // Persona selection is handled internally by the component
+                          // This callback is just for any additional logic if needed
+                        }}
+                        onTemplateSelect={handleTemplateSelect}
+                        onCreatePersona={() => setCreatePersonaOpen(true)}
+                        onCreateTemplate={() => setCreateTemplateOpen(true)}
+                        onEditPersona={handleEditPersona}
+                        onEditTemplate={handleEditTemplate}
+                      />
+                    </PopoverContent>
+                  </Popover>
+
                   <div className="flex items-center gap-2">
                     <FileUpload
                       threadId={threadId}
@@ -482,6 +585,16 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
           </div>
         </div>
       )}
+
+      {/* Dialogs */}
+      <CreatePersonaDialog open={createPersonaOpen} onOpenChange={setCreatePersonaOpen} />
+      <CreateTemplateDialog
+        open={createTemplateOpen}
+        onOpenChange={setCreateTemplateOpen}
+        selectedPersonaId={currentPersona?.id}
+      />
+      <EditPersonaDialog open={editPersonaOpen} onOpenChange={setEditPersonaOpen} persona={editingPersona} />
+      <EditTemplateDialog open={editTemplateOpen} onOpenChange={setEditTemplateOpen} template={editingTemplate} />
     </div>
   )
 }
@@ -494,32 +607,94 @@ const ChatInput = memo(PureChatInput, (prevProps, nextProps) => {
 
 const PureChatModelDropdown = () => {
   const getKey = useAPIKeyStore((state) => state.getKey)
-  const { selectedModel, setModel, customModels } = useModelStore()
+  const { selectedModel, setModel, getEnabledModels, ensureValidSelectedModel } = useModelStore()
 
-  const isModelEnabled = useCallback(
-    (model: AIModel) => {
-      const modelConfig = getModelConfig(model)
-      const apiKey = getKey(modelConfig.provider)
-      return modelConfig.provider === "ollama" ? true : !!apiKey
-    },
-    [getKey],
-  )
+  // Ensure valid model selection on mount
+  useEffect(() => {
+    ensureValidSelectedModel()
+  }, [ensureValidSelectedModel])
+
+  // Get only enabled models that have API keys
+  const availableModels = useMemo(() => {
+    return getEnabledModels()
+  }, [getEnabledModels])
 
   const getModelIcon = useCallback((model: AIModel) => {
     const modelConfig = getModelConfig(model)
-    if (modelConfig.supportsSearch) {
-      return <Search className="w-3 h-3 text-blue-500" />
+    
+    // Provider icons
+    switch (modelConfig.provider) {
+      case "openai":
+        return <Zap className="w-3 h-3 text-green-500" />
+      case "google":
+        return <Brain className="w-3 h-3 text-blue-500" />
+      case "openrouter":
+        return <Globe className="w-3 h-3 text-purple-500" />
+      case "ollama":
+        return <Bot className="w-3 h-3 text-orange-500" />
+      default:
+        return null
     }
-    if (modelConfig.provider === "ollama") {
-      return <Bot className="w-3 h-3 text-green-500" />
-    }
-    return null
   }, [])
 
-  // Combine standard and custom models
-  const allModels = useMemo(() => {
-    return [...AI_MODELS, ...customModels]
-  }, [customModels])
+  const getModelBadges = useCallback((model: AIModel) => {
+    const modelConfig = getModelConfig(model)
+    const badges = []
+    
+    if (modelConfig.supportsSearch) {
+      badges.push(
+        <Search key="search" className="w-3 h-3 text-blue-500" />
+      )
+    }
+    
+    if (modelConfig.supportsThinking) {
+      badges.push(
+        <Sparkles key="thinking" className="w-3 h-3 text-purple-500" />
+      )
+    }
+    
+    return badges
+  }, [])
+
+  const getProviderName = useCallback((model: AIModel) => {
+    const modelConfig = getModelConfig(model)
+    switch (modelConfig.provider) {
+      case "openai": return "OpenAI"
+      case "google": return "Google"
+      case "openrouter": return "OpenRouter"
+      case "ollama": return "Ollama"
+      default: return ""
+    }
+  }, [])
+
+  // Group models by provider
+  const groupedModels = useMemo(() => {
+    const groups: Record<string, AIModel[]> = {}
+    
+    availableModels.forEach(model => {
+      const provider = getProviderName(model)
+      if (!groups[provider]) {
+        groups[provider] = []
+      }
+      groups[provider].push(model)
+    })
+    
+    return groups
+  }, [availableModels, getProviderName])
+
+  if (availableModels.length === 0) {
+    return (
+      <div className="flex items-center gap-2">
+        <Button
+          variant="ghost"
+          className="flex items-center gap-2 h-8 px-3 text-sm rounded-md text-muted-foreground"
+          disabled
+        >
+          <span className="font-medium">No models available</span>
+        </Button>
+      </div>
+    )
+  }
 
   return (
     <div className="flex items-center gap-2">
@@ -531,58 +706,59 @@ const PureChatModelDropdown = () => {
             aria-label={`Selected model: ${selectedModel}`}
           >
             <div className="flex items-center gap-2">
-              <span className="font-medium">{selectedModel}</span>
+              {getModelIcon(selectedModel)}
+              <span className="font-medium max-w-[120px] truncate">
+                {selectedModel.replace("ollama:", "")}
+              </span>
+              <div className="flex items-center gap-1">
+                {getModelBadges(selectedModel)}
+              </div>
               <ChevronDown className="w-3 h-3 opacity-50" />
             </div>
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent className={cn("min-w-[10rem]", "border-border", "bg-popover")}>
-          {/* Standard Models */}
-          <DropdownMenuItem disabled className="text-xs text-muted-foreground">
-            Standard Models
-          </DropdownMenuItem>
-          {AI_MODELS.map((model) => {
-            const isEnabled = isModelEnabled(model)
-            const modelIcon = getModelIcon(model)
-            return (
-              <DropdownMenuItem
-                key={model}
-                onSelect={() => isEnabled && setModel(model)}
-                disabled={!isEnabled}
-                className={cn("flex items-center justify-between gap-2", "cursor-pointer")}
-              >
-                <div className="flex items-center gap-2">
-                  <span>{model}</span>
-                  {modelIcon}
+        <DropdownMenuContent className="min-w-[280px] max-h-[400px] overflow-y-auto">
+          {Object.entries(groupedModels).map(([provider, models], groupIndex) => (
+            <div key={provider}>
+              {groupIndex > 0 && <DropdownMenuSeparator />}
+              <div className="px-2 py-1.5">
+                <div className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+                  {provider === "OpenAI" && <Zap className="w-3 h-3 text-green-500" />}
+                  {provider === "Google" && <Brain className="w-3 h-3 text-blue-500" />}
+                  {provider === "OpenRouter" && <Globe className="w-3 h-3 text-purple-500" />}
+                  {provider === "Ollama" && <Bot className="w-3 h-3 text-orange-500" />}
+                  {provider}
                 </div>
-                {selectedModel === model && <Check className="w-4 h-4 text-blue-500" aria-label="Selected" />}
-              </DropdownMenuItem>
-            )
-          })}
-
-          {/* Ollama Models */}
-          {customModels.length > 0 && (
-            <>
-              <DropdownMenuItem disabled className="text-xs text-muted-foreground mt-2">
-                Ollama Models
-              </DropdownMenuItem>
-              {customModels.map((model) => {
-                const modelName = model.replace("ollama:", "")
-                const modelIcon = getModelIcon(model)
-                return (
-                  <DropdownMenuItem
-                    key={model}
-                    onSelect={() => setModel(model)}
-                    className={cn("flex items-center justify-between gap-2", "cursor-pointer")}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span>{modelName}</span>
-                      {modelIcon}
+              </div>
+              {models.map((model) => (
+                <DropdownMenuItem
+                  key={model}
+                  onSelect={() => setModel(model)}
+                  className="flex items-center justify-between gap-2 cursor-pointer px-3 py-2"
+                >
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <span className="truncate">{model.replace("ollama:", "")}</span>
+                    <div className="flex items-center gap-1">
+                      {getModelBadges(model)}
                     </div>
-                    {selectedModel === model && <Check className="w-4 h-4 text-blue-500" aria-label="Selected" />}
-                  </DropdownMenuItem>
-                )
-              })}
+                  </div>
+                  {selectedModel === model && (
+                    <Check className="w-4 h-4 text-primary flex-shrink-0" />
+                  )}
+                </DropdownMenuItem>
+              ))}
+            </div>
+          ))}
+          
+          {availableModels.length < AI_MODELS.length && (
+            <>
+              <DropdownMenuSeparator />
+              <div className="px-3 py-2 text-xs text-muted-foreground">
+                <div className="flex items-center gap-2">
+                  <Settings className="w-3 h-3" />
+                  <span>Manage models in Settings</span>
+                </div>
+              </div>
             </>
           )}
         </DropdownMenuContent>

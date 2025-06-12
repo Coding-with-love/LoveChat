@@ -1,6 +1,5 @@
 "use client"
-
-import { useEffect, useRef, useState, useMemo, useCallback } from "react"
+import { useState, useRef, useEffect, useMemo, useCallback } from "react"
 import Messages from "./Messages"
 import ChatInput from "./ChatInput"
 import type { UIMessage } from "ai"
@@ -8,19 +7,25 @@ import { useAPIKeyStore } from "@/frontend/stores/APIKeyStore"
 import { useModelStore } from "@/frontend/stores/ModelStore"
 import { SidebarTrigger, useSidebar } from "./ui/sidebar"
 import { Button } from "./ui/button"
-import { ChevronDown, RotateCcw, Pin } from "lucide-react"
+import { ChevronDown } from "lucide-react"
 import { useCustomResumableChat } from "@/frontend/hooks/useCustomResumableChat"
 import { getModelConfig } from "@/lib/models"
 import { GlobalResumingIndicator } from "./ResumingIndicator"
 import { PinnedMessages } from "./PinnedMessages"
-import { useKeyboardShortcuts } from "@/frontend/hooks/useKeyboardShortcuts"
-import type { Message, CreateMessage, ChatRequestOptions } from "ai"
-import { getMessageParts } from "@ai-sdk/ui-utils"
 import { useKeyboardShortcutManager } from "@/frontend/hooks/useKeyboardShortcutManager"
 import { useNavigate, useParams } from "react-router"
 import { createMessage, createThread } from "@/lib/supabase/queries"
 import { v4 as uuidv4 } from "uuid"
 import { toast } from "sonner"
+import { ThinkingIndicator } from "./ThinkingIndicator"
+import type { Message, CreateMessage } from "ai"
+import { getMessageParts } from "@ai-sdk/ui-utils"
+
+// Extend UIMessage to include reasoning field
+interface ExtendedUIMessage extends UIMessage {
+  reasoning?: string
+  model?: string
+}
 
 interface ChatProps {
   threadId: string
@@ -35,11 +40,17 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
 
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
   const [showPinnedMessages, setShowPinnedMessages] = useState(false)
+  const [isThinking, setIsThinking] = useState(false)
   const isAutoScrolling = useRef(false)
 
   const navigate = useNavigate()
   const { toggleSidebar } = useSidebar()
   const { id } = useParams()
+
+  // Check if the current model supports thinking
+  const supportsThinking = useMemo(() => {
+    return modelConfig?.supportsThinking || false
+  }, [modelConfig])
 
   // Use our custom resumable chat hook
   const {
@@ -63,13 +74,20 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
     initialMessages,
     onFinish: (message: Message | CreateMessage) => {
       console.log("🏁 Chat stream finished:", message.id)
-      const parts = message.parts ?? getMessageParts(message) ?? [{ type: 'text' as const, text: message.content || '' }]
-      const uiMessage: UIMessage = {
+      const parts = message.parts ??
+        getMessageParts(message) ?? [{ type: "text" as const, text: message.content || "" }]
+
+      // Extract reasoning if available
+      const reasoningPart = parts.find((part) => part.type === "reasoning")
+
+      const uiMessage: ExtendedUIMessage = {
         id: message.id || crypto.randomUUID(),
         role: message.role,
         content: message.content || "",
         createdAt: message.createdAt || new Date(),
         parts: parts as UIMessage["parts"],
+        model: selectedModel,
+        reasoning: reasoningPart?.reasoning,
       }
       return uiMessage
     },
@@ -84,8 +102,27 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
       resumeComplete,
       resumedMessageId,
       messagesCount: messages.length,
+      supportsThinking,
+      selectedModel,
     })
-  }, [isResuming, resumeProgress, resumeComplete, resumedMessageId, messages.length])
+  }, [isResuming, resumeProgress, resumeComplete, resumedMessageId, messages.length, supportsThinking, selectedModel])
+
+  // Handle thinking state during streaming
+  useEffect(() => {
+    if (status === "streaming" && supportsThinking) {
+      // Show thinking indicator at the start of streaming
+      const lastMessage = messages[messages.length - 1]
+      const hasContent = lastMessage?.content?.trim().length > 0
+
+      if (!hasContent) {
+        setIsThinking(true)
+      } else {
+        setIsThinking(false)
+      }
+    } else {
+      setIsThinking(false)
+    }
+  }, [status, messages, supportsThinking])
 
   const scrollToBottom = () => {
     isAutoScrolling.current = true
@@ -166,122 +203,140 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
     // Implementation
   }, [])
 
-  const handlePromptClick = useCallback(async (prompt: string) => {
-    try {
-      // Set the prompt as the input and append it as a user message
-      setInput("")
-      const messageId = uuidv4()
-      const message = {
-        id: messageId,
-        role: "user" as const,
-        content: prompt,
-        createdAt: new Date(),
-        parts: [{ type: 'text' as const, text: prompt }]
+  const handlePromptClick = useCallback(
+    async (prompt: string) => {
+      try {
+        // Set the prompt as the input and append it as a user message
+        setInput("")
+        const messageId = uuidv4()
+        const message = {
+          id: messageId,
+          role: "user" as const,
+          content: prompt,
+          createdAt: new Date(),
+          parts: [{ type: "text" as const, text: prompt }],
+        }
+
+        // Create thread if needed
+        if (!id) {
+          console.log("📝 Creating new thread...")
+          navigate(`/chat/${threadId}`)
+          await createThread(threadId)
+          console.log("✅ Thread created successfully")
+        }
+
+        // Save to database first
+        await createMessage(threadId, message)
+
+        // Then append to chat
+        await append(message)
+      } catch (error) {
+        console.error("Error sending prompt:", error)
+        toast.error("Failed to send message")
       }
-      
-      // Create thread if needed
-      if (!id) {
-        console.log("📝 Creating new thread...")
-        navigate(`/chat/${threadId}`)
-        await createThread(threadId)
-        console.log("✅ Thread created successfully")
-      }
-      
-      // Save to database first
-      await createMessage(threadId, message)
-      
-      // Then append to chat
-      await append(message)
-    } catch (error) {
-      console.error("Error sending prompt:", error)
-      toast.error("Failed to send message")
-    }
-  }, [append, setInput, threadId, id, navigate])
+    },
+    [append, setInput, threadId, id, navigate],
+  )
 
   // Define keyboard shortcuts
-  const shortcuts = useMemo(() => [
-    {
-      name: "Navigation",
-      shortcuts: [
-        {
-          key: "n",
-          modifiers: { meta: true, shift: true },
-          description: "New conversation",
-          handler: () => navigate("/chat")
-        },
-        {
-          key: "b",
-          modifiers: { meta: true },
-          description: "Toggle sidebar",
-          handler: () => toggleSidebar()
-        },
-        {
-          key: "k",
-          modifiers: { meta: true },
-          description: "Search conversations",
-          handler: () => {/* TODO: Implement search */}
-        }
-      ]
-    },
-    {
-      name: "Conversation",
-      shortcuts: [
-        {
-          key: "Enter",
-          description: "Send message",
-          handler: handleSubmit,
-          allowInInput: true
-        },
-        {
-          key: "Enter",
-          modifiers: { meta: true },
-          description: "New line",
-          handler: () => {/* Handled in ChatInput */},
-          allowInInput: true
-        },
-        {
-          key: "Backspace",
-          modifiers: { meta: true },
-          description: "Clear input",
-          handler: () => setInput("")
-        },
-        {
-          key: "z",
-          modifiers: { meta: true },
-          description: "Undo last message",
-          handler: handleUndoMessage
-        },
-        {
-          key: "Escape",
-          description: "Stop generating",
-          handler: handleStopGenerating
-        }
-      ]
-    },
-    {
-      name: "Messages",
-      shortcuts: [
-        {
-          key: "p",
-          modifiers: { meta: true, shift: true },
-          description: "Pin/unpin message",
-          handler: handlePin
-        },
-        {
-          key: "c",
-          modifiers: { meta: true },
-          description: "Copy message",
-          handler: handleCopy
-        },
-        {
-          key: "e",
-          modifiers: { meta: true },
-          description: "Edit message",
-          handler: handleEdit
-        }
-      ]
-    }
-  ], [navigate, toggleSidebar, handleSubmit, setInput, handleUndoMessage, handleStopGenerating, handlePin, handleCopy, handleEdit])
+  const shortcuts = useMemo(
+    () => [
+      {
+        name: "Navigation",
+        shortcuts: [
+          {
+            key: "n",
+            modifiers: { meta: true, shift: true },
+            description: "New conversation",
+            handler: () => navigate("/chat"),
+          },
+          {
+            key: "b",
+            modifiers: { meta: true },
+            description: "Toggle sidebar",
+            handler: () => toggleSidebar(),
+          },
+          {
+            key: "k",
+            modifiers: { meta: true },
+            description: "Search conversations",
+            handler: () => {
+              /* TODO: Implement search */
+            },
+          },
+        ],
+      },
+      {
+        name: "Conversation",
+        shortcuts: [
+          {
+            key: "Enter",
+            description: "Send message",
+            handler: handleSubmit,
+            allowInInput: true,
+          },
+          {
+            key: "Enter",
+            modifiers: { meta: true },
+            description: "New line",
+            handler: () => {
+              /* Handled in ChatInput */
+            },
+            allowInInput: true,
+          },
+          {
+            key: "Backspace",
+            modifiers: { meta: true },
+            description: "Clear input",
+            handler: () => setInput(""),
+          },
+          {
+            key: "z",
+            modifiers: { meta: true },
+            description: "Undo last message",
+            handler: handleUndoMessage,
+          },
+          {
+            key: "Escape",
+            description: "Stop generating",
+            handler: handleStopGenerating,
+          },
+        ],
+      },
+      {
+        name: "Messages",
+        shortcuts: [
+          {
+            key: "p",
+            modifiers: { meta: true, shift: true },
+            description: "Pin/unpin message",
+            handler: handlePin,
+          },
+          {
+            key: "c",
+            modifiers: { meta: true },
+            description: "Copy message",
+            handler: handleCopy,
+          },
+          {
+            key: "e",
+            modifiers: { meta: true },
+            description: "Edit message",
+            handler: handleEdit,
+          },
+          {
+            key: "t",
+            modifiers: { meta: true },
+            description: "Toggle thinking view",
+            handler: () => {
+              // This will be handled at the Message level
+            },
+          },
+        ],
+      },
+    ],
+    [navigate, toggleSidebar, handleSubmit, setInput, threadId, id],
+  )
 
   // Use the keyboard shortcut manager
   useKeyboardShortcutManager(shortcuts)
@@ -309,6 +364,13 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
       )}
 
       <main className="flex flex-col w-full max-w-3xl pt-10 pb-56 mx-auto transition-all duration-300 ease-in-out">
+        {/* Global Thinking Indicator - shown when streaming starts with thinking models */}
+        {isThinking && status === "streaming" && supportsThinking && (
+          <div className="mb-6 flex justify-center">
+            <ThinkingIndicator isVisible={true} />
+          </div>
+        )}
+
         <Messages
           threadId={threadId}
           messages={messages}

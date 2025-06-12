@@ -812,6 +812,108 @@ export const isPinned = async (threadId: string, messageId: string): Promise<boo
   return !!data
 }
 
+// Thread Persona Functions
+export const setThreadPersona = async (threadId: string, personaId: string) => {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error("User not authenticated")
+
+  // Check if the thread exists, if not create it
+  const { data: existingThread, error: threadCheckError } = await supabase
+    .from("threads")
+    .select("id")
+    .eq("id", threadId)
+    .eq("user_id", user.id)
+    .single()
+
+  if (threadCheckError && threadCheckError.code === "PGRST116") {
+    // Thread doesn't exist, create it
+    console.log("🔗 Thread doesn't exist, creating it before setting persona...")
+    const { error: createError } = await supabase
+      .from("threads")
+      .insert({
+        id: threadId,
+        title: "New Chat",
+        user_id: user.id,
+      })
+
+    if (createError) {
+      console.error("❌ Failed to create thread:", createError)
+      throw createError
+    }
+    console.log("✅ Thread created successfully")
+  } else if (threadCheckError) {
+    // Some other error occurred
+    throw threadCheckError
+  }
+
+  // First, delete any existing thread persona for this user and thread
+  await supabase
+    .from("thread_personas")
+    .delete()
+    .eq("thread_id", threadId)
+    .eq("user_id", user.id)
+
+  // Then insert the new thread persona
+  const { data, error } = await supabase
+    .from("thread_personas")
+    .insert({
+      thread_id: threadId,
+      persona_id: personaId,
+      user_id: user.id,
+    })
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+export const getThreadPersona = async (threadId: string) => {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error("User not authenticated")
+
+  const { data, error } = await supabase
+    .from("thread_personas")
+    .select(`
+      *,
+      personas (
+        id,
+        name,
+        description,
+        system_prompt,
+        avatar_emoji,
+        color,
+        is_default,
+        is_public
+      )
+    `)
+    .eq("thread_id", threadId)
+    .eq("user_id", user.id)
+    .single()
+
+  if (error && error.code !== "PGRST116") throw error // PGRST116 is "not found"
+  return data?.personas || null
+}
+
+export const removeThreadPersona = async (threadId: string) => {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error("User not authenticated")
+
+  const { error } = await supabase
+    .from("thread_personas")
+    .delete()
+    .eq("thread_id", threadId)
+    .eq("user_id", user.id)
+
+  if (error) throw error
+}
+
 export const getUserProfile = async (userId: string) => {
   const { data, error } = await supabase
     .from("profiles")

@@ -13,6 +13,18 @@ import FileAttachmentViewer from "./FileAttachmentViewer"
 import MessageSources from "./MessageSources"
 import WebSearchBanner from "./WebSearchBanner"
 import { useKeyboardShortcuts } from "@/frontend/hooks/useKeyboardShortcuts"
+import { useTextSelection } from "@/frontend/hooks/useTextSelection"
+import { useAIActions } from "@/frontend/hooks/useAIActions"
+import AIContextMenu from "./AIContextMenu"
+import { AIActionResultDialog } from "./AIActionResultDialog"
+import { ThinkingToggle } from "./ThinkingToggle"
+import { ThinkingContent } from "./ThinkingContent"
+import { ThinkingIndicator } from "./ThinkingIndicator"
+
+// Extend UIMessage to include reasoning field
+interface ExtendedUIMessage extends UIMessage {
+  reasoning?: string
+}
 
 function PureMessage({
   threadId,
@@ -24,9 +36,12 @@ function PureMessage({
   stop,
   resumeComplete,
   resumedMessageId,
+  showThinking,
+  toggleThinking,
+  isThinkingModel,
 }: {
   threadId: string
-  message: UIMessage
+  message: ExtendedUIMessage
   setMessages: UseChatHelpers["setMessages"]
   reload: UseChatHelpers["reload"]
   isStreaming: boolean
@@ -34,16 +49,42 @@ function PureMessage({
   stop: UseChatHelpers["stop"]
   resumeComplete?: boolean
   resumedMessageId?: string | null
+  showThinking?: boolean
+  toggleThinking?: () => void
+  isThinkingModel?: boolean
 }) {
   const [mode, setMode] = useState<"view" | "edit">("view")
   const [showAnimation, setShowAnimation] = useState(false)
+  const [isCurrentlyThinking, setIsCurrentlyThinking] = useState(false)
   const messageRef = useRef<HTMLDivElement>(null)
+
+  // AI Actions functionality
+  const { selection, clearSelection } = useTextSelection()
+  const {
+    isProcessing: isAIProcessing,
+    result: aiResult,
+    showResult: showAIResult,
+    processAction,
+    closeResult: closeAIResult,
+    retryAction,
+  } = useAIActions()
 
   // Register this message's ref for navigation
   useEffect(() => {
     registerRef(message.id, messageRef.current)
     return () => registerRef(message.id, null)
   }, [message.id, registerRef])
+
+  // Handle thinking state for streaming messages
+  useEffect(() => {
+    if (isStreaming && isThinkingModel && message.role === "assistant") {
+      // Show thinking indicator while streaming and no content yet
+      const hasContent = message.parts?.some(part => part.type === "text" && part.text.trim())
+      setIsCurrentlyThinking(!hasContent)
+    } else {
+      setIsCurrentlyThinking(false)
+    }
+  }, [isStreaming, isThinkingModel, message.role, message.parts])
 
   // Handle resume completion animation
   useEffect(() => {
@@ -68,6 +109,9 @@ function PureMessage({
 
   // Check if this message used web search
   const usedWebSearch = sources.length > 0
+
+  // Extract reasoning from message
+  const reasoning = message.reasoning || message.parts?.find((part) => part.type === "reasoning")?.reasoning
 
   // Filter out tool calls and other non-user-facing parts
   const displayParts =
@@ -112,10 +156,43 @@ function PureMessage({
     // We'll pass this through to MessageControls
   }, [])
 
+  const handleAIAction = useCallback(
+    async (action: "explain" | "translate" | "rephrase" | "summarize", text: string, targetLanguage?: string) => {
+      await processAction(action, text, targetLanguage)
+      clearSelection()
+    },
+    [processAction, clearSelection],
+  )
+
+  // Handle keyboard shortcuts with AI actions
+  const handleExplainSelection = useCallback(() => {
+    const selectedText = window.getSelection()?.toString().trim()
+    if (selectedText && selectedText.length > 3) {
+      handleAIAction("explain", selectedText)
+    }
+  }, [handleAIAction])
+
+  const handleTranslateSelection = useCallback(() => {
+    const selectedText = window.getSelection()?.toString().trim()
+    if (selectedText && selectedText.length > 3) {
+      handleAIAction("translate", selectedText, "Spanish")
+    }
+  }, [handleAIAction])
+
+  const handleRephraseSelection = useCallback(() => {
+    const selectedText = window.getSelection()?.toString().trim()
+    if (selectedText && selectedText.length > 3) {
+      handleAIAction("rephrase", selectedText)
+    }
+  }, [handleAIAction])
+
   useKeyboardShortcuts({
     onCopyMessage: handleCopy,
     onEditMessage: handleEdit,
     onPinMessage: handlePin,
+    onExplainSelection: handleExplainSelection,
+    onTranslateSelection: handleTranslateSelection,
+    onRephraseSelection: handleRephraseSelection,
   })
 
   return (
@@ -123,7 +200,7 @@ function PureMessage({
       ref={messageRef}
       role="article"
       className={cn(
-        "flex flex-col transition-all duration-500",
+        "flex flex-col transition-all duration-500 relative",
         message.role === "user" ? "items-end" : "items-start",
         showAnimation && "animate-pulse",
       )}
@@ -131,6 +208,13 @@ function PureMessage({
     >
       {/* Web Search Banner for Assistant Messages */}
       {message.role === "assistant" && usedWebSearch && <WebSearchBanner />}
+
+      {/* Thinking Indicator for streaming thinking models */}
+      {isCurrentlyThinking && (
+        <div className="mb-3">
+          <ThinkingIndicator isVisible={true} />
+        </div>
+      )}
 
       {displayParts.map((part, index) => {
         const { type } = part
@@ -157,7 +241,7 @@ function PureMessage({
                   stop={stop}
                 />
               )}
-              {mode === "view" && <p className="whitespace-pre-wrap">{part.text}</p>}
+              {mode === "view" && <p className="whitespace-pre-wrap select-text">{part.text}</p>}
 
               {mode === "view" && (
                 <MessageControls
@@ -176,9 +260,28 @@ function PureMessage({
             </div>
           ) : (
             <div key={key} className="group flex flex-col gap-2 w-full relative">
+              {/* Thinking Toggle - Show before content for assistant messages with reasoning */}
+              {message.role === "assistant" && reasoning && !isStreaming && (
+                <div className="flex items-center gap-2 mb-2">
+                  <ThinkingToggle
+                    isExpanded={showThinking || false}
+                    onToggle={toggleThinking || (() => {})}
+                    hasReasoning={!!reasoning}
+                  />
+                </div>
+              )}
+
+              {/* Thinking Content - Show when expanded */}
+              {message.role === "assistant" && reasoning && showThinking && (
+                <ThinkingContent
+                  reasoning={reasoning}
+                  isExpanded={showThinking}
+                />
+              )}
+
               <div
                 className={cn(
-                  "transition-all duration-500 relative",
+                  "transition-all duration-500 relative select-text",
                   usedWebSearch &&
                     "border-l-4 border-blue-500 pl-4 bg-blue-50/50 dark:bg-blue-950/20 rounded-lg shadow-sm",
                   showAnimation && [
@@ -230,6 +333,25 @@ function PureMessage({
           <FileAttachmentViewer attachments={fileAttachments} />
         </div>
       )}
+
+      {/* AI Context Menu - Render at document level */}
+      {selection && (
+        <AIContextMenu
+          selectedText={selection.text}
+          position={selection.position}
+          onClose={clearSelection}
+          onAction={handleAIAction}
+          isProcessing={isAIProcessing}
+        />
+      )}
+
+      {/* AI Action Result Dialog */}
+      <AIActionResultDialog 
+        isOpen={showAIResult} 
+        onClose={closeAIResult} 
+        result={aiResult} 
+        onRetry={retryAction} 
+      />
     </div>
   )
 }
@@ -239,7 +361,10 @@ const Message = memo(PureMessage, (prevProps, nextProps) => {
   if (prevProps.message.id !== nextProps.message.id) return false
   if (prevProps.resumeComplete !== nextProps.resumeComplete) return false
   if (prevProps.resumedMessageId !== nextProps.resumedMessageId) return false
+  if (prevProps.showThinking !== nextProps.showThinking) return false
+  if (prevProps.isThinkingModel !== nextProps.isThinkingModel) return false
   if (!equal(prevProps.message.parts, nextProps.message.parts)) return false
+  if (prevProps.message.reasoning !== nextProps.message.reasoning) return false
   return true
 })
 

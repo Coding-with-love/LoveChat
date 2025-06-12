@@ -6,7 +6,6 @@ export const AI_MODELS = [
   "gemini-1.5-pro",
   "gemini-1.5-flash",
   "gemini-2.0-flash-thinking-exp",
-  "gemini-2.5-pro-preview-06-05",
   "claude-3-5-sonnet-20241022",
   "claude-3-5-haiku-20241022",
   "llama-3.1-405b-instruct",
@@ -26,6 +25,7 @@ export type AIModel = (typeof AI_MODELS)[number] | OllamaModel
 interface ModelConfig {
   provider: "openai" | "google" | "openrouter" | "ollama"
   modelId: string
+  name: string
   headerKey: string
   supportsSearch?: boolean
   supportsThinking?: boolean
@@ -38,6 +38,7 @@ export function getModelConfig(model: AIModel): ModelConfig {
     return {
       provider: "ollama",
       modelId: ollamaModelName,
+      name: model,
       headerKey: "X-Ollama-Base-URL",
       supportsSearch: false,
       supportsThinking: false,
@@ -50,6 +51,7 @@ export function getModelConfig(model: AIModel): ModelConfig {
       return {
         provider: "openai",
         modelId: "gpt-4o",
+        name: "gpt-4o",
         headerKey: "X-OpenAI-API-Key",
         supportsSearch: false,
         supportsThinking: false,
@@ -58,6 +60,7 @@ export function getModelConfig(model: AIModel): ModelConfig {
       return {
         provider: "openai",
         modelId: "gpt-4o-mini",
+        name: "gpt-4o-mini",
         headerKey: "X-OpenAI-API-Key",
         supportsSearch: false,
         supportsThinking: false,
@@ -66,6 +69,7 @@ export function getModelConfig(model: AIModel): ModelConfig {
       return {
         provider: "openai",
         modelId: "gpt-4-turbo",
+        name: "gpt-4-turbo",
         headerKey: "X-OpenAI-API-Key",
         supportsSearch: false,
         supportsThinking: false,
@@ -74,6 +78,7 @@ export function getModelConfig(model: AIModel): ModelConfig {
       return {
         provider: "openai",
         modelId: "o1-preview",
+        name: "o1-preview",
         headerKey: "X-OpenAI-API-Key",
         supportsSearch: false,
         supportsThinking: true,
@@ -82,6 +87,7 @@ export function getModelConfig(model: AIModel): ModelConfig {
       return {
         provider: "openai",
         modelId: "o1-mini",
+        name: "o1-mini",
         headerKey: "X-OpenAI-API-Key",
         supportsSearch: false,
         supportsThinking: true,
@@ -90,6 +96,7 @@ export function getModelConfig(model: AIModel): ModelConfig {
       return {
         provider: "google",
         modelId: "gemini-2.0-flash-exp",
+        name: "gemini-2.0-flash-exp",
         headerKey: "X-Google-API-Key",
         supportsSearch: true,
         supportsThinking: false,
@@ -98,6 +105,7 @@ export function getModelConfig(model: AIModel): ModelConfig {
       return {
         provider: "google",
         modelId: "gemini-1.5-pro",
+        name: "gemini-1.5-pro",
         headerKey: "X-Google-API-Key",
         supportsSearch: true,
         supportsThinking: false,
@@ -106,6 +114,7 @@ export function getModelConfig(model: AIModel): ModelConfig {
       return {
         provider: "google",
         modelId: "gemini-1.5-flash",
+        name: "gemini-1.5-flash",
         headerKey: "X-Google-API-Key",
         supportsSearch: true,
         supportsThinking: false,
@@ -114,16 +123,9 @@ export function getModelConfig(model: AIModel): ModelConfig {
       return {
         provider: "google",
         modelId: "gemini-2.0-flash-thinking-exp",
+        name: "gemini-2.0-flash-thinking-exp",
         headerKey: "X-Google-API-Key",
         // Thinking models support search too
-        supportsSearch: true,
-        supportsThinking: true,
-      }
-      case "gemini-2.5-pro-preview-06-05":
-      return {
-        provider: "google",
-        modelId: "gemini-2.5-pro-preview-06-05",
-        headerKey: "X-Google-API-Key",
         supportsSearch: true,
         supportsThinking: true,
       }
@@ -131,6 +133,7 @@ export function getModelConfig(model: AIModel): ModelConfig {
       return {
         provider: "openrouter",
         modelId: "anthropic/claude-3.5-sonnet:beta",
+        name: "claude-3-5-sonnet-20241022",
         headerKey: "X-OpenRouter-API-Key",
         supportsSearch: false,
         supportsThinking: false,
@@ -139,6 +142,7 @@ export function getModelConfig(model: AIModel): ModelConfig {
       return {
         provider: "openrouter",
         modelId: "anthropic/claude-3.5-haiku",
+        name: "claude-3-5-haiku-20241022",
         headerKey: "X-OpenRouter-API-Key",
         supportsSearch: false,
         supportsThinking: false,
@@ -147,6 +151,7 @@ export function getModelConfig(model: AIModel): ModelConfig {
       return {
         provider: "openrouter",
         modelId: "meta-llama/llama-3.1-405b-instruct",
+        name: "llama-3.1-405b-instruct",
         headerKey: "X-OpenRouter-API-Key",
         supportsSearch: false,
         supportsThinking: false,
@@ -155,6 +160,7 @@ export function getModelConfig(model: AIModel): ModelConfig {
       return {
         provider: "openrouter",
         modelId: "meta-llama/llama-3.1-70b-instruct",
+        name: "llama-3.1-70b-instruct",
         headerKey: "X-OpenRouter-API-Key",
         supportsSearch: false,
         supportsThinking: false,
@@ -163,12 +169,21 @@ export function getModelConfig(model: AIModel): ModelConfig {
       return {
         provider: "openrouter",
         modelId: "meta-llama/llama-3.1-8b-instruct",
+        name: "llama-3.1-8b-instruct",
         headerKey: "X-OpenRouter-API-Key",
         supportsSearch: false,
         supportsThinking: false,
       }
     default:
-      console.error("Available models:", AI_MODELS)
-      throw new Error(`Unknown model: ${model}. Available models: ${AI_MODELS.join(", ")}`)
+      console.warn(`Unknown model: ${model}. Falling back to default model: ${AI_MODELS[0]}`)
+      // Return config for the first available model as fallback
+      return {
+        provider: "google",
+        modelId: "gemini-2.0-flash-exp",
+        name: "gemini-2.0-flash-exp",
+        headerKey: "X-Google-API-Key",
+        supportsSearch: true,
+        supportsThinking: false,
+      }
   }
 }

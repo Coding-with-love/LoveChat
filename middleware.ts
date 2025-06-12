@@ -31,6 +31,10 @@ export async function middleware(request: NextRequest) {
     "/api/test-resumable",
     "/api/convert-code",
     "/api/explain-code",
+    "/api/personas",
+    "/api/prompt-templates",
+    "/api/summarize-conversation",
+    "/api/export-conversation",
   ]
   const isProtectedRoute = protectedRoutes.some((route) => pathname.startsWith(route))
 
@@ -105,6 +109,10 @@ export const config = {
     "/api/test-resumable/:path*",
     "/api/convert-code/:path*",
     "/api/explain-code/:path*",
+    "/api/personas/:path*",
+    "/api/prompt-templates/:path*",
+    "/api/summarize-conversation/:path*",
+    "/api/export-conversation/:path*",
     // Also match without path parameters
     "/api/chat",
     "/api/completion",
@@ -115,6 +123,11 @@ export const config = {
     "/api/resumable-streams",
     "/api/test-resumable",
     "/api/convert-code",
+    "/api/explain-code",
+    "/api/personas",
+    "/api/prompt-templates",
+    "/api/summarize-conversation",
+    "/api/export-conversation",
     // Include shared API routes for processing but they'll be skipped in middleware
     "/api/shared/:path*",
   ],

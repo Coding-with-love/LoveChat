@@ -183,22 +183,20 @@ export async function POST(request: NextRequest) {
       modelId: modelConfig.modelId,
     })
 
-    // Get the appropriate API key from headers
-    let apiKey: string | null = null
-
+    // Get API key based on provider
+    let apiKey: string | undefined
     switch (modelConfig.provider) {
       case "openai":
-        apiKey = request.headers.get("x-openai-api-key")
+        apiKey = request.headers.get(modelConfig.headerKey) || process.env.OPENAI_API_KEY
         break
       case "google":
-        apiKey = request.headers.get("x-google-api-key")
+        apiKey = request.headers.get(modelConfig.headerKey) || process.env.GOOGLE_API_KEY
         break
       case "openrouter":
-        apiKey = request.headers.get("x-openrouter-api-key")
+        apiKey = request.headers.get(modelConfig.headerKey) || process.env.OPENROUTER_API_KEY
         break
-      case "ollama":
-        // Ollama doesn't need an API key
-        break
+      default:
+        return NextResponse.json({ error: "Unsupported model provider" }, { status: 400 })
     }
 
     console.log("🔑 API key check:", {

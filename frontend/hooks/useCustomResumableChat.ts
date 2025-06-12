@@ -130,6 +130,11 @@ export function useCustomResumableChat({
           headers.set("x-api-key", apiKey)
         }
 
+        // Add provider-specific API key header
+        if (apiKey && modelConfig.provider !== "ollama" && modelConfig.headerKey) {
+          headers.set(modelConfig.headerKey, apiKey)
+        }
+
         // Log headers for debugging
         console.log("📋 Request headers:", Object.fromEntries(headers.entries()))
         console.log("📦 Request body:", JSON.stringify(newBody, null, 2))

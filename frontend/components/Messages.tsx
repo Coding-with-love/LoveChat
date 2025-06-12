@@ -4,15 +4,16 @@ import { memo, useState } from "react"
 import Message from "./Message"
 import type { UIMessage } from "ai"
 import type { UseChatHelpers } from "@ai-sdk/react"
-import equal from "fast-deep-equal"
 import MessageLoading from "./ui/MessageLoading"
 import Error from "./Error"
 import ChatLandingPage from "./ChatLandingPage"
 import { useAuth } from "@/frontend/components/AuthProvider"
+import { getModelConfig } from "@/lib/models"
 
 // Extend UIMessage to include reasoning field
 interface ExtendedUIMessage extends UIMessage {
   reasoning?: string
+  model?: string
 }
 
 function PureMessages({
@@ -41,20 +42,36 @@ function PureMessages({
   onPromptClick?: (prompt: string) => void
 }) {
   // State to manage thinking visibility for each message
-  const [showThinking, setShowThinking] = useState<Record<string, boolean>>({})
+  const [showThinking, setShowThinking] = useState<Record<string, boolean>>(() =>
+    messages.reduce((acc: Record<string, boolean>, message) => {
+      acc[message.id] = false
+      return acc
+    }, {}),
+  )
   const { profile } = useAuth()
 
   const toggleThinking = (messageId: string) => {
-    setShowThinking((prev) => ({
-      ...prev,
-      [messageId]: !prev[messageId],
-    }))
+    setShowThinking((prev) => {
+      const newState = { ...prev }
+      newState[messageId] = !newState[messageId]
+      return newState
+    })
+  }
+
+  // Check if the current model supports thinking
+  const isThinkingModel = (modelName: string) => {
+    try {
+      const config = getModelConfig(modelName as any)
+      return config.supportsThinking || false
+    } catch {
+      return modelName?.includes("o1") || modelName?.includes("thinking") || false
+    }
   }
 
   // Show landing page when there are no messages and not loading
   if (messages.length === 0 && status !== "submitted" && !error) {
     return (
-      <ChatLandingPage 
+      <ChatLandingPage
         onPromptClick={onPromptClick || (() => {})}
         userName={profile?.full_name || profile?.username || ""}
       />
@@ -75,6 +92,9 @@ function PureMessages({
           stop={stop}
           resumeComplete={resumeComplete}
           resumedMessageId={resumedMessageId}
+          showThinking={showThinking[message.id] || false}
+          toggleThinking={() => toggleThinking(message.id)}
+          isThinkingModel={isThinkingModel(message.model || "")}
         />
       ))}
       {status === "submitted" && <MessageLoading />}
@@ -89,7 +109,24 @@ const Messages = memo(PureMessages, (prevProps, nextProps) => {
   if (prevProps.messages.length !== nextProps.messages.length) return false
   if (prevProps.resumeComplete !== nextProps.resumeComplete) return false
   if (prevProps.resumedMessageId !== nextProps.resumedMessageId) return false
-  if (!equal(prevProps.messages, nextProps.messages)) return false
+
+  // Custom comparison to account for reasoning
+  if (prevProps.messages.length === nextProps.messages.length) {
+    for (let i = 0; i < prevProps.messages.length; i++) {
+      const prevMessage = prevProps.messages[i]
+      const nextMessage = nextProps.messages[i]
+
+      if (
+        prevMessage.id !== nextMessage.id ||
+        prevMessage.content !== nextMessage.content ||
+        prevMessage.role !== nextMessage.role ||
+        prevMessage.reasoning !== nextMessage.reasoning
+      ) {
+        return false
+      }
+    }
+  }
+
   return true
 })
 

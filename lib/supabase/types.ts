@@ -51,6 +51,39 @@ export interface ConversationSummary {
   updated_at: string
 }
 
+// Add Persona interface
+export interface Persona {
+  id: string
+  user_id: string
+  name: string
+  description?: string
+  system_prompt: string
+  avatar_emoji: string
+  color: string
+  is_default: boolean
+  is_public: boolean
+  created_at: string
+  updated_at: string
+}
+
+// Add PromptTemplate interface
+export interface PromptTemplate {
+  id: string
+  user_id: string
+  persona_id?: string
+  title: string
+  description?: string
+  template: string
+  variables: Array<{
+    name: string
+    type: "text" | "textarea" | "number" | "select"
+    placeholder?: string
+    options?: string[]
+    required?: boolean
+  }>
+  category?: string
+}
+
 export interface Database {
   public: {
     Tables: {
