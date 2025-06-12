@@ -167,9 +167,10 @@ function PureMessage({
   }, [])
 
   const handleAIAction = useCallback(
-    async (action: "explain" | "translate" | "rephrase" | "summarize", text: string, targetLanguage?: string) => {
-      await processAction(action, text, targetLanguage)
+    async (action: "explain" | "translate" | "rephrase" | "summarize", text: string, targetLanguage?: string): Promise<string | null> => {
+      const result = await processAction(action, text, targetLanguage)
       clearSelection()
+      return result
     },
     [processAction, clearSelection],
   )
@@ -345,17 +346,6 @@ function PureMessage({
         <div className={cn("mt-2", message.role === "user" ? "self-end max-w-[80%]" : "self-start w-full")}>
           <FileAttachmentViewer attachments={fileAttachments} />
         </div>
-      )}
-
-      {/* AI Context Menu - Render at document level */}
-      {selection && (
-        <AIContextMenu
-          selectedText={selection.text}
-          position={selection.position}
-          onClose={clearSelection}
-          onAction={handleAIAction}
-          isProcessing={isAIProcessing}
-        />
       )}
 
       {/* AI Action Result Dialog */}

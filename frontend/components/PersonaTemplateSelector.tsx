@@ -12,12 +12,13 @@ import { Badge } from "./ui/badge"
 import { usePersonas } from "@/frontend/hooks/usePersonas"
 import { usePersonaStore } from "@/frontend/stores/PersonaStore"
 import type { PromptTemplate } from "@/frontend/stores/PersonaStore"
-import { User, FileText, Plus, Bot, Pencil, Trash2 } from "lucide-react"
+import { User, FileText, Plus, Bot, Pencil, Trash2, Sparkles } from "lucide-react"
+import { TemplateVariableDialog } from "./TemplateVariableDialog"
 
 interface PersonaTemplateSelectorProps {
   threadId: string
   onPersonaSelect?: (persona: Persona | null) => void
-  onTemplateSelect?: (template: PromptTemplate) => void
+  onTemplateSelect?: (template: string) => void
   onCreatePersona?: () => void
   onCreateTemplate?: () => void
   onEditPersona?: (persona: Persona) => void
@@ -38,6 +39,8 @@ const PersonaTemplateSelector: React.FC<PersonaTemplateSelectorProps> = ({
   onDeleteTemplate,
 }) => {
   const [activeTab, setActiveTab] = useState("personas")
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false)
+  const [selectedTemplate, setSelectedTemplate] = useState<PromptTemplate | null>(null)
   const { personas, loading: personasLoading, promptTemplates, templatesLoading } = usePersonas()
   const { getThreadPersona, setThreadPersona, removeThreadPersona, getDefaultPersona } = usePersonaStore()
 
@@ -65,10 +68,24 @@ const PersonaTemplateSelector: React.FC<PersonaTemplateSelectorProps> = ({
 
   const handleTemplateSelect = (template: PromptTemplate) => {
     try {
-      onTemplateSelect?.(template)
-      toast.success(`Template "${template.title}" selected`)
+      // Check if template has variables
+      if (template.variables && template.variables.length > 0) {
+        setSelectedTemplate(template)
+        setTemplateDialogOpen(true)
+      } else {
+        // No variables, insert directly
+        onTemplateSelect?.(template.template)
+        toast.success(`Template "${template.title}" inserted`)
+      }
     } catch (error) {
       toast.error("Failed to select template")
+    }
+  }
+
+  const handleTemplateInsert = (processedTemplate: string) => {
+    onTemplateSelect?.(processedTemplate)
+    if (selectedTemplate) {
+      toast.success(`Template "${selectedTemplate.title}" inserted with your values`)
     }
   }
 
@@ -106,225 +123,241 @@ const PersonaTemplateSelector: React.FC<PersonaTemplateSelectorProps> = ({
   }
 
   return (
-    <Card className="w-full max-w-2xl mx-auto">
-      <CardContent className="p-4">
-        <div className="mb-4">
-          <h3 className="font-medium text-sm text-foreground mb-1">AI Persona & Templates</h3>
-          <p className="text-xs text-muted-foreground">Choose a persona or template to get started</p>
-        </div>
+    <>
+      <Card className="w-full max-w-2xl mx-auto">
+        <CardContent className="p-4">
+          <div className="mb-4">
+            <h3 className="font-medium text-sm text-foreground mb-1">AI Persona & Templates</h3>
+            <p className="text-xs text-muted-foreground">Choose a persona or template to get started</p>
+          </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-2 h-8 bg-muted/30">
-            <TabsTrigger value="personas" className="text-xs data-[state=active]:bg-background">
-              <Bot className="h-3 w-3 mr-1" />
-              Personas ({personas.length})
-            </TabsTrigger>
-            <TabsTrigger value="templates" className="text-xs data-[state=active]:bg-background">
-              <FileText className="h-3 w-3 mr-1" />
-              Templates ({promptTemplates.length})
-            </TabsTrigger>
-          </TabsList>
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="grid w-full grid-cols-2 h-8 bg-muted/30">
+              <TabsTrigger value="personas" className="text-xs data-[state=active]:bg-background">
+                <Bot className="h-3 w-3 mr-1" />
+                Personas ({personas.length})
+              </TabsTrigger>
+              <TabsTrigger value="templates" className="text-xs data-[state=active]:bg-background">
+                <FileText className="h-3 w-3 mr-1" />
+                Templates ({promptTemplates.length})
+              </TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="personas" className="mt-3">
-            <ScrollArea className="h-48 w-full">
-              <div className="space-y-2 pr-3">
-                {/* Default option */}
-                <div
-                  className={`
-                    relative group cursor-pointer rounded-md p-2 transition-colors
-                    ${
-                      !currentPersona || currentPersona.is_default
-                        ? "bg-secondary text-secondary-foreground"
-                        : "hover:bg-accent hover:text-accent-foreground"
-                    }
-                  `}
-                  onClick={() => handlePersonaSelect(null)}
-                >
-                  <div className="flex items-center gap-2 w-full">
-                    <div className="p-1 rounded bg-muted">
-                      <User className="h-3 w-3" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-medium flex items-center gap-1">
-                        Default Assistant
-                        {(!currentPersona || currentPersona.is_default) && (
-                          <Badge variant="default" className="text-[10px] px-1 py-0">
-                            Active
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="text-[10px] text-muted-foreground truncate">Standard AI assistant</div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Personas */}
-                {personas.map((persona) => (
+            <TabsContent value="personas" className="mt-3">
+              <ScrollArea className="h-48 w-full">
+                <div className="space-y-2 pr-3">
+                  {/* Default option */}
                   <div
-                    key={persona.id}
                     className={`
                       relative group cursor-pointer rounded-md p-2 transition-colors
                       ${
-                        currentPersona?.id === persona.id
+                        !currentPersona || currentPersona.is_default
                           ? "bg-secondary text-secondary-foreground"
                           : "hover:bg-accent hover:text-accent-foreground"
                       }
                     `}
-                    onClick={() => handlePersonaSelect(persona)}
+                    onClick={() => handlePersonaSelect(null)}
                   >
-                    <div className="flex items-center gap-2 w-full pr-16">
-                      <div className="text-sm">{persona.avatar_emoji || "🤖"}</div>
+                    <div className="flex items-center gap-2 w-full">
+                      <div className="p-1 rounded bg-muted">
+                        <User className="h-3 w-3" />
+                      </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-xs font-medium flex items-center gap-1">
-                          {persona.name}
-                          {currentPersona?.id === persona.id && (
+                          Default Assistant
+                          {(!currentPersona || currentPersona.is_default) && (
                             <Badge variant="default" className="text-[10px] px-1 py-0">
                               Active
                             </Badge>
                           )}
-                          {persona.is_public && (
-                            <Badge variant="outline" className="text-[10px] px-1 py-0">
-                              Public
-                            </Badge>
-                          )}
                         </div>
-                        <div className="text-[10px] text-muted-foreground truncate">{persona.description}</div>
+                        <div className="text-[10px] text-muted-foreground truncate">Standard AI assistant</div>
                       </div>
                     </div>
-                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      {onEditPersona && (
-                        <button
-                          className="h-6 w-6 p-0 bg-background/80 hover:bg-background rounded-sm flex items-center justify-center"
-                          onClick={(e) => handleEditClick(e, persona, true)}
-                          aria-label={`Edit ${persona.name}`}
-                        >
-                          <Pencil className="h-3 w-3" />
-                        </button>
-                      )}
-                      {onDeletePersona && (
-                        <button
-                          className="h-6 w-6 p-0 bg-background/80 hover:bg-background rounded-sm flex items-center justify-center text-destructive hover:text-destructive"
-                          onClick={(e) => handleDeleteClick(e, persona, true)}
-                          aria-label={`Delete ${persona.name}`}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </button>
-                      )}
-                    </div>
                   </div>
-                ))}
 
-                {/* Create button */}
-                {onCreatePersona && (
-                  <div
-                    className="cursor-pointer rounded-md p-2 border border-dashed border-muted-foreground/30 hover:bg-accent hover:text-accent-foreground transition-colors"
-                    onClick={onCreatePersona}
-                  >
-                    <div className="flex items-center gap-2 w-full">
-                      <div className="p-1 rounded bg-muted">
-                        <Plus className="h-3 w-3" />
-                      </div>
-                      <div className="flex-1">
-                        <div className="text-xs font-medium text-muted-foreground">Create New Persona</div>
-                        <div className="text-[10px] text-muted-foreground">Add custom AI personality</div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </ScrollArea>
-          </TabsContent>
-
-          <TabsContent value="templates" className="mt-3">
-            <ScrollArea className="h-48 w-full">
-              <div className="space-y-2 pr-3">
-                {templatesLoading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <div className="flex items-center gap-2 text-muted-foreground text-xs">
-                      <div className="animate-spin rounded-full h-3 w-3 border border-current border-t-transparent"></div>
-                      Loading templates...
-                    </div>
-                  </div>
-                ) : promptTemplates.length === 0 ? (
-                  <div className="text-center py-6">
-                    <div className="text-xs text-muted-foreground mb-2">No templates yet</div>
-                    {onCreateTemplate && (
-                      <Button size="sm" onClick={onCreateTemplate} className="text-xs">
-                        <Plus className="h-3 w-3 mr-1" />
-                        Create Template
-                      </Button>
-                    )}
-                  </div>
-                ) : (
-                  promptTemplates.map((template) => (
+                  {/* Personas */}
+                  {personas.map((persona) => (
                     <div
-                      key={template.id}
-                      className="relative group cursor-pointer rounded-md p-2 hover:bg-accent hover:text-accent-foreground transition-colors"
-                      onClick={() => handleTemplateSelect(template)}
+                      key={persona.id}
+                      className={`
+                        relative group cursor-pointer rounded-md p-2 transition-colors
+                        ${
+                          currentPersona?.id === persona.id
+                            ? "bg-secondary text-secondary-foreground"
+                            : "hover:bg-accent hover:text-accent-foreground"
+                        }
+                      `}
+                      onClick={() => handlePersonaSelect(persona)}
                     >
                       <div className="flex items-center gap-2 w-full pr-16">
-                        <div className="p-1 rounded bg-muted">
-                          <FileText className="h-3 w-3" />
-                        </div>
+                        <div className="text-sm">{persona.avatar_emoji || "🤖"}</div>
                         <div className="flex-1 min-w-0">
                           <div className="text-xs font-medium flex items-center gap-1">
-                            {template.title}
-                            {template.category && (
+                            {persona.name}
+                            {currentPersona?.id === persona.id && (
+                              <Badge variant="default" className="text-[10px] px-1 py-0">
+                                Active
+                              </Badge>
+                            )}
+                            {persona.is_public && (
                               <Badge variant="outline" className="text-[10px] px-1 py-0">
-                                {template.category}
+                                Public
                               </Badge>
                             )}
                           </div>
-                          <div className="text-[10px] text-muted-foreground truncate">{template.description}</div>
+                          <div className="text-[10px] text-muted-foreground truncate">{persona.description}</div>
                         </div>
                       </div>
                       <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        {onEditTemplate && (
+                        {onEditPersona && (
                           <button
                             className="h-6 w-6 p-0 bg-background/80 hover:bg-background rounded-sm flex items-center justify-center"
-                            onClick={(e) => handleEditClick(e, template, false)}
-                            aria-label={`Edit ${template.title}`}
+                            onClick={(e) => handleEditClick(e, persona, true)}
+                            aria-label={`Edit ${persona.name}`}
                           >
                             <Pencil className="h-3 w-3" />
                           </button>
                         )}
-                        {onDeleteTemplate && (
+                        {onDeletePersona && (
                           <button
                             className="h-6 w-6 p-0 bg-background/80 hover:bg-background rounded-sm flex items-center justify-center text-destructive hover:text-destructive"
-                            onClick={(e) => handleDeleteClick(e, template, false)}
-                            aria-label={`Delete ${template.title}`}
+                            onClick={(e) => handleDeleteClick(e, persona, true)}
+                            aria-label={`Delete ${persona.name}`}
                           >
                             <Trash2 className="h-3 w-3" />
                           </button>
                         )}
                       </div>
                     </div>
-                  ))
-                )}
+                  ))}
 
-                {/* Create template button */}
-                {onCreateTemplate && promptTemplates.length > 0 && (
-                  <div
-                    className="cursor-pointer rounded-md p-2 border border-dashed border-muted-foreground/30 hover:bg-accent hover:text-accent-foreground transition-colors"
-                    onClick={onCreateTemplate}
-                  >
-                    <div className="flex items-center gap-2 w-full">
-                      <div className="p-1 rounded bg-muted">
-                        <Plus className="h-3 w-3" />
-                      </div>
-                      <div className="flex-1">
-                        <div className="text-xs font-medium text-muted-foreground">Create New Template</div>
-                        <div className="text-[10px] text-muted-foreground">Add custom prompt template</div>
+                  {/* Create button */}
+                  {onCreatePersona && (
+                    <div
+                      className="cursor-pointer rounded-md p-2 border border-dashed border-muted-foreground/30 hover:bg-accent hover:text-accent-foreground transition-colors"
+                      onClick={onCreatePersona}
+                    >
+                      <div className="flex items-center gap-2 w-full">
+                        <div className="p-1 rounded bg-muted">
+                          <Plus className="h-3 w-3" />
+                        </div>
+                        <div className="flex-1">
+                          <div className="text-xs font-medium text-muted-foreground">Create New Persona</div>
+                          <div className="text-[10px] text-muted-foreground">Add custom AI personality</div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )}
-              </div>
-            </ScrollArea>
-          </TabsContent>
-        </Tabs>
-      </CardContent>
-    </Card>
+                  )}
+                </div>
+              </ScrollArea>
+            </TabsContent>
+
+            <TabsContent value="templates" className="mt-3">
+              <ScrollArea className="h-48 w-full">
+                <div className="space-y-2 pr-3">
+                  {templatesLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="flex items-center gap-2 text-muted-foreground text-xs">
+                        <div className="animate-spin rounded-full h-3 w-3 border border-current border-t-transparent"></div>
+                        Loading templates...
+                      </div>
+                    </div>
+                  ) : promptTemplates.length === 0 ? (
+                    <div className="text-center py-6">
+                      <div className="text-xs text-muted-foreground mb-2">No templates yet</div>
+                      {onCreateTemplate && (
+                        <Button size="sm" onClick={onCreateTemplate} className="text-xs">
+                          <Plus className="h-3 w-3 mr-1" />
+                          Create Template
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    promptTemplates.map((template) => (
+                      <div
+                        key={template.id}
+                        className="relative group cursor-pointer rounded-md p-2 hover:bg-accent hover:text-accent-foreground transition-colors"
+                        onClick={() => handleTemplateSelect(template)}
+                      >
+                        <div className="flex items-center gap-2 w-full pr-16">
+                          <div className="p-1 rounded bg-muted">
+                            <FileText className="h-3 w-3" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-medium flex items-center gap-1">
+                              {template.title}
+                              {template.variables && template.variables.length > 0 && (
+                                <Badge variant="secondary" className="text-[10px] px-1 py-0 gap-1">
+                                  <Sparkles className="h-2 w-2" />
+                                  {template.variables.length}
+                                </Badge>
+                              )}
+                              {template.category && (
+                                <Badge variant="outline" className="text-[10px] px-1 py-0">
+                                  {template.category}
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-muted-foreground truncate">{template.description}</div>
+                          </div>
+                        </div>
+                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {onEditTemplate && (
+                            <button
+                              className="h-6 w-6 p-0 bg-background/80 hover:bg-background rounded-sm flex items-center justify-center"
+                              onClick={(e) => handleEditClick(e, template, false)}
+                              aria-label={`Edit ${template.title}`}
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </button>
+                          )}
+                          {onDeleteTemplate && (
+                            <button
+                              className="h-6 w-6 p-0 bg-background/80 hover:bg-background rounded-sm flex items-center justify-center text-destructive hover:text-destructive"
+                              onClick={(e) => handleDeleteClick(e, template, false)}
+                              aria-label={`Delete ${template.title}`}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+
+                  {/* Create template button */}
+                  {onCreateTemplate && promptTemplates.length > 0 && (
+                    <div
+                      className="cursor-pointer rounded-md p-2 border border-dashed border-muted-foreground/30 hover:bg-accent hover:text-accent-foreground transition-colors"
+                      onClick={onCreateTemplate}
+                    >
+                      <div className="flex items-center gap-2 w-full">
+                        <div className="p-1 rounded bg-muted">
+                          <Plus className="h-3 w-3" />
+                        </div>
+                        <div className="flex-1">
+                          <div className="text-xs font-medium text-muted-foreground">Create New Template</div>
+                          <div className="text-[10px] text-muted-foreground">Add custom prompt template</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
+
+      {/* Template Variable Dialog */}
+      <TemplateVariableDialog
+        open={templateDialogOpen}
+        onOpenChange={setTemplateDialogOpen}
+        template={selectedTemplate}
+        onInsert={handleTemplateInsert}
+      />
+    </>
   )
 }
 

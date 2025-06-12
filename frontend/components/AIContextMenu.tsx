@@ -11,7 +11,7 @@ interface AIContextMenuProps {
   selectedText: string
   position: { x: number; y: number }
   onClose: () => void
-  onAction: (action: "explain" | "translate" | "rephrase" | "summarize", text: string, targetLanguage?: string) => void
+  onAction: (action: "explain" | "translate" | "rephrase" | "summarize", text: string, targetLanguage?: string) => Promise<string | null>
   isProcessing: boolean
 }
 
@@ -22,7 +22,7 @@ const AIContextMenu: React.FC<AIContextMenuProps> = ({
   onAction,
   isProcessing,
 }) => {
-  const { openLanguageDialog } = useLanguageDialogStore()
+  const { openDialog } = useLanguageDialogStore()
   const [showReplacement, setShowReplacement] = useState(false)
   const [replacementText, setReplacementText] = useState("")
   const [isReplacing, setIsReplacing] = useState(false)
@@ -60,7 +60,7 @@ const AIContextMenu: React.FC<AIContextMenuProps> = ({
 
   const handleTranslate = () => {
     console.log("🌍 Translate button clicked!")
-    openLanguageDialog(selectedText, (language) => {
+    openDialog(selectedText, (language: string) => {
       console.log(`🌍 Selected language: ${language}`)
       onAction("translate", selectedText, language)
     })
@@ -89,45 +89,63 @@ const AIContextMenu: React.FC<AIContextMenuProps> = ({
     }
     
     try {
-      // Call the action handler with a callback to get the result
-      onAction("rephrase", selectedText, undefined)
+      // Call the action handler and get the result
+      const result = await onAction("rephrase", selectedText, undefined)
+      if (result) {
+        setReplacementText(result)
+        setShowReplacement(true)
+      }
     } catch (error) {
       console.error("Failed to rephrase:", error)
+    } finally {
       setIsReplacing(false)
     }
   }
 
   if (showReplacement) {
     return (
-      <InlineReplacement
-        newText={replacementText}
-        onAccept={() => {
-          // Replace the selected text
-          const selection = window.getSelection()
-          if (selection && selection.rangeCount > 0) {
-            const range = selection.getRangeAt(0)
-            range.deleteContents()
-            range.insertNode(document.createTextNode(replacementText))
-            selection.removeAllRanges()
-          }
-          setShowReplacement(false)
-          onClose()
+      <div
+        style={{
+          position: "fixed",
+          left: replacementPosition.x,
+          top: replacementPosition.y,
+          zIndex: 50,
         }}
-        onReject={() => {
-          setShowReplacement(false)
-          onClose()
-        }}
-        onRetry={async () => {
-          setIsReplacing(true)
-          try {
-            onAction("rephrase", selectedText, undefined)
-          } catch (error) {
-            console.error("Failed to retry rephrase:", error)
-            setIsReplacing(false)
-          }
-        }}
-        isProcessing={isReplacing}
-      />
+      >
+        <InlineReplacement
+          newText={replacementText}
+          onAccept={() => {
+            // Replace the selected text
+            const selection = window.getSelection()
+            if (selection && selection.rangeCount > 0) {
+              const range = selection.getRangeAt(0)
+              range.deleteContents()
+              range.insertNode(document.createTextNode(replacementText))
+              selection.removeAllRanges()
+            }
+            setShowReplacement(false)
+            onClose()
+          }}
+          onReject={() => {
+            setShowReplacement(false)
+            onClose()
+          }}
+          onRetry={async () => {
+            setIsReplacing(true)
+            try {
+              const result = await onAction("rephrase", selectedText, undefined)
+              if (result) {
+                setReplacementText(result)
+              }
+            } catch (error) {
+              console.error("Failed to retry rephrase:", error)
+            } finally {
+              setIsReplacing(false)
+            }
+          }}
+          isProcessing={isReplacing}
+        />
+      </div>
     )
   }
 

@@ -66,6 +66,7 @@ function PureMessages({
   const [showReplacement, setShowReplacement] = useState(false)
   const [replacementText, setReplacementText] = useState("")
   const [originalText, setOriginalText] = useState("")
+  const [currentText, setCurrentText] = useState("") // Track the current text for multiple rephrases
   const [isReplacing, setIsReplacing] = useState(false)
   const [replacementPosition, setReplacementPosition] = useState({ x: 0, y: 0 })
   const [targetMessageId, setTargetMessageId] = useState<string | null>(null)
@@ -76,7 +77,7 @@ function PureMessages({
     action: "explain" | "translate" | "rephrase" | "summarize",
     text: string,
     targetLanguage?: string,
-  ) => {
+  ): Promise<string | null> => {
     console.log("🎯 AI Action triggered:", action, "for text:", text.substring(0, 50) + "...")
 
     // Save the current selection range for later use
@@ -101,6 +102,7 @@ function PureMessages({
       console.log("🔄 Starting rephrase with inline replacement")
       setIsReplacing(true)
       setOriginalText(text)
+      setCurrentText(text) // Set current text to the text being rephrased
 
       // Calculate position for the replacement dialog
       if (selection && selection.rangeCount > 0) {
@@ -119,16 +121,20 @@ function PureMessages({
         if (result) {
           setReplacementText(result)
           setShowReplacement(true)
+          return result
         }
+        return null
       } catch (error) {
         console.error("❌ Failed to rephrase:", error)
+        return null
       } finally {
         setIsReplacing(false)
       }
     } else {
       console.log("📋 Using dialog for action:", action)
       // For other actions, use the normal dialog
-      await processAction(action, text, targetLanguage, true)
+      const result = await processAction(action, text, targetLanguage, true)
+      return result
     }
   }
 
@@ -429,6 +435,7 @@ function PureMessages({
             newText={replacementText}
             onAccept={async () => {
               await replaceSelectedText(replacementText)
+              setCurrentText(replacementText) // Update current text to the accepted replacement
               setShowReplacement(false)
               clearSelection()
               setTargetMessageId(null)
@@ -439,11 +446,12 @@ function PureMessages({
               clearSelection()
               setTargetMessageId(null)
               setOriginalText("")
+              setCurrentText("")
             }}
             onRetry={async () => {
               setIsReplacing(true)
               try {
-                const result = await processAction("rephrase", originalText, undefined, false)
+                const result = await processAction("rephrase", currentText, undefined, false)
                 if (result) {
                   setReplacementText(result)
                 }
