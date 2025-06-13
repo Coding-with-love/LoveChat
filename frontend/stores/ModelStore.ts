@@ -87,13 +87,31 @@ export const useModelStore = create<ModelState>()(
       
       getEnabledModels: () => {
         const state = get()
-        const getKey = useAPIKeyStore.getState().getKey
+        const apiKeyStore = useAPIKeyStore.getState()
+        const getKey = apiKeyStore.getKey
+        const isLoading = apiKeyStore.isLoading
         
         return [...state.enabledModels, ...state.customModels].filter(model => {
           try {
             const modelConfig = getModelConfig(model)
             if (modelConfig.provider === "ollama") return true
-            return !!getKey(modelConfig.provider)
+            
+            // Always check if the key actually exists
+            const hasKey = !!getKey(modelConfig.provider)
+            
+            // If we have a key, always include the model
+            if (hasKey) {
+              return true
+            }
+            
+            // During loading, only preserve the currently selected model
+            // This prevents losing the user's selection while still being conservative about which models to show
+            if (isLoading && model === state.selectedModel) {
+              return true
+            }
+            
+            // Otherwise, exclude models without keys
+            return false
           } catch {
             // If getModelConfig throws an error, exclude this model
             return false
@@ -128,14 +146,21 @@ export const useModelStore = create<ModelState>()(
 
       ensureValidSelectedModel: () => {
         const state = get()
+        const apiKeyStore = useAPIKeyStore.getState()
+        const isLoading = apiKeyStore.isLoading
         const enabledModels = state.getEnabledModels()
         
         // Check if current selected model is available
         const isCurrentModelAvailable = enabledModels.includes(state.selectedModel)
         
-        if (!isCurrentModelAvailable && enabledModels.length > 0) {
-          // Switch to first available model
+        // If the model is not available and we're not currently loading API keys,
+        // then it's safe to switch to another model
+        if (!isCurrentModelAvailable && !isLoading && enabledModels.length > 0) {
+          console.log("🔄 Model validation: switching from", state.selectedModel, "to", enabledModels[0])
           set({ selectedModel: enabledModels[0] })
+        } else if (!isCurrentModelAvailable && isLoading) {
+          console.log("🔄 Model validation: API keys loading, preserving current model", state.selectedModel)
+          // Don't switch models while API keys are loading - preserve user's selection
         }
       }
     }),

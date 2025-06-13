@@ -361,18 +361,19 @@ export async function POST(req: NextRequest) {
       }
 
       console.log("🚀 Starting AI generation...")
-      
+
       // Wrap the stream creation in circuit breaker
       return await streamCircuitBreaker.execute(async () => {
         const result = streamText(streamOptions)
-        
-        // Initialize stream protection for thinking models
+
+        // Initialize enhanced stream protection for thinking models
         const streamProtection = new StreamProtection({
-          maxRepetitions: 4,
-          repetitionWindowSize: 100,
+          maxRepetitions: 3, // Reduced from 4 to catch repetitions earlier
+          repetitionWindowSize: 50, // Reduced from 100 to detect smaller repetition patterns
           maxResponseLength: 40000,
           timeoutMs: 180000, // 3 minutes for thinking models
-          maxSimilarChunks: 6,
+          maxSimilarChunks: 4, // Reduced from 6 to be more aggressive about similar content
+          minRepetitionLength: 5, // Add minimum length for repetition detection
         })
 
         // Create a custom readable stream that filters out thinking content AND protects against loops
@@ -393,6 +394,8 @@ export async function POST(req: NextRequest) {
                 // Process the buffer to filter out thinking content
                 let processedChunk = ""
                 let i = 0
+                const thinkingContent = ""
+                let lastThinkingTag = ""
 
                 while (i < buffer.length) {
                   if (!insideThinking) {
@@ -401,8 +404,11 @@ export async function POST(req: NextRequest) {
                     if (thinkStart !== -1 && thinkStart < buffer.length) {
                       // Add content before thinking
                       processedChunk += buffer.substring(i, thinkStart)
+                      // Also include the thinking tag in the output for real-time processing
+                      processedChunk += "<think>"
                       insideThinking = true
-                      i = thinkStart + 10 // Skip "<Thinking>"
+                      i = thinkStart + 10 // Skip "<think>"
+                      lastThinkingTag = "<think>"
                     } else {
                       // No thinking tag found, add rest of buffer
                       processedChunk += buffer.substring(i)
@@ -412,11 +418,17 @@ export async function POST(req: NextRequest) {
                     // Look for end of thinking
                     const thinkEnd = buffer.indexOf("</think>", i)
                     if (thinkEnd !== -1) {
-                      // Skip thinking content
+                      // Include thinking content in the output
+                      const thinkingContent = buffer.substring(i, thinkEnd)
+                      processedChunk += thinkingContent
+                      processedChunk += "</think>" // Include closing tag
+
                       insideThinking = false
-                      i = thinkEnd + 11 // Skip "</Thinking>"
+                      i = thinkEnd + 11 // Skip "</think>"
+                      lastThinkingTag = "</think>"
                     } else {
-                      // Still inside thinking, skip rest of buffer
+                      // Still inside thinking, include partial thinking content
+                      processedChunk += buffer.substring(i)
                       break
                     }
                   }
@@ -433,22 +445,22 @@ export async function POST(req: NextRequest) {
                 if (processedChunk) {
                   // Check with stream protection
                   const protectionResult = streamProtection.analyzeChunk(processedChunk)
-                  
+
                   if (!protectionResult.allowed) {
                     console.warn("🛡️ Stream protection triggered:", protectionResult.reason)
                     console.log("📊 Stream stats:", streamProtection.getStats())
-                    
+
                     // Send error message to client
                     const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
                     const encodedError = `0:"${errorMsg.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
                     controller.enqueue(new TextEncoder().encode(encodedError))
-                    
+
                     // Terminate the stream
                     controller.enqueue(new TextEncoder().encode('d:""\n'))
                     controller.close()
                     return
                   }
-                  
+
                   // Re-encode as proper data stream format
                   const encodedChunk = `0:"${processedChunk.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
                   controller.enqueue(new TextEncoder().encode(encodedChunk))
@@ -497,11 +509,11 @@ export async function POST(req: NextRequest) {
       }
 
       console.log("🚀 Starting AI generation...")
-      
+
       // Wrap the stream creation in circuit breaker
       return await streamCircuitBreaker.execute(async () => {
         const result = streamText(streamOptions)
-        
+
         // Initialize stream protection for regular models
         const streamProtection = new StreamProtection({
           maxRepetitions: 5,
@@ -522,35 +534,35 @@ export async function POST(req: NextRequest) {
                 if (done) break
 
                 const chunk = new TextDecoder().decode(value)
-                
+
                 // Extract content from data stream format
                 const match = chunk.match(/0:"([^"]*)"/)
                 if (match) {
-                  const content = match[1].replace(/\\"/g, '"').replace(/\\n/g, '\n')
-                  
+                  const content = match[1].replace(/\\"/g, '"').replace(/\\n/g, "\n")
+
                   // Check with stream protection
                   const protectionResult = streamProtection.analyzeChunk(content)
-                  
+
                   if (!protectionResult.allowed) {
                     console.warn("🛡️ Stream protection triggered:", protectionResult.reason)
                     console.log("📊 Stream stats:", streamProtection.getStats())
-                    
+
                     // Send error message to client
                     const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
                     const encodedError = `0:"${errorMsg.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
                     controller.enqueue(new TextEncoder().encode(encodedError))
-                    
+
                     // Terminate the stream
                     controller.enqueue(new TextEncoder().encode('d:""\n'))
                     controller.close()
                     return
                   }
                 }
-                
+
                 // Forward the original chunk if protection allows it
                 controller.enqueue(value)
               }
-              
+
               // Stream completed normally
               controller.close()
             } catch (error) {
@@ -642,6 +654,7 @@ You can use rich markdown formatting in your responses:
   |----------|----------|----------|
   | Row 1    | Data 1   | Value 1  |
   | Row 2    | Data 2   | Value 2  |
+  | Row 3    | Data 3   | Value 3  |
 - Blockquotes using >
 - Links [text](url)
 - Horizontal rules using ---
@@ -779,14 +792,15 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
     // For thinking models, we need special handling
     if (isThinkingModel) {
       console.log("🧠 Using thinking-aware stream processing for Ollama")
-      
+
       // Initialize stream protection for Ollama thinking models
       const streamProtection = new StreamProtection({
-        maxRepetitions: 4,
-        repetitionWindowSize: 100,
+        maxRepetitions: 3, // Reduced from 4 to catch repetitions earlier
+        repetitionWindowSize: 50, // Reduced from 100 to detect smaller repetition patterns
         maxResponseLength: 40000,
         timeoutMs: 180000, // 3 minutes for thinking models
-        maxSimilarChunks: 6,
+        maxSimilarChunks: 4, // Reduced from 6 to be more aggressive about similar content
+        minRepetitionLength: 5, // Add minimum length for repetition detection
       })
 
       // Create a readable stream from the Ollama response with thinking handling AND protection
@@ -857,6 +871,8 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
                         if (thinkStart !== -1) {
                           // Add content before thinking
                           processedContent += buffer.substring(i, thinkStart)
+                          // Also include the thinking tag in the output for real-time processing
+                          processedContent += "<think>"
                           insideThinking = true
                           i = thinkStart + 10 // Skip "<think>"
                         } else {
@@ -894,22 +910,22 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
                     if (processedContent) {
                       // Check with stream protection
                       const protectionResult = streamProtection.analyzeChunk(processedContent)
-                      
+
                       if (!protectionResult.allowed) {
                         console.warn("🛡️ Ollama stream protection triggered:", protectionResult.reason)
                         console.log("📊 Ollama stream stats:", streamProtection.getStats())
-                        
+
                         // Send error message to client
                         const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
                         const encodedError = `0:"${errorMsg.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
                         safeEnqueue(new TextEncoder().encode(encodedError))
-                        
+
                         // Terminate the stream
                         safeEnqueue(new TextEncoder().encode('d:""\n'))
                         safeClose()
                         return
                       }
-                      
+
                       // Format as AI SDK compatible stream
                       const streamChunk = `0:"${processedContent.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
                       safeEnqueue(new TextEncoder().encode(streamChunk))
@@ -981,7 +997,7 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
     } else {
       // Regular non-thinking Ollama model
       console.log("🦙 Using standard stream processing for Ollama")
-      
+
       // Initialize stream protection for regular Ollama models
       const streamProtection = new StreamProtection({
         maxRepetitions: 5,
@@ -1040,25 +1056,25 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
                   const data = JSON.parse(line)
                   if (data.message?.content) {
                     const content = data.message.content
-                    
+
                     // Check with stream protection
                     const protectionResult = streamProtection.analyzeChunk(content)
-                    
+
                     if (!protectionResult.allowed) {
                       console.warn("🛡️ Ollama stream protection triggered:", protectionResult.reason)
                       console.log("📊 Ollama stream stats:", streamProtection.getStats())
-                      
+
                       // Send error message to client
                       const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
                       const encodedError = `0:"${errorMsg.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
                       safeEnqueue(new TextEncoder().encode(encodedError))
-                      
+
                       // Terminate the stream
                       safeEnqueue(new TextEncoder().encode('d:""\n'))
                       safeClose()
                       return
                     }
-                    
+
                     // Format as AI SDK compatible stream
                     const streamChunk = `0:"${content.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
                     safeEnqueue(new TextEncoder().encode(streamChunk))

@@ -1,292 +1,274 @@
-interface StreamProtectionConfig {
-  maxRepetitions: number
-  repetitionWindowSize: number
-  maxResponseLength: number
-  timeoutMs: number
-  maxSimilarChunks: number
-}
-
-interface StreamState {
-  content: string
-  chunks: string[]
-  lastActivity: number
-  repetitionCount: number
-  similarChunks: string[]
-  isStuck: boolean
-}
-
+/**
+ * StreamProtection class to detect and prevent problematic streaming patterns
+ * such as repetitions, excessive length, and timeouts.
+ */
 export class StreamProtection {
-  private config: StreamProtectionConfig
-  private state: StreamState
+  private chunks: string[] = []
   private startTime: number
+  private totalLength = 0
+  private repetitionCounts: Map<string, number> = new Map()
+  private similarChunksCount = 0
+  private lastChunks: string[] = []
+  private maxRepetitions: number
+  private repetitionWindowSize: number
+  private maxResponseLength: number
+  private timeoutMs: number
+  private maxSimilarChunks: number
+  private minRepetitionLength: number
 
-  constructor(config: Partial<StreamProtectionConfig> = {}) {
-    this.config = {
-      maxRepetitions: 5,
-      repetitionWindowSize: 50, // characters to analyze for repetition
-      maxResponseLength: 50000, // max characters before forcing stop
-      timeoutMs: 120000, // 2 minutes timeout
-      maxSimilarChunks: 8, // max similar chunks before flagging as stuck
-      ...config,
-    }
-
-    this.state = {
-      content: "",
-      chunks: [],
-      lastActivity: Date.now(),
-      repetitionCount: 0,
-      similarChunks: [],
-      isStuck: false,
-    }
-
+  constructor({
+    maxRepetitions = 5,
+    repetitionWindowSize = 80,
+    maxResponseLength = 50000,
+    timeoutMs = 120000,
+    maxSimilarChunks = 8,
+    minRepetitionLength = 5,
+  } = {}) {
+    this.maxRepetitions = maxRepetitions
+    this.repetitionWindowSize = repetitionWindowSize
+    this.maxResponseLength = maxResponseLength
+    this.timeoutMs = timeoutMs
+    this.maxSimilarChunks = maxSimilarChunks
+    this.minRepetitionLength = minRepetitionLength
     this.startTime = Date.now()
   }
 
   /**
-   * Analyzes a new chunk for problematic patterns
-   * Returns true if the chunk should be allowed, false if it should be rejected
+   * Analyze a chunk of text for problematic patterns
+   * @param chunk The text chunk to analyze
+   * @returns Object indicating if the chunk is allowed and the reason if not
    */
   analyzeChunk(chunk: string): { allowed: boolean; reason?: string } {
-    if (this.state.isStuck) {
-      return { allowed: false, reason: "Stream is stuck in repetitive pattern" }
+    // Check for timeout
+    if (Date.now() - this.startTime > this.timeoutMs) {
+      return { allowed: false, reason: "Response timeout exceeded" }
     }
 
-    // Update activity
-    this.state.lastActivity = Date.now()
-    this.state.chunks.push(chunk)
-    this.state.content += chunk
-
-    // Check timeout
-    if (Date.now() - this.startTime > this.config.timeoutMs) {
-      this.state.isStuck = true
-      return { allowed: false, reason: "Stream timeout exceeded" }
-    }
-
-    // Check max length
-    if (this.state.content.length > this.config.maxResponseLength) {
-      this.state.isStuck = true
+    // Check for excessive length
+    this.totalLength += chunk.length
+    if (this.totalLength > this.maxResponseLength) {
       return { allowed: false, reason: "Response length limit exceeded" }
     }
 
+    // Store the chunk for analysis
+    this.chunks.push(chunk)
+
     // Check for repetitive patterns
-    const repetitionCheck = this.checkForRepetition(chunk)
-    if (!repetitionCheck.allowed) {
-      this.state.isStuck = true
-      return repetitionCheck
+    const result = this.checkRepetitivePatterns(chunk)
+    if (!result.allowed) {
+      return result
     }
 
-    // Check for similar chunks
-    const similarityCheck = this.checkForSimilarity(chunk)
-    if (!similarityCheck.allowed) {
-      this.state.isStuck = true
-      return similarityCheck
-    }
-
-    // Check for stuck patterns (same words repeating)
-    const stuckCheck = this.checkForStuckPattern()
-    if (!stuckCheck.allowed) {
-      this.state.isStuck = true
-      return stuckCheck
+    // Check for similar consecutive chunks
+    const similarResult = this.checkSimilarChunks(chunk)
+    if (!similarResult.allowed) {
+      return similarResult
     }
 
     return { allowed: true }
-  }
-
-  private checkForRepetition(chunk: string): { allowed: boolean; reason?: string } {
-    const recentContent = this.state.content.slice(-this.config.repetitionWindowSize)
-    
-    // Check if current chunk starts with exactly what we just wrote
-    if (chunk.length > 5 && recentContent.endsWith(chunk.substring(0, Math.min(chunk.length - 1, 10)))) {
-      this.state.repetitionCount++
-      
-      if (this.state.repetitionCount >= this.config.maxRepetitions) {
-        return { 
-          allowed: false, 
-          reason: `Repetitive pattern detected: "${chunk.substring(0, 20)}..."` 
-        }
-      }
-    } else {
-      this.state.repetitionCount = 0
-    }
-
-    return { allowed: true }
-  }
-
-  private checkForSimilarity(chunk: string): { allowed: boolean; reason?: string } {
-    if (chunk.trim().length < 3) return { allowed: true }
-
-    // Check if this chunk is very similar to recent chunks
-    const recentChunks = this.state.chunks.slice(-10)
-    const similarity = this.calculateSimilarity(chunk, recentChunks)
-    
-    if (similarity > 0.8) {
-      this.state.similarChunks.push(chunk)
-      
-      if (this.state.similarChunks.length >= this.config.maxSimilarChunks) {
-        return { 
-          allowed: false, 
-          reason: "Too many similar chunks detected - possible loop" 
-        }
-      }
-    } else {
-      this.state.similarChunks = []
-    }
-
-    return { allowed: true }
-  }
-
-  private checkForStuckPattern(): { allowed: boolean; reason?: string } {
-    // Look for patterns like "To solve" -> "To solve this" -> "To solve this problem"
-    const words = this.state.content.split(/\s+/).filter(w => w.length > 0)
-    if (words.length < 10) return { allowed: true }
-
-    const recentWords = words.slice(-20) // Last 20 words
-    const firstWords = recentWords.slice(0, 5)
-    
-    // Check if the same starting sequence appears multiple times
-    let sequenceCount = 0
-    for (let i = 0; i < recentWords.length - 5; i++) {
-      const sequence = recentWords.slice(i, i + 5)
-      if (this.arraysEqual(sequence, firstWords)) {
-        sequenceCount++
-      }
-    }
-
-    if (sequenceCount >= 3) {
-      return { 
-        allowed: false, 
-        reason: `Stuck pattern detected: repeating "${firstWords.join(' ')}"` 
-      }
-    }
-
-    return { allowed: true }
-  }
-
-  private calculateSimilarity(chunk: string, recentChunks: string[]): number {
-    if (recentChunks.length === 0) return 0
-
-    const chunkWords = new Set(chunk.toLowerCase().split(/\s+/))
-    let maxSimilarity = 0
-
-    for (const recentChunk of recentChunks) {
-      const recentWords = new Set(recentChunk.toLowerCase().split(/\s+/))
-      const intersection = new Set([...chunkWords].filter(w => recentWords.has(w)))
-      const union = new Set([...chunkWords, ...recentWords])
-      
-      const similarity = intersection.size / union.size
-      maxSimilarity = Math.max(maxSimilarity, similarity)
-    }
-
-    return maxSimilarity
-  }
-
-  private arraysEqual(a: string[], b: string[]): boolean {
-    return a.length === b.length && a.every((val, i) => val === b[i])
   }
 
   /**
-   * Get current stream statistics
+   * Check for repetitive patterns in the text
+   */
+  private checkRepetitivePatterns(chunk: string): { allowed: boolean; reason?: string } {
+    // Skip very short chunks
+    if (chunk.length < this.minRepetitionLength) {
+      return { allowed: true }
+    }
+
+    // Check for exact repetitions
+    for (
+      let windowSize = this.minRepetitionLength;
+      windowSize <= Math.min(this.repetitionWindowSize, chunk.length / 2);
+      windowSize++
+    ) {
+      for (let i = 0; i <= chunk.length - windowSize * 2; i++) {
+        const pattern = chunk.substring(i, i + windowSize)
+
+        // Skip very short or whitespace-only patterns
+        if (pattern.trim().length < this.minRepetitionLength) continue
+
+        let repetitionCount = 0
+        let j = i
+
+        while (j <= chunk.length - windowSize) {
+          const nextChunk = chunk.substring(j, j + windowSize)
+          if (nextChunk === pattern) {
+            repetitionCount++
+            j += windowSize
+          } else {
+            break
+          }
+        }
+
+        if (repetitionCount >= this.maxRepetitions) {
+          return {
+            allowed: false,
+            reason: `Detected repetitive pattern: "${pattern.substring(0, 20)}${pattern.length > 20 ? "..." : ""}" repeated ${repetitionCount} times`,
+          }
+        }
+      }
+    }
+
+    // Track patterns across chunks
+    const existingPatterns = Array.from(this.repetitionCounts.keys())
+    for (const pattern of existingPatterns) {
+      if (chunk.includes(pattern)) {
+        const count = (this.repetitionCounts.get(pattern) || 0) + 1
+        this.repetitionCounts.set(pattern, count)
+
+        if (count >= this.maxRepetitions) {
+          return {
+            allowed: false,
+            reason: `Detected cross-chunk repetitive pattern: "${pattern.substring(0, 20)}${pattern.length > 20 ? "..." : ""}" repeated ${count} times`,
+          }
+        }
+      }
+    }
+
+    // Add new patterns to track
+    if (chunk.length >= this.minRepetitionLength) {
+      this.repetitionCounts.set(chunk, 1)
+    }
+
+    return { allowed: true }
+  }
+
+  /**
+   * Check for similar consecutive chunks
+   */
+  private checkSimilarChunks(chunk: string): { allowed: boolean; reason?: string } {
+    // Keep track of last few chunks
+    if (this.lastChunks.length >= 5) {
+      this.lastChunks.shift()
+    }
+    this.lastChunks.push(chunk)
+
+    // Check if this chunk is very similar to previous chunks
+    if (this.lastChunks.length > 1) {
+      const currentChunk = this.lastChunks[this.lastChunks.length - 1]
+      const previousChunk = this.lastChunks[this.lastChunks.length - 2]
+
+      // Simple similarity check - if chunks share significant content
+      if (currentChunk.length > 10 && previousChunk.length > 10) {
+        const similarity = this.calculateSimilarity(currentChunk, previousChunk)
+
+        if (similarity > 0.8) {
+          // 80% similar
+          this.similarChunksCount++
+
+          if (this.similarChunksCount >= this.maxSimilarChunks) {
+            return {
+              allowed: false,
+              reason: `Detected ${this.similarChunksCount} consecutive similar chunks, possible loop`,
+            }
+          }
+        } else {
+          this.similarChunksCount = 0
+        }
+      }
+    }
+
+    return { allowed: true }
+  }
+
+  /**
+   * Calculate similarity between two strings (simple implementation)
+   */
+  private calculateSimilarity(str1: string, str2: string): number {
+    // For very different length strings, they're not very similar
+    if (Math.abs(str1.length - str2.length) / Math.max(str1.length, str2.length) > 0.3) {
+      return 0
+    }
+
+    // Count common characters
+    const chars1 = new Set(str1)
+    const chars2 = new Set(str2)
+    let common = 0
+
+    for (const char of chars1) {
+      if (chars2.has(char)) common++
+    }
+
+    return common / Math.max(chars1.size, chars2.size)
+  }
+
+  /**
+   * Get statistics about the stream protection
    */
   getStats() {
     return {
-      contentLength: this.state.content.length,
-      chunkCount: this.state.chunks.length,
-      repetitionCount: this.state.repetitionCount,
-      similarChunkCount: this.state.similarChunks.length,
-      isStuck: this.state.isStuck,
-      duration: Date.now() - this.startTime,
+      totalChunks: this.chunks.length,
+      totalLength: this.totalLength,
+      elapsedTime: Date.now() - this.startTime,
+      similarChunksCount: this.similarChunksCount,
+      trackedPatterns: this.repetitionCounts.size,
     }
-  }
-
-  /**
-   * Check if stream should be terminated
-   */
-  shouldTerminate(): boolean {
-    return this.state.isStuck
-  }
-
-  /**
-   * Get the current content
-   */
-  getContent(): string {
-    return this.state.content
-  }
-
-  /**
-   * Reset protection state (useful for stream resumption)
-   */
-  reset() {
-    this.state = {
-      content: "",
-      chunks: [],
-      lastActivity: Date.now(),
-      repetitionCount: 0,
-      similarChunks: [],
-      isStuck: false,
-    }
-    this.startTime = Date.now()
   }
 }
 
 /**
- * Circuit breaker for stream operations
+ * Circuit breaker for stream operations to prevent cascading failures
  */
 export class StreamCircuitBreaker {
   private failures = 0
-  private lastFailure: number = 0
-  private readonly maxFailures: number
-  private readonly resetTimeoutMs: number
+  private lastFailureTime = 0
+  private maxFailures: number
+  private resetTimeMs: number
 
-  constructor(maxFailures = 3, resetTimeoutMs = 300000) { // 5 minutes
+  constructor(maxFailures = 3, resetTimeMs = 300000) {
     this.maxFailures = maxFailures
-    this.resetTimeoutMs = resetTimeoutMs
+    this.resetTimeMs = resetTimeMs
   }
 
-  async execute<T>(operation: () => Promise<T>): Promise<T> {
+  /**
+   * Execute a function with circuit breaker protection
+   */
+  async execute<T>(fn: () => Promise<T>): Promise<T> {
+    // Check if circuit is open (too many failures)
     if (this.isOpen()) {
-      throw new Error("Circuit breaker is open - too many recent failures")
+      throw new Error("Circuit breaker is open due to too many failures")
     }
 
     try {
-      const result = await operation()
-      this.onSuccess()
+      const result = await fn()
+      this.recordSuccess()
       return result
     } catch (error) {
-      this.onFailure()
+      this.recordFailure()
       throw error
     }
   }
 
+  /**
+   * Check if the circuit breaker is open
+   */
   private isOpen(): boolean {
-    if (this.failures >= this.maxFailures) {
-      if (Date.now() - this.lastFailure > this.resetTimeoutMs) {
-        this.reset()
-        return false
-      }
-      return true
+    // Reset failures if enough time has passed
+    if (this.failures > 0 && Date.now() - this.lastFailureTime > this.resetTimeMs) {
+      console.log("🔄 Circuit breaker: Resetting failure count after timeout")
+      this.failures = 0
     }
-    return false
+
+    return this.failures >= this.maxFailures
   }
 
-  private onSuccess() {
-    this.failures = 0
+  /**
+   * Record a successful operation
+   */
+  private recordSuccess(): void {
+    if (this.failures > 0) {
+      this.failures = Math.max(0, this.failures - 1)
+    }
   }
 
-  private onFailure() {
+  /**
+   * Record a failed operation
+   */
+  private recordFailure(): void {
     this.failures++
-    this.lastFailure = Date.now()
+    this.lastFailureTime = Date.now()
+    console.warn(`⚠️ Circuit breaker: Recorded failure #${this.failures}`)
   }
-
-  private reset() {
-    this.failures = 0
-    this.lastFailure = 0
-  }
-
-  getStats() {
-    return {
-      failures: this.failures,
-      isOpen: this.isOpen(),
-      lastFailure: this.lastFailure,
-    }
-  }
-} 
+}

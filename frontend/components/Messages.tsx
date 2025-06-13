@@ -176,6 +176,17 @@ function PureMessages({
         return false
       }
 
+      // Update in local state FIRST to ensure immediate UI update
+      const updatedMessages = [...messages]
+      updatedMessages[messageIndex] = {
+        ...message,
+        content: newContent,
+      }
+      setMessages(updatedMessages)
+
+      console.log("✅ Message updated successfully in database and local state")
+      toast.success("Text replaced and saved successfully")
+
       // Verify the update worked by fetching the message again
       const { data: updatedMessage, error: verifyError } = await supabase
         .from("messages")
@@ -208,19 +219,7 @@ function PureMessages({
         }
       }
 
-      // Update in local state
-      const updatedMessages = [...messages]
-      updatedMessages[messageIndex] = {
-        ...message,
-        content: newContent,
-      }
-      setMessages(updatedMessages)
-
-      console.log("✅ Message updated successfully in database and state")
-      toast.success("Text replaced and saved successfully")
-
-      // Add this after line 213 (after the success message)
-      console.log("🔍 Final verification - fetching message directly from DB...")
+      // Final verification - fetching message directly from DB...
       const { data: finalCheck, error: finalError } = await supabase
         .from("messages")
         .select("content")
@@ -237,15 +236,6 @@ function PureMessages({
         })
       }
 
-      // Also log the current messages state
-      console.log(
-        "📋 Current messages state after update:",
-        messages.map((m) => ({
-          id: m.id,
-          contentLength: m.content.length,
-          contentPreview: m.content.substring(0, 100),
-        })),
-      )
       return true
     } catch (error) {
       console.error("❌ Unexpected error updating message:", error)
@@ -273,11 +263,18 @@ function PureMessages({
     const messageIndex = messages.findIndex((m) => m.id === targetMessageId)
     if (messageIndex === -1) {
       console.error("❌ Message not found in state:", targetMessageId)
+      console.error("📋 Available message IDs:", messages.map(m => m.id))
       toast.error("Message not found")
       return
     }
 
     const message = messages[messageIndex]
+    console.log("📄 Found target message:", {
+      messageId: message.id,
+      contentLength: message.content.length,
+      contentPreview: message.content.substring(0, 200),
+      role: message.role,
+    })
 
     // Strategy: Replace the entire message content with a version where the original text is replaced
     // We'll use a more aggressive approach - find any occurrence of the original text and replace it
@@ -285,16 +282,24 @@ function PureMessages({
 
     // Try multiple replacement strategies
     console.log("🔄 Trying replacement strategies...")
+    console.log("🔍 Original text to find:", `"${originalText}"`)
+    console.log("🔍 Message content:", `"${message.content}"`)
+    console.log("🔍 Does content include original?", message.content.includes(originalText))
 
     // Strategy 1: Direct replacement
     if (updatedContent.includes(originalText)) {
       console.log("✅ Strategy 1: Direct replacement")
       updatedContent = updatedContent.replace(originalText, newText)
+      console.log("✅ Strategy 1 result:", updatedContent.substring(0, 200))
     }
     // Strategy 2: Normalize whitespace and try again
     else {
       const normalizedOriginal = originalText.replace(/\s+/g, " ").trim()
       const normalizedContent = updatedContent.replace(/\s+/g, " ")
+
+      console.log("🔍 Strategy 2 - Normalized original:", `"${normalizedOriginal}"`)
+      console.log("🔍 Strategy 2 - Normalized content:", `"${normalizedContent}"`)
+      console.log("🔍 Strategy 2 - Does normalized content include normalized original?", normalizedContent.includes(normalizedOriginal))
 
       if (normalizedContent.includes(normalizedOriginal)) {
         console.log("✅ Strategy 2: Normalized replacement")
@@ -302,6 +307,7 @@ function PureMessages({
           new RegExp(originalText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
           newText,
         )
+        console.log("✅ Strategy 2 result:", updatedContent.substring(0, 200))
       }
       // Strategy 3: Word-by-word replacement for partial matches
       else {
@@ -309,11 +315,18 @@ function PureMessages({
         const words = originalText.split(/\s+/).filter((w) => w.length > 2)
         let foundWords = 0
 
+        console.log("🔍 Strategy 3 - Words to find:", words)
+
         for (const word of words) {
           if (updatedContent.includes(word)) {
             foundWords++
+            console.log("✅ Found word:", word)
+          } else {
+            console.log("❌ Missing word:", word)
           }
         }
+
+        console.log("🔍 Strategy 3 - Found words:", foundWords, "out of", words.length)
 
         if (foundWords > words.length * 0.7) {
           console.log("✅ Strategy 3: Partial word replacement")
@@ -321,17 +334,25 @@ function PureMessages({
           for (const word of words) {
             if (updatedContent.includes(word) && word.length > 4) {
               updatedContent = updatedContent.replace(word, newText.split(/\s+/)[0] || newText)
+              console.log("✅ Strategy 3 - Replaced word:", word, "with:", newText.split(/\s+/)[0] || newText)
               break // Only replace the first significant word
             }
           }
+          console.log("✅ Strategy 3 result:", updatedContent.substring(0, 200))
         }
         // Strategy 4: Append the new text with context
         else {
           console.log("🔄 Strategy 4: Append with context")
           updatedContent = updatedContent + `\n\n*[Rephrased]: ${newText}*`
+          console.log("✅ Strategy 4 result:", updatedContent.substring(0, 200))
         }
       }
     }
+
+    console.log("🔍 Final content comparison:")
+    console.log("📄 Original content:", message.content.substring(0, 200))
+    console.log("📄 Updated content:", updatedContent.substring(0, 200))
+    console.log("📄 Content changed?", message.content !== updatedContent)
 
     // Update the DOM immediately for visual feedback
     if (lastSelectionRef.current) {
@@ -350,10 +371,18 @@ function PureMessages({
 
     // Update the message content in database and state
     console.log("🔄 Proceeding with database update...")
+    console.log("🔍 About to call updateMessageContent with:", {
+      targetMessageId,
+      updatedContentLength: updatedContent.length,
+      updatedContentPreview: updatedContent.substring(0, 200),
+    })
+    
     const success = await updateMessageContent(targetMessageId, updatedContent)
     if (!success) {
       console.error("❌ Failed to persist changes - consider reloading")
       toast.warning("Changes may not persist after reload")
+    } else {
+      console.log("✅ updateMessageContent returned success")
     }
   }
 
@@ -434,12 +463,27 @@ function PureMessages({
           <InlineReplacement
             newText={replacementText}
             onAccept={async () => {
-              await replaceSelectedText(replacementText)
+              console.log("🎯 ACCEPT CLICKED - Starting replacement process...")
+              console.log("🔍 Accept Debug Info:", {
+                replacementText: replacementText.substring(0, 100),
+                originalText: originalText.substring(0, 100),
+                targetMessageId,
+                messagesCount: messages.length,
+              })
+              
+              try {
+                await replaceSelectedText(replacementText)
+                console.log("✅ replaceSelectedText completed successfully")
+              } catch (error) {
+                console.error("❌ replaceSelectedText failed:", error)
+              }
+              
               setCurrentText(replacementText) // Update current text to the accepted replacement
               setShowReplacement(false)
               clearSelection()
               setTargetMessageId(null)
               setOriginalText("")
+              console.log("🎯 ACCEPT COMPLETED - All cleanup done")
             }}
             onReject={() => {
               setShowReplacement(false)

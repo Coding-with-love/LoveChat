@@ -9,12 +9,12 @@ interface TextSelection {
 
 export function useTextSelection() {
   const [selection, setSelection] = useState<TextSelection | null>(null)
-  const timeoutRef = useRef<NodeJS.Timeout>()
+  const timeoutRef = useRef<NodeJS.Timeout | undefined>(undefined)
 
   const handleContextMenu = useCallback((event: MouseEvent) => {
     // Prevent default context menu when we have a selection
     const selectedText = window.getSelection()?.toString().trim()
-    
+
     if (selectedText && selectedText.length > 3) {
       event.preventDefault()
     }
@@ -30,28 +30,37 @@ export function useTextSelection() {
       const selectedText = window.getSelection()?.toString().trim()
 
       if (selectedText && selectedText.length > 3) {
+        // Check if selection is within a valid area
+        const isValidSelection = isValidSelectionTarget(window.getSelection())
+
+        if (!isValidSelection) {
+          setSelection(null)
+          return
+        }
+
         // Get the selection range to position the menu near the selected text
         const selectionObj = window.getSelection()
         if (selectionObj && selectionObj.rangeCount > 0) {
           const range = selectionObj.getRangeAt(0)
           const rect = range.getBoundingClientRect()
-          
-          // Position the menu near the end of the selection
-          const x = Math.min(rect.right + 10, window.innerWidth - 300)
-          const y = Math.min(rect.bottom + 10, window.innerHeight - 200)
 
+          // Position the menu at the end of the selection
+          // Use client coordinates (viewport-relative)
           setSelection({
             text: selectedText,
-            position: { x, y },
+            position: {
+              x: rect.right + window.scrollX,
+              y: rect.top + window.scrollY,
+            },
           })
         } else {
           // Fallback to mouse position if range is not available
-          const x = Math.min(event.clientX, window.innerWidth - 300)
-          const y = Math.min(event.clientY, window.innerHeight - 200)
-
           setSelection({
             text: selectedText,
-            position: { x, y },
+            position: {
+              x: event.clientX,
+              y: event.clientY,
+            },
           })
         }
       } else {
@@ -60,9 +69,54 @@ export function useTextSelection() {
     }, 100)
   }, [])
 
+  // Helper function to check if selection is within a valid target
+  function isValidSelectionTarget(selection: Selection | null): boolean {
+    if (!selection || selection.rangeCount === 0) return false
+
+         // Get the common ancestor of the selection
+     const range = selection.getRangeAt(0)
+     let node: Node | null = range.commonAncestorContainer
+
+     // Traverse up the DOM tree to find if we're in a valid area
+     while (node && node !== document.body) {
+      // Check if we're in a code block header (exclude)
+      if (
+        node instanceof HTMLElement &&
+        (node.hasAttribute("data-code-block-header") ||
+          (node.classList.contains("flex") && 
+           node.classList.contains("items-center") && 
+           node.classList.contains("bg-secondary")))
+      ) {
+        return false
+      }
+
+      // Check if we're in a message content area (include)
+      if (
+        node instanceof HTMLElement &&
+        (node.hasAttribute("data-message-id") ||
+          node.hasAttribute("data-message-content") ||
+          node.hasAttribute("data-message-text-content") ||
+          node.hasAttribute("data-code-block-content") ||
+          node.classList.contains("whitespace-pre-wrap") ||
+          node.classList.contains("prose") ||
+          // Include pre and code elements for code blocks
+          node.tagName === "PRE" ||
+          node.tagName === "CODE")
+      ) {
+        return true
+             }
+
+       node = node.parentNode as Node | null
+       if (!node) break
+     }
+
+    return false
+  }
+
   const handleClick = useCallback((event: MouseEvent) => {
     // Clear selection on regular clicks (not right-clicks)
-    if (event.button === 0) { // Left click
+    if (event.button === 0) {
+      // Left click
       const selectedText = window.getSelection()?.toString().trim()
       if (!selectedText) {
         setSelection(null)
@@ -81,7 +135,7 @@ export function useTextSelection() {
     document.addEventListener("contextmenu", handleContextMenu)
     document.addEventListener("mouseup", handleMouseUp)
     document.addEventListener("click", handleClick)
-    
+
     // Handle escape key
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {

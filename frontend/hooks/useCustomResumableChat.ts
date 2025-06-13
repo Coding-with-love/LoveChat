@@ -488,6 +488,16 @@ export function useCustomResumableChat({
     ...chat,
     messages: localMessages, // Use local messages for immediate updates
     append: enhancedAppend,
+    setMessages: (messages: UIMessage[] | ((prev: UIMessage[]) => UIMessage[])) => {
+      // Update both local state and chat state
+      if (typeof messages === 'function') {
+        setLocalMessages(messages)
+        chat.setMessages(messages)
+      } else {
+        setLocalMessages(messages)
+        chat.setMessages(messages)
+      }
+    },
     isAuthenticated: !!user,
     isResuming,
     resumeProgress,

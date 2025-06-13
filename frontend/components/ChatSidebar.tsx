@@ -94,7 +94,8 @@ function ProfileSection() {
   if (!user) return null
 
   const displayName = profile?.full_name || profile?.username || user.email?.split("@")[0] || "User"
-  const avatarUrl = profile?.avatar_url
+  // Try to get avatar from profile first, then fall back to Google avatar from user metadata
+  const avatarUrl = profile?.avatar_url || user.user_metadata?.avatar_url || user.user_metadata?.picture
 
   return (
     <div className="p-4 border-b border-border/50">

@@ -44,7 +44,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loadProfile = useCallback(async (userId: string) => {
     try {
-      const profile = await getUserProfile(userId)
+      let profile = await getUserProfile(userId)
+      
+      // If no profile exists or profile is missing data, check if we can populate from user metadata
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user && (!profile || !profile.avatar_url) && user.user_metadata) {
+        const updates: {
+          username?: string
+          full_name?: string
+          avatar_url?: string
+        } = {}
+        
+        // Populate from Google metadata if available
+        if (!profile?.full_name && user.user_metadata.full_name) {
+          updates.full_name = user.user_metadata.full_name
+        }
+        if (!profile?.avatar_url && (user.user_metadata.avatar_url || user.user_metadata.picture)) {
+          updates.avatar_url = user.user_metadata.avatar_url || user.user_metadata.picture
+        }
+        
+        // Update profile if we have any updates
+        if (Object.keys(updates).length > 0) {
+          try {
+            const { updateUserProfile } = await import("@/lib/supabase/queries")
+            const updatedProfile = await updateUserProfile(updates)
+            setProfile(updatedProfile)
+            return
+          } catch (updateError) {
+            console.error("Error updating profile:", updateError)
+          }
+        }
+      }
+      
       setProfile(profile)
     } catch (error) {
       console.error("Error loading profile:", error)

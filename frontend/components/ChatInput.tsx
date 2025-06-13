@@ -106,8 +106,12 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
 
   // Ensure the selected model is valid on component mount
   useEffect(() => {
-    ensureValidSelectedModel()
-  }, [])
+    // Only ensure valid model if not currently loading API keys
+    const apiKeyStore = useAPIKeyStore.getState()
+    if (!apiKeyStore.isLoading) {
+      ensureValidSelectedModel()
+    }
+  }, [ensureValidSelectedModel])
 
   // Get enabled models that have API keys
   const enabledModels = useMemo(() => {
@@ -721,7 +725,11 @@ const PureChatModelDropdown = () => {
 
   // Ensure valid model selection on mount
   useEffect(() => {
-    ensureValidSelectedModel()
+    // Only ensure valid model if not currently loading API keys
+    const apiKeyStore = useAPIKeyStore.getState()
+    if (!apiKeyStore.isLoading) {
+      ensureValidSelectedModel()
+    }
   }, [ensureValidSelectedModel])
 
   // Get only enabled models that have API keys

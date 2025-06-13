@@ -35,6 +35,7 @@ export async function middleware(request: NextRequest) {
     "/api/prompt-templates",
     "/api/summarize-conversation",
     "/api/export-conversation",
+    "/api/code-conversions", // Add our new API route
   ]
   const isProtectedRoute = protectedRoutes.some((route) => pathname.startsWith(route))
 
@@ -113,6 +114,7 @@ export const config = {
     "/api/prompt-templates/:path*",
     "/api/summarize-conversation/:path*",
     "/api/export-conversation/:path*",
+    "/api/code-conversions/:path*", // Add our new API route
     // Also match without path parameters
     "/api/chat",
     "/api/completion",
@@ -128,6 +130,7 @@ export const config = {
     "/api/prompt-templates",
     "/api/summarize-conversation",
     "/api/export-conversation",
+    "/api/code-conversions", // Add our new API route
     // Include shared API routes for processing but they'll be skipped in middleware
     "/api/shared/:path*",
   ],

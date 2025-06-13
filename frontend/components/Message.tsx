@@ -1,10 +1,9 @@
 "use client"
 
-import { memo, useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef, useCallback, memo } from "react"
 import MarkdownRenderer from "@/frontend/components/MemoizedMarkdown"
 import { cn } from "@/lib/utils"
 import type { UIMessage } from "ai"
-import equal from "fast-deep-equal"
 import MessageControls from "./MessageControls"
 import type { UseChatHelpers } from "@ai-sdk/react"
 import MessageEditor from "./MessageEditor"
@@ -18,8 +17,13 @@ import { useAIActions } from "@/frontend/hooks/useAIActions"
 import AIContextMenu from "./AIContextMenu"
 import AIActionResultDialog from "./AIActionResultDialog"
 import { ThinkingToggle } from "./ThinkingToggle"
-import { ThinkingContent } from "./ThinkingContent"
+import ThinkingContent from "./ThinkingContent"
 import { ThinkingIndicator } from "./ThinkingIndicator"
+
+// Helper function to check equality (you might want to import this from a utility library)
+function equal(a: any, b: any): boolean {
+  return JSON.stringify(a) === JSON.stringify(b)
+}
 
 // Extend UIMessage to include reasoning field
 interface ExtendedUIMessage extends UIMessage {
@@ -102,26 +106,27 @@ function PureMessage({
   }, [resumeComplete, resumedMessageId, message.id])
 
   // Extract file attachments from message parts
-  const fileAttachments = message.parts?.find((part) => part.type === "file_attachments")?.attachments || []
+  const fileAttachments: any[] = []
 
   // Extract sources if available
-  const sources = message.parts?.find((part) => part.type === "sources")?.sources || []
+  const sources: any[] = []
 
   // Check if this message used web search
   const usedWebSearch = sources.length > 0
 
   // Extract reasoning from message - check multiple sources
-  const reasoning = message.reasoning || 
-  message.parts?.find((part) => part.type === "reasoning")?.reasoning ||
-  (() => {
-    // Also check if thinking content is embedded in text parts
-    const textPart = message.parts?.find((part) => part.type === "text")
-    if (textPart?.text?.includes('<think>') && textPart?.text?.includes('</think>')) {
-      const thinkMatch = textPart.text.match(/<think>([\s\S]*?)<\/think>/)
-      return thinkMatch ? thinkMatch[1].trim() : null
-    }
-    return null
-  })()
+  const reasoning =
+    message.reasoning ||
+    message.parts?.find((part) => part.type === "reasoning")?.reasoning ||
+    (() => {
+      // Also check if thinking content is embedded in text parts
+      const textPart = message.parts?.find((part) => part.type === "text")
+      if (textPart?.text?.includes("<Thinking>") && textPart?.text?.includes("</Thinking>")) {
+        const thinkMatch = textPart.text.match(/<Thinking>([\s\S]*?)<\/Thinking>/)
+        return thinkMatch ? thinkMatch[1].trim() : null
+      }
+      return null
+    })()
 
   // Filter out tool calls and other non-user-facing parts
   const displayParts =
@@ -141,6 +146,7 @@ function PureMessage({
         originalLength: originalCode.length,
         convertedLength: convertedCode.length,
       })
+
       // The actual saving is handled in the MemoizedMarkdown component
       // We don't need to do anything here to update the UI
     },
@@ -167,7 +173,11 @@ function PureMessage({
   }, [])
 
   const handleAIAction = useCallback(
-    async (action: "explain" | "translate" | "rephrase" | "summarize", text: string, targetLanguage?: string): Promise<string | null> => {
+    async (
+      action: "explain" | "translate" | "rephrase" | "summarize",
+      text: string,
+      targetLanguage?: string,
+    ): Promise<string | null> => {
       const result = await processAction(action, text, targetLanguage)
       clearSelection()
       return result
@@ -201,10 +211,17 @@ function PureMessage({
     onCopyMessage: handleCopy,
     onEditMessage: handleEdit,
     onPinMessage: handlePin,
-    onExplainSelection: handleExplainSelection,
-    onTranslateSelection: handleTranslateSelection,
-    onRephraseSelection: handleRephraseSelection,
   })
+
+  // Check if the selection is within this message component
+  const isSelectionInThisMessage = useCallback(() => {
+    if (!selection || !messageRef.current) return false
+
+    const selectionNode = window.getSelection()?.anchorNode
+    if (!selectionNode) return false
+
+    return messageRef.current.contains(selectionNode)
+  }, [selection])
 
   return (
     <div
@@ -216,6 +233,7 @@ function PureMessage({
         showAnimation && "animate-pulse",
       )}
       data-message-id={message.id}
+      data-message-content="true" // Add this attribute to help identify message content areas
     >
       {/* Web Search Banner for Assistant Messages */}
       {message.role === "assistant" && usedWebSearch && <WebSearchBanner />}
@@ -227,13 +245,13 @@ function PureMessage({
         </div>
       )}
 
-            {(() => {
+      {(() => {
         // For assistant messages, render reasoning parts first, then text parts
         if (message.role === "assistant") {
-          const reasoningParts = displayParts.filter(part => part.type === "reasoning")
-          const textParts = displayParts.filter(part => part.type === "text")
+          const reasoningParts = displayParts.filter((part) => part.type === "reasoning")
+          const textParts = displayParts.filter((part) => part.type === "text")
           const orderedParts = [...reasoningParts, ...textParts]
-          
+
           return orderedParts.map((part, index) => {
             const { type } = part
             const key = `message-${message.id}-part-${index}`
@@ -245,26 +263,37 @@ function PureMessage({
             if (type === "text") {
               // Clean the text content by removing thinking tags
               let cleanText = part.text
-              if (cleanText.includes('<think>') && cleanText.includes('</think>')) {
-                cleanText = cleanText.replace(/<think>[\s\S]*?<\/think>/g, '').trim()
+              let extractedThinking = ""
+
+              if (cleanText.includes("<Thinking>") && cleanText.includes("</Thinking>")) {
+                // Extract thinking content for potential display
+                const thinkMatches = cleanText.match(/<Thinking>([\s\S]*?)<\/Thinking>/g)
+                if (thinkMatches) {
+                  thinkMatches.forEach((match) => {
+                    extractedThinking += match.replace(/<Thinking>|<\/Thinking>/g, "") + "\n"
+                  })
+                }
+
+                // Remove thinking tags from displayed content
+                cleanText = cleanText.replace(/<Thinking>[\s\S]*?<\/Thinking>/g, "").trim()
               }
 
               return (
-                <div key={key} className="group flex flex-col gap-2 w-full relative">
+                <div key={key} className="group flex flex-col gap-2 w-full relative" data-message-content-part="true">
                   {/* Thinking Toggle - Show before content for assistant messages with reasoning */}
-                  {message.role === "assistant" && reasoning && (
+                  {message.role === "assistant" && (reasoning || extractedThinking) && (
                     <div className="flex items-center gap-2 mb-2">
                       <ThinkingToggle
                         isExpanded={showThinking || false}
                         onToggle={toggleThinking || (() => {})}
-                        hasReasoning={!!reasoning}
+                        hasReasoning={!!(reasoning || extractedThinking)}
                       />
                     </div>
                   )}
 
                   {/* Thinking Content - Show when expanded */}
-                  {message.role === "assistant" && reasoning && showThinking && (
-                    <ThinkingContent reasoning={reasoning} isExpanded={showThinking} />
+                  {message.role === "assistant" && (reasoning || extractedThinking) && showThinking && (
+                    <ThinkingContent reasoning={reasoning || extractedThinking} isExpanded={showThinking} />
                   )}
 
                   <div
@@ -279,6 +308,7 @@ function PureMessage({
                         "border border-green-200 dark:border-green-800",
                       ],
                     )}
+                    data-message-text-content="true" // Add this attribute to help identify text content areas
                   >
                     <MarkdownRenderer
                       content={cleanText}
@@ -312,7 +342,7 @@ function PureMessage({
             return null
           })
         }
-        
+
         // For user messages, keep original order
         return displayParts.map((part, index) => {
           const { type } = part
@@ -325,14 +355,15 @@ function PureMessage({
           if (type === "text") {
             // Clean the text content by removing thinking tags
             let cleanText = part.text
-            if (cleanText.includes('<think>') && cleanText.includes('</think>')) {
-              cleanText = cleanText.replace(/<think>[\s\S]*?<\/think>/g, '').trim()
+            if (cleanText.includes("<Thinking>") && cleanText.includes("</Thinking>")) {
+              cleanText = cleanText.replace(/<Thinking>[\s\S]*?<\/Thinking>/g, "").trim()
             }
 
             return message.role === "user" ? (
               <div
                 key={key}
                 className="relative group px-4 py-3 rounded-xl bg-secondary border border-secondary-foreground/2 max-w-[80%]"
+                data-message-content-part="true"
               >
                 {mode === "edit" && (
                   <MessageEditor
@@ -345,7 +376,11 @@ function PureMessage({
                     stop={stop}
                   />
                 )}
-                {mode === "view" && <p className="whitespace-pre-wrap select-text">{cleanText}</p>}
+                {mode === "view" && (
+                  <p className="whitespace-pre-wrap select-text" data-message-text-content="true">
+                    {cleanText}
+                  </p>
+                )}
 
                 {mode === "view" && (
                   <MessageControls
@@ -363,7 +398,7 @@ function PureMessage({
                 )}
               </div>
             ) : (
-              <div key={key} className="group flex flex-col gap-2 w-full relative">
+              <div key={key} className="group flex flex-col gap-2 w-full relative" data-message-content-part="true">
                 {/* Thinking Toggle - Show before content for assistant messages with reasoning */}
                 {message.role === "assistant" && reasoning && (
                   <div className="flex items-center gap-2 mb-2">
@@ -392,6 +427,7 @@ function PureMessage({
                       "border border-green-200 dark:border-green-800",
                     ],
                   )}
+                  data-message-text-content="true" // Add this attribute to help identify text content areas
                 >
                   <MarkdownRenderer
                     content={cleanText}
@@ -434,6 +470,17 @@ function PureMessage({
         <div className={cn("mt-2", message.role === "user" ? "self-end max-w-[80%]" : "self-start w-full")}>
           <FileAttachmentViewer attachments={fileAttachments} />
         </div>
+      )}
+
+      {/* AI Context Menu - Only show if selection is within this message */}
+      {selection && isSelectionInThisMessage() && (
+        <AIContextMenu
+          selectedText={selection.text}
+          position={selection.position}
+          onClose={clearSelection}
+          onAction={handleAIAction}
+          isProcessing={isAIProcessing}
+        />
       )}
 
       {/* AI Action Result Dialog */}

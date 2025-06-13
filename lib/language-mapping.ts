@@ -88,3 +88,36 @@ export const LANGUAGE_MAP: Record<string, string> = {
     return supportedLanguages.includes(shikiLang)
   }
   
+  // Language options for dropdown menus
+  export const languageOptions = [
+    { label: "JavaScript", value: "javascript" },
+    { label: "TypeScript", value: "typescript" },
+    { label: "Python", value: "python" },
+    { label: "Java", value: "java" },
+    { label: "Go", value: "go" },
+    { label: "Rust", value: "rust" },
+    { label: "C#", value: "csharp" },
+    { label: "C++", value: "cpp" },
+    { label: "C", value: "c" },
+    { label: "PHP", value: "php" },
+    { label: "Ruby", value: "ruby" },
+    { label: "Swift", value: "swift" },
+    { label: "Kotlin", value: "kotlin" },
+    { label: "Dart", value: "dart" },
+    { label: "Scala", value: "scala" },
+    { label: "Clojure", value: "clojure" },
+    { label: "Elixir", value: "elixir" },
+    { label: "Haskell", value: "haskell" },
+    { label: "Lua", value: "lua" },
+    { label: "R", value: "r" },
+    { label: "HTML", value: "html" },
+    { label: "CSS", value: "css" },
+    { label: "SCSS", value: "scss" },
+    { label: "JSON", value: "json" },
+    { label: "XML", value: "xml" },
+    { label: "YAML", value: "yaml" },
+    { label: "Bash", value: "bash" },
+    { label: "SQL", value: "sql" },
+    { label: "Markdown", value: "markdown" },
+  ]
+  

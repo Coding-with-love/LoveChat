@@ -31,22 +31,29 @@ export function useTabVisibility(options: TabVisibilityOptions = {}) {
       setIsVisible(true)
       
       // Global refresh coordination to prevent multiple components from refreshing stores simultaneously
-      if (refreshStoresOnVisible && wasHiddenFor > 1000 && user && !isGlobalRefreshInProgress) {
+      // Only refresh if hidden for more than 5 seconds (increased from 1 second) to reduce disruption
+      if (refreshStoresOnVisible && wasHiddenFor > 5000 && user && !isGlobalRefreshInProgress) {
         const timeSinceLastGlobalRefresh = now - lastGlobalRefreshTime
         
-        // Only allow one global refresh every 2 seconds
-        if (timeSinceLastGlobalRefresh > 2000) {
+        // Only allow one global refresh every 5 seconds (increased from 2 seconds)
+        if (timeSinceLastGlobalRefresh > 5000) {
           isGlobalRefreshInProgress = true
           lastGlobalRefreshTime = now
           
           console.log(`🔄 [${componentId.current}] Coordinating global store refresh`)
           
           try {
-            // Only refresh API keys from database, don't rehydrate stores
-            // Store rehydration can disrupt API key state during message sending
-            await loadKeys()
+            // Only refresh API keys if they're not already loaded
+            // This prevents unnecessary reloading that can disrupt model state
+            const apiKeyStore = useAPIKeyStore.getState()
+            const hasAnyKeys = Object.keys(apiKeyStore.keys).length > 0
             
-            console.log(`✅ [${componentId.current}] API keys refreshed successfully`)
+            if (!hasAnyKeys || wasHiddenFor > 30000) { // Only reload if no keys or hidden for 30+ seconds
+              await loadKeys()
+              console.log(`✅ [${componentId.current}] API keys refreshed successfully`)
+            } else {
+              console.log(`🔄 [${componentId.current}] Skipping API key refresh - keys already loaded`)
+            }
           } catch (error) {
             console.error(`❌ [${componentId.current}] Error refreshing API keys:`, error)
           } finally {

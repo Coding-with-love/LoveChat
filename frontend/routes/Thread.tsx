@@ -71,13 +71,20 @@ export default function Thread() {
         isLoading: loading
       })
       
-      // Always do a gentle refresh to ensure data is up-to-date
-      // This ensures the chat content is properly restored
-      if (user && id) {
-        console.log("🔄 Refreshing thread messages")
+      // Only refresh if we don't have messages loaded yet OR if it's been a while
+      // This prevents overriding local state changes (like rephrased text) on quick tab switches
+      // but still allows refreshing if data might be stale
+      const now = Date.now()
+      const lastLoad = localStorage.getItem(`thread_${id}_last_load`)
+      const lastLoadTime = lastLoad ? parseInt(lastLoad) : 0
+      const timeSinceLastLoad = now - lastLoadTime
+      const STALE_THRESHOLD = 5 * 60 * 1000 // 5 minutes
+      
+      if (user && id && (messages.length === 0 || timeSinceLastLoad > STALE_THRESHOLD)) {
+        console.log("🔄 Refreshing thread messages - no messages loaded or data is stale")
         initializeThread(true) // Pass true to indicate this is a refresh
       } else {
-        console.log("🔄 Skipping refresh - no user or thread ID")
+        console.log("🔄 Skipping refresh - messages already loaded and fresh")
       }
     },
     refreshStoresOnVisible: true
@@ -85,16 +92,33 @@ export default function Thread() {
 
   useEffect(() => {
     initializeThread() // Initial load (no refresh flag)
+    // Track when we last loaded data
+    if (id) {
+      localStorage.setItem(`thread_${id}_last_load`, Date.now().toString())
+    }
   }, [initializeThread])
 
   const convertToUIMessages = (messages: DBMessage[]): UIMessage[] => {
-    return messages.map((message) => ({
+    const converted = messages.map((message) => ({
       id: message.id,
       role: message.role,
       parts: message.parts as UIMessage["parts"],
       content: message.content || "",
       createdAt: new Date(message.created_at),
     }))
+    
+    // Debug: Log the content being passed to Chat component
+    console.log("🔄 Converting DB messages to UI messages:", {
+      messageCount: converted.length,
+      messages: converted.map(m => ({
+        id: m.id,
+        role: m.role,
+        contentLength: m.content.length,
+        contentPreview: m.content.substring(0, 100)
+      }))
+    })
+    
+    return converted
   }
 
   if (!id) {

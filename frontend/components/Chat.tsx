@@ -7,7 +7,7 @@ import { useAPIKeyStore } from "@/frontend/stores/APIKeyStore"
 import { useModelStore } from "@/frontend/stores/ModelStore"
 import { useSidebar } from "./ui/sidebar"
 import { Button } from "./ui/button"
-import { ChevronDown } from "lucide-react"
+import { ChevronDown } from 'lucide-react'
 import { useCustomResumableChat } from "@/frontend/hooks/useCustomResumableChat"
 import { getModelConfig } from "@/lib/models"
 import { GlobalResumingIndicator } from "./ResumingIndicator"
@@ -21,6 +21,7 @@ import { ThinkingIndicator } from "./ThinkingIndicator"
 import type { Message, CreateMessage } from "ai"
 import { getMessageParts } from "@ai-sdk/ui-utils"
 import { useTabVisibility } from "@/frontend/hooks/useTabVisibility"
+import RealtimeThinking from "./RealTimeThinking";
 
 // Extend UIMessage to include reasoning field
 interface ExtendedUIMessage extends UIMessage {
@@ -43,6 +44,11 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
   const [showPinnedMessages, setShowPinnedMessages] = useState(false)
   const [isThinking, setIsThinking] = useState(false)
   const isAutoScrolling = useRef(false)
+
+  // Add these state variables inside the Chat component function
+  const [realtimeThinking, setRealtimeThinking] = useState("");
+  const [showRealtimeThinking, setShowRealtimeThinking] = useState(false);
+  const currentMessageIdRef = useRef<string | null>(null);
 
   const navigate = useNavigate()
   const { toggleSidebar } = useSidebar()
@@ -166,6 +172,95 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
       setIsThinking(false)
     }
   }, [status, messages, supportsThinking])
+
+  // Add this effect to handle real-time thinking extraction
+  useEffect(() => {
+    console.log("🧠 Real-time thinking effect triggered:", {
+      status,
+      supportsThinking,
+      messagesLength: messages.length,
+      isResuming,
+      selectedModel
+    });
+
+    // Check if we're actively generating (streaming, submitted, or has thinking content)
+    const isGenerating = status === "streaming" || status === "submitted" || 
+                        (messages.length > 0 && messages[messages.length - 1]?.role === "assistant" && 
+                         messages[messages.length - 1]?.content?.includes("<think>"));
+
+    console.log("🧠 Generation check:", {
+      status,
+      isGenerating,
+      hasMessages: messages.length > 0,
+      lastMessageRole: messages.length > 0 ? messages[messages.length - 1]?.role : "none"
+    });
+
+    if (isGenerating && supportsThinking) {
+      const lastMessage = messages[messages.length - 1];
+      
+      if (lastMessage?.role === "assistant") {
+        // Store the current message ID for reference
+        currentMessageIdRef.current = lastMessage.id;
+        
+        // Check if the message contains thinking tags
+        const content = lastMessage.content || "";
+        console.log("🧠 Checking content for thinking tags:", {
+          contentLength: content.length,
+          hasThinkStart: content.includes("<think>"),
+          hasThinkEnd: content.includes("</think>"),
+          contentPreview: content.substring(0, 200)
+        });
+        
+        // Show thinking indicator as soon as we see <think> tag, even without closing tag
+        if (content.includes("<think>")) {
+          console.log("🧠 Think tag detected, showing realtime thinking");
+          setShowRealtimeThinking(true);
+          
+          // Extract thinking content - handle both complete and partial thinking blocks
+          if (content.includes("</think>")) {
+            // Complete thinking blocks
+            const thinkMatches = content.match(/<think>([\s\S]*?)<\/think>/g);
+            if (thinkMatches) {
+              let allThinking = "";
+              thinkMatches.forEach(match => {
+                const thinkContent = match.replace(/<think>|<\/think>/g, "");
+                allThinking += thinkContent + "\n";
+              });
+              
+              console.log("🧠 Extracted complete thinking content:", {
+                matchesCount: thinkMatches.length,
+                thinkingLength: allThinking.length,
+                thinkingPreview: allThinking.substring(0, 100)
+              });
+              
+              setRealtimeThinking(allThinking);
+            }
+          } else {
+            // Partial thinking block (streaming in progress)
+            const partialMatch = content.match(/<think>([\s\S]*)$/);
+            if (partialMatch) {
+              const partialThinking = partialMatch[1];
+              console.log("🧠 Extracted partial thinking content:", {
+                thinkingLength: partialThinking.length,
+                thinkingPreview: partialThinking.substring(0, 100)
+              });
+              setRealtimeThinking(partialThinking);
+            }
+          }
+        } else if (content.length > 0) {
+          console.log("🧠 Content found but no thinking tags detected");
+        }
+      }
+    } else {
+      // Reset thinking when not streaming
+      if (!isResuming && status !== "streaming") {
+        console.log("🧠 Resetting thinking state");
+        setShowRealtimeThinking(false);
+        setRealtimeThinking("");
+        currentMessageIdRef.current = null;
+      }
+    }
+  }, [messages, status, supportsThinking, isResuming, selectedModel]);
 
   const scrollToBottom = () => {
     isAutoScrolling.current = true
@@ -394,9 +489,27 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
 
   return (
     <div className="relative w-full">
+      <Button variant="outline" size="icon" onClick={toggleSidebar} className="fixed top-4 left-4 z-50 md:hidden">
+        <ChevronDown className="h-4 w-4" />
+      </Button>
 
       {/* Global Resuming Indicator */}
       <GlobalResumingIndicator isResuming={isResuming} resumeProgress={resumeProgress} threadTitle="Current Chat" />
+
+      {showRealtimeThinking && supportsThinking && (
+        <div className="fixed top-20 right-4 z-50 w-80 max-h-[70vh] overflow-auto bg-white dark:bg-gray-900 border-2 border-purple-500 rounded-lg shadow-lg">
+          <div className="p-2 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 text-xs font-bold">
+            REALTIME THINKING VISIBLE
+          </div>
+          <RealtimeThinking 
+            isVisible={showRealtimeThinking} 
+            thinkingContent={realtimeThinking} 
+            messageId={currentMessageIdRef.current || "thinking"} 
+          />
+        </div>
+      )}
+
+
 
       {/* Pinned Messages Panel */}
       {showPinnedMessages && (

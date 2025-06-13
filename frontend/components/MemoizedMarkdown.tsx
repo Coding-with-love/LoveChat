@@ -1,21 +1,22 @@
 "use client"
 
-import { memo, useMemo, useState, createContext, useContext, useEffect, useCallback } from "react"
-import ReactMarkdown, { type Components } from "react-markdown"
+import type React from "react"
+import { memo, useState, useCallback, useContext, useMemo } from "react"
+import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import remarkMath from "remark-math"
 import rehypeKatex from "rehype-katex"
 import { marked } from "marked"
 import ShikiHighlighter from "react-shiki"
-import type { ComponentProps } from "react"
-import type { ExtraProps } from "react-markdown"
-import { Check, Copy, Code2, ArrowLeft, Loader2 } from 'lucide-react'
-import CodeConverter from "@/frontend/components/CodeConverter"
 import { cn } from "@/lib/utils"
-import { useCodeConversions } from "@/frontend/hooks/useCodeConversion"
 import { getShikiLanguage } from "@/lib/language-mapping"
-import katex from 'katex'
-import { InlineMath } from './InlineMath'
+import katex from "katex"
+import CodeConverter from "@/frontend/components/CodeConverter"
+import { createContext } from "react"
+import type { ComponentProps } from "react"
+import type { ExtraProps, Components } from "react-markdown"
+import { Code2 } from "lucide-react"
+import { ArrowLeft, Loader2 } from "lucide-react" // Import ArrowLeft and Loader2
 
 // Import KaTeX CSS
 import "katex/dist/katex.min.css"
@@ -58,17 +59,17 @@ const components: Components = {
 }
 
 type MathComponentProps = {
-  value: string;
+  value: string
 }
 
 type ExtendedCodeProps = CodeComponentProps & {
-  inline?: boolean;
-  node?: any;
+  inline?: boolean
+  node?: any
 }
 
 type ExtendedComponents = Components & {
-  math: React.ComponentType<MathComponentProps>;
-  inlineMath: React.ComponentType<MathComponentProps>;
+  math: React.ComponentType<MathComponentProps>
+  inlineMath: React.ComponentType<MathComponentProps>
 }
 
 function CodeBlock({ children, className, ...props }: CodeComponentProps) {
@@ -85,46 +86,11 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
   }, [className])
 
   const codeString = String(children)
-  const codeConversions = useCodeConversions(threadId, messageId)
 
   // Memoize the language to prevent unnecessary re-renders
   const language = useMemo(() => {
     return languageMatch?.[1] || null
   }, [languageMatch])
-
-  // Check for existing conversions - use useCallback to stabilize the function
-  const checkExistingConversions = useCallback(() => {
-    if (!language || !codeConversions?.conversions?.length) {
-      return
-    }
-
-    const existingConversions = codeConversions.findConversionsForCode(codeString, language)
-
-    if (existingConversions.length > 0) {
-      // Use the most recent conversion
-      const latestConversion = existingConversions.sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-      )[0]
-
-      const newConvertedCode = {
-        code: latestConversion.converted_code,
-        language: latestConversion.target_language,
-      }
-
-      // Only update state if the converted code has actually changed
-      setConvertedCode((prevCode) => {
-        if (!prevCode || prevCode.code !== newConvertedCode.code || prevCode.language !== newConvertedCode.language) {
-          return newConvertedCode
-        }
-        return prevCode
-      })
-    }
-  }, [language, codeConversions, codeString])
-
-  // Use useEffect with stable dependencies
-  useEffect(() => {
-    checkExistingConversions()
-  }, [checkExistingConversions])
 
   const copyToClipboard = async (text: string) => {
     try {
@@ -143,11 +109,6 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
       setIsConverting(true)
 
       try {
-        // Save to database if we have thread and message IDs
-        if (threadId && messageId && codeConversions) {
-          await codeConversions.saveConversion(codeString, language || "text", converted, target)
-        }
-
         // Update local state immediately
         const newConvertedCode = { code: converted, language: target.toLowerCase() }
         setConvertedCode(newConvertedCode)
@@ -163,7 +124,7 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
         setIsConverting(false)
       }
     },
-    [threadId, messageId, codeConversions, codeString, language, onCodeConvert],
+    [codeString, onCodeConvert],
   )
 
   const toggleView = useCallback(() => {
@@ -182,8 +143,12 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
         className="rounded-md relative mb-4 overflow-visible border border-border shadow-sm"
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
+        data-code-block="true" // Add this attribute to help identify code blocks
       >
-        <div className="flex justify-between items-center px-4 py-2 bg-secondary text-foreground">
+        <div
+          className="flex justify-between items-center px-4 py-2 bg-secondary text-foreground"
+          data-code-block-header="true" // Add this attribute to help identify code block headers
+        >
           <div className="flex items-center space-x-2">
             <span className="text-sm font-mono">{displayLang}</span>
             {convertedCode && (
@@ -213,7 +178,13 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
           <div className="flex items-center space-x-2">
             {onCodeConvert && isHovered && !isConverting && (
               <div className="relative z-50">
-                <CodeConverter code={codeString} currentLanguage={language} onConvert={handleConvert} />
+                <CodeConverter
+                  code={codeString}
+                  currentLanguage={language}
+                  onConvert={handleConvert}
+                  threadId={threadId}
+                  messageId={messageId}
+                />
               </div>
             )}
             {isConverting && (
@@ -228,7 +199,7 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
               aria-label="Copy code"
               title="Copy code"
             >
-              {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+              {copied ? <Code2 className="w-4 h-4" /> : <Code2 className="w-4 h-4" />}
             </button>
           </div>
         </div>
@@ -237,15 +208,18 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
             "transition-all duration-300",
             showConverted ? "bg-blue-50/20 dark:bg-blue-950/20 border-t border-blue-200 dark:border-blue-800" : "",
           )}
+          data-code-block-content="true" // Add this attribute to help identify code block content
         >
-          <ShikiHighlighter
-            language={shikiLanguage}
-            theme={"material-theme-darker"}
-            className="text-sm font-mono"
-            showLanguage={false}
-          >
-            {displayCode}
-          </ShikiHighlighter>
+          <div className="relative">
+            <ShikiHighlighter
+              language={shikiLanguage}
+              theme={"material-theme-darker"}
+              className="text-sm font-mono"
+              showLanguage={false}
+            >
+              {displayCode}
+            </ShikiHighlighter>
+          </div>
         </div>
       </div>
     )
@@ -274,20 +248,20 @@ function PureMarkdownRendererBlock({ content }: { content: string }) {
       return katex.renderToString(tex, {
         displayMode,
         throwOnError: false,
-        output: 'html',
+        output: "html",
         strict: false,
         trust: true,
-      });
+      })
     } catch (error) {
-      console.error('KaTeX error:', error);
-      return tex;
+      console.error("KaTeX error:", error)
+      return tex
     }
-  };
+  }
 
   // Pre-process content to ensure proper math formatting
   const processedContent = content
-    .replace(/\\\((.*?)\\\)/g, '$$$1$$')  // Convert \(...\) to $...$ for inline math
-    .replace(/\$\$([\s\S]*?)\$\$/g, (_, tex) => `\n\n$$${tex.trim()}$$\n\n`); // Add newlines around display math
+    .replace(/\\$$(.*?)\\$$/g, "$$$1$$") // Convert $$...$$ to $...$ for inline math
+    .replace(/\$\$([\s\S]*?)\$\$/g, (_, tex) => `\n\n$$${tex.trim()}$$\n\n`) // Add newlines around display math
 
   return (
     <ReactMarkdown
@@ -299,7 +273,7 @@ function PureMarkdownRendererBlock({ content }: { content: string }) {
             strict: false,
             trust: true,
             throwOnError: false,
-            errorColor: '#cc0000',
+            errorColor: "#cc0000",
             globalGroup: true,
             fleqn: false,
             leqno: false,
@@ -316,41 +290,47 @@ function PureMarkdownRendererBlock({ content }: { content: string }) {
           },
         ],
       ]}
-      components={{
-        ...components,
-        code: ({ node, inline, className, children, ...props }: ExtendedCodeProps) => {
-          const match = /language-(\w+)/.exec(className || '');
-          const isDisplayMath = !inline && !match && String(children).startsWith('$$');
-          
-          if (isDisplayMath) {
-            const mathContent = String(children).slice(2, -2).trim();
+      components={
+        {
+          ...components,
+          code: ({ node, inline, className, children, ...props }: ExtendedCodeProps) => {
+            const match = /language-(\w+)/.exec(className || "")
+            const isDisplayMath = !inline && !match && String(children).startsWith("$$")
+
+            if (isDisplayMath) {
+              const mathContent = String(children).slice(2, -2).trim()
+              return (
+                <div className="math-wrapper">
+                  <div
+                    className="katex-display"
+                    dangerouslySetInnerHTML={{
+                      __html: renderMath(mathContent, true),
+                    }}
+                  />
+                </div>
+              )
+            }
+
             return (
-              <div className="math-wrapper">
-                <div
-                  className="katex-display"
-                  dangerouslySetInnerHTML={{
-                    __html: renderMath(mathContent, true),
-                  }}
-                />
-              </div>
-            );
-          }
-          
-          return <CodeBlock className={className} {...props}>{children}</CodeBlock>;
-        },
-        inlineMath: ({ value }: MathComponentProps) => (
-          <span
-            className="katex-inline"
-            dangerouslySetInnerHTML={{
-              __html: renderMath(value, false),
-            }}
-          />
-        ),
-      } as ExtendedComponents}
+              <CodeBlock className={className} {...props}>
+                {children}
+              </CodeBlock>
+            )
+          },
+          inlineMath: ({ value }: MathComponentProps) => (
+            <span
+              className="katex-inline"
+              dangerouslySetInnerHTML={{
+                __html: renderMath(value, false),
+              }}
+            />
+          ),
+        } as ExtendedComponents
+      }
     >
       {processedContent}
     </ReactMarkdown>
-  );
+  )
 }
 
 const MarkdownRendererBlock = memo(PureMarkdownRendererBlock, (prevProps, nextProps) => {
@@ -371,7 +351,7 @@ const MemoizedMarkdown = memo(
 
     return (
       <MarkdownContext.Provider value={{ size, threadId, messageId, onCodeConvert }}>
-        <div className={proseClasses}>
+        <div className={proseClasses} data-message-text-content="true">
           {blocks.map((block, index) => (
             <MarkdownRendererBlock content={block} key={`${id}-block-${index}`} />
           ))}
