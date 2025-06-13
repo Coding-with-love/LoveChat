@@ -44,13 +44,33 @@ export function useTextSelection() {
           const range = selectionObj.getRangeAt(0)
           const rect = range.getBoundingClientRect()
 
-          // Position the menu at the end of the selection
-          // Use client coordinates (viewport-relative)
+          // Debug logging to understand what's happening
+          console.log("📍 Selection positioning debug:", {
+            rect: {
+              left: rect.left,
+              right: rect.right,
+              top: rect.top,
+              bottom: rect.bottom,
+              width: rect.width,
+              height: rect.height
+            },
+            viewport: {
+              width: window.innerWidth,
+              height: window.innerHeight
+            },
+            scroll: {
+              x: window.scrollX,
+              y: window.scrollY
+            }
+          })
+
+          // Position the menu at the left edge of selection for more predictable positioning
+          // Use viewport coordinates (don't add scroll offsets for fixed positioning)
           setSelection({
             text: selectedText,
             position: {
-              x: rect.right + window.scrollX,
-              y: rect.top + window.scrollY,
+              x: Math.max(10, rect.left), // Ensure at least 10px from left edge
+              y: rect.bottom + 5, // Add small offset below selection
             },
           })
         } else {

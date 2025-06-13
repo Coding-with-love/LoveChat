@@ -4,7 +4,7 @@ import type React from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog"
 import { Button } from "./ui/button"
 import { ScrollArea } from "./ui/scroll-area"
-import { Copy, RefreshCw, X } from 'lucide-react'
+import { Copy, RefreshCw } from 'lucide-react'
 import { useState } from "react"
 
 interface AIActionResult {
@@ -58,11 +58,8 @@ const AIActionResultDialog: React.FC<AIActionResultDialogProps> = ({ isOpen, onC
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-2xl max-h-[80vh]">
         <DialogHeader>
-          <DialogTitle className="flex items-center justify-between">
-            <span>{getActionTitle(result.action)}</span>
-            <Button variant="ghost" size="sm" onClick={onClose} className="h-6 w-6 p-0">
-              <X className="h-4 w-4" />
-            </Button>
+          <DialogTitle>
+            {getActionTitle(result.action)}
           </DialogTitle>
         </DialogHeader>
 

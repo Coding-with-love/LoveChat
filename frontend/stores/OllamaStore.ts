@@ -19,7 +19,32 @@ export const useOllamaStore = create<OllamaState>()(
       baseUrl: "http://localhost:11434",
       setBaseUrl: (url: string) => set({ baseUrl: url }),
       isConnected: false,
-      setIsConnected: (connected: boolean) => set({ isConnected: connected }),
+      setIsConnected: (connected: boolean) => {
+        const currentState = get()
+        const wasConnected = currentState.isConnected
+        
+        set({ isConnected: connected })
+        
+        // If connection status changed, log it and trigger model validation
+        if (wasConnected !== connected) {
+          console.log(`🦙 Ollama connection status changed: ${wasConnected} → ${connected}`)
+          
+          // Import and trigger model validation when connection status changes
+          // This ensures that if an Ollama model was selected and Ollama disconnects,
+          // the model will be automatically switched to an available one
+          setTimeout(() => {
+            try {
+              // We use dynamic import to avoid circular dependency issues
+              import('./ModelStore').then((module) => {
+                const modelStore = module.useModelStore.getState()
+                modelStore.ensureValidSelectedModel()
+              })
+            } catch (error) {
+              console.error("Failed to trigger model validation:", error)
+            }
+          }, 100)
+        }
+      },
       availableModels: [],
       setAvailableModels: (models: string[]) => set({ availableModels: models }),
       testConnection: async () => {

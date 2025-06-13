@@ -4,6 +4,7 @@ import { create } from "zustand"
 import { persist } from "zustand/middleware"
 import { AI_MODELS, getModelConfig, type AIModel, type OllamaModel } from "@/lib/models"
 import { useAPIKeyStore } from "./APIKeyStore"
+import { useOllamaStore } from "./OllamaStore"
 
 interface ModelState {
   selectedModel: AIModel
@@ -48,10 +49,15 @@ export const useModelStore = create<ModelState>()(
           // If we're disabling the currently selected model, switch to first available
           let newSelectedModel = state.selectedModel
           if (isEnabled && state.selectedModel === model) {
+            const ollamaStore = useOllamaStore.getState()
+            const isOllamaConnected = ollamaStore.isConnected
+            
             const availableModels = newEnabledModels.filter(m => {
               try {
                 const modelConfig = getModelConfig(m)
-                if (modelConfig.provider === "ollama") return true
+                if (modelConfig.provider === "ollama") {
+                  return isOllamaConnected
+                }
                 return !!useAPIKeyStore.getState().getKey(modelConfig.provider)
               } catch {
                 return false
@@ -88,13 +94,21 @@ export const useModelStore = create<ModelState>()(
       getEnabledModels: () => {
         const state = get()
         const apiKeyStore = useAPIKeyStore.getState()
+        const ollamaStore = useOllamaStore.getState()
         const getKey = apiKeyStore.getKey
         const isLoading = apiKeyStore.isLoading
+        const isOllamaConnected = ollamaStore.isConnected
         
-        return [...state.enabledModels, ...state.customModels].filter(model => {
+        const filteredModels = [...state.enabledModels, ...state.customModels].filter(model => {
           try {
             const modelConfig = getModelConfig(model)
-            if (modelConfig.provider === "ollama") return true
+            if (modelConfig.provider === "ollama") {
+              // Only include Ollama models if Ollama is connected
+              if (!isOllamaConnected) {
+                console.log("🦙 Filtering out Ollama model due to disconnection:", model)
+              }
+              return isOllamaConnected
+            }
             
             // Always check if the key actually exists
             const hasKey = !!getKey(modelConfig.provider)
@@ -117,6 +131,14 @@ export const useModelStore = create<ModelState>()(
             return false
           }
         })
+        
+        console.log("🔄 Available models after filtering:", {
+          total: filteredModels.length,
+          ollamaConnected: isOllamaConnected,
+          models: filteredModels.map(m => m.replace("ollama:", ""))
+        })
+        
+        return filteredModels
       },
       
       findFirstAvailableModel: () => {
@@ -129,10 +151,17 @@ export const useModelStore = create<ModelState>()(
         
         // Fallback to any available model
         const getKey = useAPIKeyStore.getState().getKey
+        const isOllamaConnected = useOllamaStore.getState().isConnected
+        
         for (const model of AI_MODELS) {
           try {
             const modelConfig = getModelConfig(model)
-            if (modelConfig.provider === "ollama" || getKey(modelConfig.provider)) {
+            if (modelConfig.provider === "ollama") {
+              // Only consider Ollama models if connected
+              if (isOllamaConnected) {
+                return model
+              }
+            } else if (getKey(modelConfig.provider)) {
               return model
             }
           } catch {
@@ -147,20 +176,31 @@ export const useModelStore = create<ModelState>()(
       ensureValidSelectedModel: () => {
         const state = get()
         const apiKeyStore = useAPIKeyStore.getState()
+        const ollamaStore = useOllamaStore.getState()
         const isLoading = apiKeyStore.isLoading
+        const isOllamaConnected = ollamaStore.isConnected
         const enabledModels = state.getEnabledModels()
         
         // Check if current selected model is available
         const isCurrentModelAvailable = enabledModels.includes(state.selectedModel)
         
+        // Special check for Ollama models
+        const isCurrentModelOllama = state.selectedModel.startsWith("ollama:")
+        if (isCurrentModelOllama && !isOllamaConnected) {
+          console.log("🦙 Current model is Ollama but Ollama is disconnected, switching models")
+        }
+        
         // If the model is not available and we're not currently loading API keys,
         // then it's safe to switch to another model
         if (!isCurrentModelAvailable && !isLoading && enabledModels.length > 0) {
-          console.log("🔄 Model validation: switching from", state.selectedModel, "to", enabledModels[0])
+          console.log("🔄 Model validation: switching from", state.selectedModel, "to", enabledModels[0], 
+                     isCurrentModelOllama ? "(Ollama disconnected)" : "(no API key)")
           set({ selectedModel: enabledModels[0] })
         } else if (!isCurrentModelAvailable && isLoading) {
           console.log("🔄 Model validation: API keys loading, preserving current model", state.selectedModel)
           // Don't switch models while API keys are loading - preserve user's selection
+        } else if (isCurrentModelAvailable) {
+          console.log("🔄 Model validation: current model", state.selectedModel, "is still available")
         }
       }
     }),

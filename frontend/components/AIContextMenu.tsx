@@ -29,12 +29,18 @@ const AIContextMenu: React.FC<AIContextMenuProps> = ({ selectedText, position, o
   const [replacementPosition, setReplacementPosition] = useState({ x: 0, y: 0 })
   const menuRef = useRef<HTMLDivElement>(null)
   const [adjustedPosition, setAdjustedPosition] = useState({ x: position.x, y: position.y })
+  const [processingAction, setProcessingAction] = useState<string | null>(null)
 
   // Adjust menu position to ensure it's visible within viewport
   useEffect(() => {
     // Initial position from the selection
     let x = position.x
     let y = position.y
+
+    console.log("🎯 AIContextMenu positioning debug:", {
+      received: { x: position.x, y: position.y },
+      viewport: { width: window.innerWidth, height: window.innerHeight }
+    })
 
     // Wait for the menu to render so we can get its dimensions
     requestAnimationFrame(() => {
@@ -43,22 +49,39 @@ const AIContextMenu: React.FC<AIContextMenuProps> = ({ selectedText, position, o
         const viewportWidth = window.innerWidth
         const viewportHeight = window.innerHeight
 
+        console.log("🎯 Menu dimensions:", {
+          menuRect: { width: rect.width, height: rect.height },
+          beforeAdjustment: { x, y }
+        })
+
         // Adjust horizontal position if menu would go off-screen
         if (x + rect.width > viewportWidth - 10) {
           x = Math.max(10, viewportWidth - rect.width - 10)
         }
 
+        // Ensure minimum left position
+        if (x < 10) {
+          x = 10
+        }
+
         // Adjust vertical position if menu would go off-screen
         if (y + rect.height > viewportHeight - 10) {
           // Position above the selection if there's not enough space below
-          if (y - rect.height > 10) {
-            y = y - rect.height - 10
+          const aboveY = position.y - rect.height - 10
+          if (aboveY > 10) {
+            y = aboveY
           } else {
             // If there's not enough space above either, position at the top of the viewport
             y = 10
           }
         }
 
+        // Ensure minimum top position
+        if (y < 10) {
+          y = 10
+        }
+
+        console.log("🎯 Final adjusted position:", { x, y })
         setAdjustedPosition({ x, y })
       }
     })
@@ -95,14 +118,20 @@ const AIContextMenu: React.FC<AIContextMenuProps> = ({ selectedText, position, o
 
   const handleTranslate = () => {
     console.log("🌍 Translate button clicked!")
-    openDialog(selectedText, (language: string) => {
+    setProcessingAction("translate")
+    openDialog(selectedText, async (language: string) => {
       console.log(`🌍 Selected language: ${language}`)
-      onAction("translate", selectedText, language)
+      try {
+        await onAction("translate", selectedText, language)
+      } finally {
+        setProcessingAction(null)
+      }
     })
   }
 
   const handleRephrase = async () => {
     console.log("🔄 Rephrase button clicked!")
+    setProcessingAction("rephrase")
     setIsReplacing(true)
 
     // Calculate position for the replacement dialog
@@ -134,6 +163,25 @@ const AIContextMenu: React.FC<AIContextMenuProps> = ({ selectedText, position, o
       console.error("Failed to rephrase:", error)
     } finally {
       setIsReplacing(false)
+      setProcessingAction(null)
+    }
+  }
+
+  const handleExplain = async () => {
+    setProcessingAction("explain")
+    try {
+      await onAction("explain", selectedText)
+    } finally {
+      setProcessingAction(null)
+    }
+  }
+
+  const handleSummarize = async () => {
+    setProcessingAction("summarize")
+    try {
+      await onAction("summarize", selectedText)
+    } finally {
+      setProcessingAction(null)
     }
   }
 
@@ -141,7 +189,7 @@ const AIContextMenu: React.FC<AIContextMenuProps> = ({ selectedText, position, o
     return (
       <div
         style={{
-          position: "absolute",
+          position: "fixed",
           left: replacementPosition.x,
           top: replacementPosition.y,
           zIndex: 50,
@@ -187,7 +235,7 @@ const AIContextMenu: React.FC<AIContextMenuProps> = ({ selectedText, position, o
   return (
     <Card
       ref={menuRef}
-      className="absolute z-50 p-2 shadow-lg border"
+      className="fixed z-50 p-2 shadow-lg border"
       style={{
         left: `${adjustedPosition.x}px`,
         top: `${adjustedPosition.y}px`,
@@ -198,28 +246,28 @@ const AIContextMenu: React.FC<AIContextMenuProps> = ({ selectedText, position, o
           size="sm"
           variant="ghost"
           className="justify-start"
-          onClick={() => onAction("explain", selectedText)}
-          disabled={isProcessing}
+          onClick={handleExplain}
+          disabled={processingAction === "explain" || isProcessing}
         >
-          {isProcessing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <FileText className="h-4 w-4 mr-2" />}
+          {processingAction === "explain" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <FileText className="h-4 w-4 mr-2" />}
           Explain
         </Button>
-        <Button size="sm" variant="ghost" className="justify-start" onClick={handleTranslate} disabled={isProcessing}>
-          {isProcessing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Languages className="h-4 w-4 mr-2" />}
+        <Button size="sm" variant="ghost" className="justify-start" onClick={handleTranslate} disabled={processingAction === "translate" || isProcessing}>
+          {processingAction === "translate" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Languages className="h-4 w-4 mr-2" />}
           Translate
         </Button>
-        <Button size="sm" variant="ghost" className="justify-start" onClick={handleRephrase} disabled={isProcessing}>
-          {isProcessing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+        <Button size="sm" variant="ghost" className="justify-start" onClick={handleRephrase} disabled={processingAction === "rephrase" || isProcessing}>
+          {processingAction === "rephrase" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
           Rephrase
         </Button>
         <Button
           size="sm"
           variant="ghost"
           className="justify-start"
-          onClick={() => onAction("summarize", selectedText)}
-          disabled={isProcessing}
+          onClick={handleSummarize}
+          disabled={processingAction === "summarize" || isProcessing}
         >
-          {isProcessing ? (
+          {processingAction === "summarize" ? (
             <Loader2 className="h-4 w-4 mr-2 animate-spin" />
           ) : (
             <MessageSquare className="h-4 w-4 mr-2" />
