@@ -20,6 +20,10 @@ import { ThinkingToggle } from "./ThinkingToggle"
 import ThinkingContent from "./ThinkingContent"
 import { ThinkingIndicator } from "./ThinkingIndicator"
 import MessageContentRenderer from "./MessageContentRenderer"
+import { ArtifactCard } from "./ArtifactCard"
+import { useArtifactStore } from "@/frontend/stores/ArtifactStore"
+import { Badge } from "@/frontend/components/ui/badge"
+import { Code, FileText, Copy, Plus } from "lucide-react"
 
 // Helper function to check equality (you might want to import this from a utility library)
 function equal(a: any, b: any): boolean {
@@ -63,6 +67,16 @@ function PureMessage({
   const [mode, setMode] = useState<"view" | "edit">("view")
   const [showAnimation, setShowAnimation] = useState(false)
   const [isCurrentlyThinking, setIsCurrentlyThinking] = useState(false)
+
+  // Artifact detection and display
+  const { getArtifactsByMessageId } = useArtifactStore()
+  const [messageArtifacts, setMessageArtifacts] = useState<any[]>([])
+
+  useEffect(() => {
+    const artifacts = getArtifactsByMessageId(message.id)
+    setMessageArtifacts(artifacts)
+  }, [message.id, getArtifactsByMessageId])
+
   const messageRef = useRef<HTMLDivElement>(null)
 
   // AI Actions functionality
@@ -109,7 +123,12 @@ function PureMessage({
   }, [resumeComplete, resumedMessageId, message.id])
 
   // Extract file attachments from message parts
-  const fileAttachments = (message.parts?.find((part) => (part as any).type === "file_attachments") as any)?.attachments || []
+  const fileAttachments =
+    (message.parts?.find((part) => (part as any).type === "file_attachments") as any)?.attachments || []
+
+  // Extract artifact references from message parts
+  const artifactReferences =
+    (message.parts?.find((part) => (part as any).type === "artifact_references") as any)?.artifacts || []
 
   // Extract sources if available
   const sources: any[] = []
@@ -129,19 +148,23 @@ function PureMessage({
         return thinkMatch ? thinkMatch[1].trim() : null
       }
       return null
+      
     })()
 
   // Filter out tool calls and other non-user-facing parts
   const displayParts =
-    message.parts?.filter((part) => {
+  message.parts?.filter((part) => {
       if (message.role === "user") {
         return part.type === "text" || part.type === "reasoning"
       }
-      return part.type === "text" || part.type === "reasoning"
-    }) || []
+  return part.type === "text" || part.type === "reasoning"
+  
+    
+}
+) || []
 
-  // Handle code conversion - use useCallback to prevent unnecessary re-renders
-  const handleCodeConvert = useCallback(
+// Handle code conversion - use useCallback to prevent unnecessary re-renders
+const handleCodeConvert = useCallback(
     (originalCode: string, convertedCode: string, target: string) => {
       console.log("🔄 Code converted in Message component:", {
         messageId: message.id,
@@ -150,32 +173,34 @@ function PureMessage({
         convertedLength: convertedCode.length,
       })
 
+
       // The actual saving is handled in the MemoizedMarkdown component
       // We don't need to do anything here to update the UI
     },
     [message.id],
   )
 
-  // Handle keyboard shortcuts
-  const handleCopy = useCallback(() => {
+// Handle keyboard shortcuts
+const handleCopy = useCallback(() => {
     const textPart = displayParts.find((part) => part.type === "text")
     if (textPart) {
       navigator.clipboard.writeText(textPart.text)
     }
   }, [displayParts])
 
-  const handleEdit = useCallback(() => {
+const handleEdit = useCallback(() => {
     if (mode === "view") {
       setMode("edit")
     }
   }, [mode])
 
-  const handlePin = useCallback(() => {
+const handlePin = useCallback(() => {
     // Pin functionality is handled in MessageControls
     // We'll pass this through to MessageControls
   }, [])
 
-  const handleAIAction = useCallback(
+
+const handleAIAction = useCallback(
     async (
       action: "explain" | "translate" | "rephrase" | "summarize",
       text: string,
@@ -188,36 +213,36 @@ function PureMessage({
     [processAction, clearSelection],
   )
 
-  // Handle keyboard shortcuts with AI actions
-  const handleExplainSelection = useCallback(() => {
+// Handle keyboard shortcuts with AI actions
+const handleExplainSelection = useCallback(() => {
     const selectedText = window.getSelection()?.toString().trim()
     if (selectedText && selectedText.length > 3) {
       handleAIAction("explain", selectedText)
     }
   }, [handleAIAction])
 
-  const handleTranslateSelection = useCallback(() => {
+const handleTranslateSelection = useCallback(() => {
     const selectedText = window.getSelection()?.toString().trim()
     if (selectedText && selectedText.length > 3) {
       handleAIAction("translate", selectedText, "Spanish")
     }
   }, [handleAIAction])
 
-  const handleRephraseSelection = useCallback(() => {
+const handleRephraseSelection = useCallback(() => {
     const selectedText = window.getSelection()?.toString().trim()
     if (selectedText && selectedText.length > 3) {
       handleAIAction("rephrase", selectedText)
     }
   }, [handleAIAction])
 
-  useKeyboardShortcuts({
+useKeyboardShortcuts({
     onCopyMessage: handleCopy,
     onEditMessage: handleEdit,
     onPinMessage: handlePin,
   })
 
-  // Check if the selection is within this message component
-  const isSelectionInThisMessage = useCallback(() => {
+// Check if the selection is within this message component
+const isSelectionInThisMessage = useCallback(() => {
     if (!selection || !messageRef.current) return false
 
     const selectionNode = window.getSelection()?.anchorNode
@@ -225,6 +250,24 @@ function PureMessage({
 
     return messageRef.current.contains(selectionNode)
   }, [selection])
+
+const handleViewInGallery = useCallback((artifact: any) => {
+    // Navigate to artifacts gallery with this artifact highlighted
+    window.location.href = `/artifacts?highlight=${artifact.id}`
+  }, [])
+
+  // Get artifact icon
+  const getArtifactIcon = (contentType: string) => {
+    switch (contentType) {
+      case "code":
+      case "javascript":
+      case "typescript":
+      case "python":
+        return <Code className="h-3 w-3" />
+      default:
+        return <FileText className="h-3 w-3" />
+    }
+  }
 
   return (
     <div
@@ -383,13 +426,15 @@ function PureMessage({
                   />
                 )}
                 {mode === "view" && (
-                  <MessageContentRenderer
-                    content={cleanText}
-                    messageId={message.id}
-                    threadId={threadId}
-                    onRevertRephrase={onRevertToOriginal}
-                    isMarkdown={false}
-                  />
+                  <div className="space-y-3">
+                    <MessageContentRenderer
+                      content={cleanText}
+                      messageId={message.id}
+                      threadId={threadId}
+                      onRevertRephrase={onRevertToOriginal}
+                      isMarkdown={false}
+                    />
+                  </div>
                 )}
 
                 {mode === "view" && (
@@ -421,9 +466,7 @@ function PureMessage({
                 )}
 
                 {/* Thinking Content - Show when expanded */}
-                {message.role === "assistant" && reasoning && showThinking && (
-                  <ThinkingContent reasoning={reasoning} />
-                )}
+                {message.role === "assistant" && reasoning && showThinking && <ThinkingContent reasoning={reasoning} />}
 
                 <div
                   className={cn(
@@ -480,6 +523,43 @@ function PureMessage({
       {fileAttachments.length > 0 && (
         <div className={cn("mt-2", message.role === "user" ? "self-end max-w-[80%]" : "self-start w-full")}>
           <FileAttachmentViewer attachments={fileAttachments} />
+        </div>
+      )}
+
+      {/* Display artifact references if any */}
+      {artifactReferences.length > 0 && message.role === "user" && (
+        <div className={cn("mt-2 space-y-2", "self-end max-w-[80%]")}>
+          <div className="flex flex-wrap gap-2">
+            {artifactReferences.map((artifact: any, artifactIndex: number) => (
+              <Badge
+                key={`artifact-${artifact.id}-${artifactIndex}`}
+                variant="outline"
+                className="flex items-center gap-2 px-2 py-1 text-xs border-primary/20 bg-primary/5"
+              >
+                {getArtifactIcon(artifact.content_type)}
+                <span className="max-w-[120px] truncate">{artifact.title}</span>
+                {artifact.type === "insert" ? (
+                  <Copy className="h-3 w-3 text-blue-500" />
+                ) : (
+                  <Plus className="h-3 w-3 text-green-500" />
+                )}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Display artifacts created by this message */}
+      {messageArtifacts.length > 0 && (
+        <div className={cn("mt-4 space-y-3", message.role === "user" ? "self-end max-w-[80%]" : "self-start w-full")}>
+          {messageArtifacts.map((artifact) => (
+            <ArtifactCard
+              key={artifact.id}
+              artifact={artifact}
+              onViewInGallery={handleViewInGallery}
+              compact={message.role === "user"}
+            />
+          ))}
         </div>
       )}
 

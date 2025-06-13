@@ -15,8 +15,8 @@ import CodeConverter from "@/frontend/components/CodeConverter"
 import { createContext } from "react"
 import type { ComponentProps } from "react"
 import type { ExtraProps, Components } from "react-markdown"
-import { Code2 } from "lucide-react"
-import { ArrowLeft, Loader2 } from "lucide-react" // Import ArrowLeft and Loader2
+import { Code2, Sparkles, Download, Pin, PinOff } from 'lucide-react'
+import { ArrowLeft, Loader2 } from 'lucide-react'
 
 // Import KaTeX CSS
 import "katex/dist/katex.min.css"
@@ -30,6 +30,7 @@ interface MarkdownContextType {
   threadId?: string
   messageId?: string
   onCodeConvert?: (originalCode: string, convertedCode: string, target: string) => void
+  isArtifactMessage?: boolean // New flag to identify artifact messages
 }
 
 const MarkdownContext = createContext<MarkdownContextType>({ size: "default" })
@@ -41,6 +42,7 @@ interface MarkdownProps {
   threadId?: string
   messageId?: string
   onCodeConvert?: (originalCode: string, convertedCode: string, target: string) => void
+  isArtifactMessage?: boolean // New prop to identify artifact messages
 }
 
 const components: Components = {
@@ -73,12 +75,13 @@ type ExtendedComponents = Components & {
 }
 
 function CodeBlock({ children, className, ...props }: CodeComponentProps) {
-  const { size, onCodeConvert, threadId, messageId } = useContext(MarkdownContext)
+  const { size, onCodeConvert, threadId, messageId, isArtifactMessage } = useContext(MarkdownContext)
   const [copied, setCopied] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
   const [convertedCode, setConvertedCode] = useState<{ code: string; language: string } | null>(null)
   const [showConverted, setShowConverted] = useState(false)
   const [isConverting, setIsConverting] = useState(false)
+  const [isPinned, setIsPinned] = useState(false)
 
   // Memoize the regex match to prevent it from changing on every render
   const languageMatch = useMemo(() => {
@@ -91,6 +94,17 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
   const language = useMemo(() => {
     return languageMatch?.[1] || null
   }, [languageMatch])
+
+  // Check if this code block is substantial enough to be an artifact
+  const isArtifactCandidate = useMemo(() => {
+    if (!language || !isArtifactMessage) return false
+    
+    const lines = codeString.split('\n').length
+    const chars = codeString.length
+    
+    // Consider it an artifact if it's substantial code (3+ lines or 100+ chars)
+    return lines > 3 || chars > 100
+  }, [language, codeString, isArtifactMessage])
 
   const copyToClipboard = async (text: string) => {
     try {
@@ -131,6 +145,23 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
     setShowConverted((prev) => !prev)
   }, [])
 
+  const handlePin = useCallback(() => {
+    setIsPinned(!isPinned)
+    // Here you could also call an API to save the pinned state
+  }, [isPinned])
+
+  const handleDownload = useCallback(() => {
+    const blob = new Blob([codeString], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `code.${language || 'txt'}`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }, [codeString, language])
+
   if (languageMatch && language) {
     const displayLang = convertedCode && showConverted ? convertedCode.language : language
     const displayCode = convertedCode && showConverted ? convertedCode.code : codeString
@@ -140,17 +171,41 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
 
     return (
       <div
-        className="rounded-md relative mb-4 overflow-visible border border-border shadow-sm"
+        className={cn(
+          "rounded-md relative mb-4 overflow-visible shadow-sm transition-all duration-200",
+          isArtifactCandidate 
+            ? "border-2 border-primary/30 bg-gradient-to-br from-primary/5 to-primary/10 shadow-lg" 
+            : "border border-border"
+        )}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
-        data-code-block="true" // Add this attribute to help identify code blocks
+        data-code-block="true"
+        data-artifact={isArtifactCandidate}
       >
         <div
-          className="flex justify-between items-center px-4 py-2 bg-secondary text-foreground"
-          data-code-block-header="true" // Add this attribute to help identify code block headers
+          className={cn(
+            "flex justify-between items-center px-4 py-2 text-foreground",
+            isArtifactCandidate 
+              ? "bg-gradient-to-r from-primary/10 to-primary/15 border-b border-primary/20" 
+              : "bg-secondary"
+          )}
+          data-code-block-header="true"
         >
           <div className="flex items-center space-x-2">
-            <span className="text-sm font-mono">{displayLang}</span>
+            {isArtifactCandidate && (
+              <Sparkles className="w-4 h-4 text-primary animate-pulse" />
+            )}
+            <span className={cn(
+              "text-sm font-mono",
+              isArtifactCandidate && "text-primary font-semibold"
+            )}>
+              {displayLang}
+            </span>
+            {isArtifactCandidate && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary font-medium">
+                Artifact
+              </span>
+            )}
             {convertedCode && (
               <button
                 onClick={toggleView}
@@ -176,6 +231,26 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
             )}
           </div>
           <div className="flex items-center space-x-2">
+            {isArtifactCandidate && isHovered && (
+              <>
+                <button
+                  onClick={handlePin}
+                  className="text-sm cursor-pointer hover:text-primary transition-colors p-1 rounded-md hover:bg-primary/10"
+                  aria-label={isPinned ? "Unpin artifact" : "Pin artifact"}
+                  title={isPinned ? "Unpin artifact" : "Pin artifact"}
+                >
+                  {isPinned ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />}
+                </button>
+                <button
+                  onClick={handleDownload}
+                  className="text-sm cursor-pointer hover:text-primary transition-colors p-1 rounded-md hover:bg-primary/10"
+                  aria-label="Download artifact"
+                  title="Download artifact"
+                >
+                  <Download className="w-4 h-4" />
+                </button>
+              </>
+            )}
             {onCodeConvert && isHovered && !isConverting && (
               <div className="relative z-50">
                 <CodeConverter
@@ -195,7 +270,12 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
             )}
             <button
               onClick={() => copyToClipboard(displayCode)}
-              className="text-sm cursor-pointer hover:text-primary transition-colors p-1 rounded-md hover:bg-muted"
+              className={cn(
+                "text-sm cursor-pointer transition-colors p-1 rounded-md",
+                isArtifactCandidate 
+                  ? "hover:text-primary hover:bg-primary/10" 
+                  : "hover:text-primary hover:bg-muted"
+              )}
               aria-label="Copy code"
               title="Copy code"
             >
@@ -207,8 +287,9 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
           className={cn(
             "transition-all duration-300",
             showConverted ? "bg-blue-50/20 dark:bg-blue-950/20 border-t border-blue-200 dark:border-blue-800" : "",
+            isArtifactCandidate && "bg-gradient-to-br from-primary/5 to-transparent"
           )}
-          data-code-block-content="true" // Add this attribute to help identify code block content
+          data-code-block-content="true"
         >
           <div className="relative">
             <ShikiHighlighter
@@ -219,6 +300,11 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
             >
               {displayCode}
             </ShikiHighlighter>
+            {isArtifactCandidate && (
+              <div className="absolute top-2 right-2 opacity-20">
+                <Sparkles className="w-6 h-6 text-primary" />
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -341,7 +427,7 @@ const MarkdownRendererBlock = memo(PureMarkdownRendererBlock, (prevProps, nextPr
 MarkdownRendererBlock.displayName = "MarkdownRendererBlock"
 
 const MemoizedMarkdown = memo(
-  ({ content, id, size = "default", threadId, messageId, onCodeConvert }: MarkdownProps) => {
+  ({ content, id, size = "default", threadId, messageId, onCodeConvert, isArtifactMessage }: MarkdownProps) => {
     const blocks = useMemo(() => parseMarkdownIntoBlocks(content), [content])
 
     const proseClasses =
@@ -350,7 +436,7 @@ const MemoizedMarkdown = memo(
         : "prose prose-base dark:prose-invert max-w-none w-full prose-code:before:content-none prose-code:after:content-none"
 
     return (
-      <MarkdownContext.Provider value={{ size, threadId, messageId, onCodeConvert }}>
+      <MarkdownContext.Provider value={{ size, threadId, messageId, onCodeConvert, isArtifactMessage }}>
         <div className={proseClasses} data-message-text-content="true">
           {blocks.map((block, index) => (
             <MarkdownRendererBlock content={block} key={`${id}-block-${index}`} />

@@ -17,6 +17,7 @@ interface UseAuthenticatedChatProps {
   onFinish?: (message: UIMessage) => void
   onStart?: (message: UIMessage) => void
   autoResume?: boolean
+  userPreferences?: any
 }
 
 export function useAuthenticatedChat({
@@ -25,6 +26,7 @@ export function useAuthenticatedChat({
   onFinish,
   onStart,
   autoResume = true,
+  userPreferences,
 }: UseAuthenticatedChatProps) {
   const { user } = useAuth()
   const getKey = useAPIKeyStore((state) => state.getKey)
@@ -69,12 +71,14 @@ export function useAuthenticatedChat({
         const headers = new Headers(options?.headers || {})
         headers.set(modelConfig.headerKey, apiKey)
 
-        // Parse the existing body to add web search flag
+        // Parse the existing body to add web search flag and preserve all data
         const existingBody = options?.body ? JSON.parse(options.body as string) : {}
+        console.log("🔍 useAuthenticatedChat existing body:", existingBody)
         const newBody = {
           ...existingBody,
           webSearchEnabled,
         }
+        console.log("🔍 useAuthenticatedChat new body:", newBody)
 
         // Use our custom API client
         return apiClient.fetch(url, {
@@ -90,6 +94,7 @@ export function useAuthenticatedChat({
     body: {
       model: selectedModel,
       webSearchEnabled,
+      data: userPreferences ? { userPreferences } : undefined,
     },
     api: `/api/chat?threadId=${threadId}`,
     onError: (error) => {

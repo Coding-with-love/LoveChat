@@ -5,11 +5,12 @@ import { Button } from "./ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog"
 import { Textarea } from "./ui/textarea"
 import { cn } from "@/lib/utils"
-import { Check, Copy, RefreshCcw, SquarePen, Star } from "lucide-react"
+import { Check, Copy, RefreshCcw, SquarePen, Star, Archive } from 'lucide-react'
 import type { UIMessage } from "ai"
 import type { UseChatHelpers } from "@ai-sdk/react"
 import { deleteTrailingMessages, getFileAttachmentsByMessageId } from "@/lib/supabase/queries"
 import { useAPIKeyStore } from "@/frontend/stores/APIKeyStore"
+import { useArtifactStore } from "@/frontend/stores/ArtifactStore"
 import { supabase } from "@/lib/supabase/client"
 import { toast } from "sonner"
 
@@ -45,6 +46,7 @@ export default function MessageControls({
   const [pinLoading, setPinLoading] = useState(false)
 
   const hasRequiredKeys = useAPIKeyStore((state) => state.hasRequiredKeys())
+  const { createArtifact } = useArtifactStore()
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(content)
@@ -59,6 +61,43 @@ export default function MessageControls({
     setMode?.("edit")
     onEdit?.()
   }, [setMode, onEdit])
+
+  const handleSaveAsArtifact = useCallback(async () => {
+    try {
+      // Extract code blocks from content
+      const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g
+      const matches = [...content.matchAll(codeBlockRegex)]
+
+      if (matches.length > 0) {
+        // If there are code blocks, save the first one as an artifact
+        const [, language, code] = matches[0]
+        await createArtifact({
+          title: `Code from ${new Date().toLocaleDateString()}`,
+          content: code.trim(),
+          content_type: "code",
+          language: language || "text",
+          thread_id: threadId,
+          message_id: message.id,
+          tags: ["code", "chat-generated"],
+        })
+      } else {
+        // Save the entire message content as an artifact
+        await createArtifact({
+          title: `Message from ${new Date().toLocaleDateString()}`,
+          content: content,
+          content_type: "text",
+          thread_id: threadId,
+          message_id: message.id,
+          tags: ["message", "chat-generated"],
+        })
+      }
+
+      toast.success("Saved as artifact!")
+    } catch (error) {
+      console.error("Failed to save artifact:", error)
+      toast.error("Failed to save artifact")
+    }
+  }, [content, threadId, message.id, createArtifact])
 
   const handleRegenerate = useCallback(async () => {
     try {
@@ -274,6 +313,11 @@ export default function MessageControls({
     >
       <Button variant="ghost" size="icon" onClick={handleCopy}>
         {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+      </Button>
+
+      {/* Archive Button */}
+      <Button variant="ghost" size="icon" onClick={handleSaveAsArtifact} title="Save as Artifact">
+        <Archive className="w-4 h-4" />
       </Button>
 
       {/* Pin Button */}

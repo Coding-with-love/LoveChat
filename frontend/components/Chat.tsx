@@ -21,7 +21,8 @@ import { ThinkingIndicator } from "./ThinkingIndicator"
 import type { Message, CreateMessage } from "ai"
 import { getMessageParts } from "@ai-sdk/ui-utils"
 import { useTabVisibility } from "@/frontend/hooks/useTabVisibility"
-import RealtimeThinking from "./RealTimeThinking";
+import RealtimeThinking from "./RealTimeThinking"
+import { useUserPreferencesStore } from "@/frontend/stores/UserPreferencesStore"
 
 // Extend UIMessage to include reasoning field
 interface ExtendedUIMessage extends UIMessage {
@@ -46,13 +47,16 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
   const isAutoScrolling = useRef(false)
 
   // Add these state variables inside the Chat component function
-  const [realtimeThinking, setRealtimeThinking] = useState("");
-  const [showRealtimeThinking, setShowRealtimeThinking] = useState(false);
-  const currentMessageIdRef = useRef<string | null>(null);
+  const [realtimeThinking, setRealtimeThinking] = useState("")
+  const [showRealtimeThinking, setShowRealtimeThinking] = useState(false)
+  const currentMessageIdRef = useRef<string | null>(null)
 
   const navigate = useNavigate()
   const { toggleSidebar } = useSidebar()
   const { id } = useParams()
+
+  // Get user preferences for chat
+  const userPreferences = useUserPreferencesStore()
 
   // Monitor API key state for debugging
   const currentApiKey = getKey(modelConfig.provider)
@@ -61,7 +65,7 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
       provider: modelConfig.provider,
       hasKey: !!currentApiKey,
       keyLength: currentApiKey?.length || 0,
-      selectedModel
+      selectedModel,
     })
   }, [currentApiKey, modelConfig.provider, selectedModel])
 
@@ -90,6 +94,7 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
   } = useCustomResumableChat({
     threadId,
     initialMessages,
+    userPreferences,
     onFinish: (message: Message | CreateMessage) => {
       console.log("🏁 Chat stream finished:", message.id)
       const parts = message.parts ??
@@ -135,7 +140,7 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
         manualResume()
       }
     },
-    refreshStoresOnVisible: false // Don't refresh stores here, Thread handles it
+    refreshStoresOnVisible: false, // Don't refresh stores here, Thread handles it
   })
 
   // Debug logging
@@ -180,87 +185,90 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
       supportsThinking,
       messagesLength: messages.length,
       isResuming,
-      selectedModel
-    });
+      selectedModel,
+    })
 
     // Check if we're actively generating (streaming, submitted, or has thinking content)
-    const isGenerating = status === "streaming" || status === "submitted" || 
-                        (messages.length > 0 && messages[messages.length - 1]?.role === "assistant" && 
-                         messages[messages.length - 1]?.content?.includes("<think>"));
+    const isGenerating =
+      status === "streaming" ||
+      status === "submitted" ||
+      (messages.length > 0 &&
+        messages[messages.length - 1]?.role === "assistant" &&
+        messages[messages.length - 1]?.content?.includes("<think>"))
 
     console.log("🧠 Generation check:", {
       status,
       isGenerating,
       hasMessages: messages.length > 0,
-      lastMessageRole: messages.length > 0 ? messages[messages.length - 1]?.role : "none"
-    });
+      lastMessageRole: messages.length > 0 ? messages[messages.length - 1]?.role : "none",
+    })
 
     if (isGenerating && supportsThinking) {
-      const lastMessage = messages[messages.length - 1];
-      
+      const lastMessage = messages[messages.length - 1]
+
       if (lastMessage?.role === "assistant") {
         // Store the current message ID for reference
-        currentMessageIdRef.current = lastMessage.id;
-        
+        currentMessageIdRef.current = lastMessage.id
+
         // Check if the message contains thinking tags
-        const content = lastMessage.content || "";
+        const content = lastMessage.content || ""
         console.log("🧠 Checking content for thinking tags:", {
           contentLength: content.length,
           hasThinkStart: content.includes("<think>"),
           hasThinkEnd: content.includes("</think>"),
-          contentPreview: content.substring(0, 200)
-        });
-        
+          contentPreview: content.substring(0, 200),
+        })
+
         // Show thinking indicator as soon as we see <think> tag, even without closing tag
         if (content.includes("<think>")) {
-          console.log("🧠 Think tag detected, showing realtime thinking");
-          setShowRealtimeThinking(true);
-          
+          console.log("🧠 Think tag detected, showing realtime thinking")
+          setShowRealtimeThinking(true)
+
           // Extract thinking content - handle both complete and partial thinking blocks
           if (content.includes("</think>")) {
             // Complete thinking blocks
-            const thinkMatches = content.match(/<think>([\s\S]*?)<\/think>/g);
+            const thinkMatches = content.match(/<think>([\s\S]*?)<\/think>/g)
             if (thinkMatches) {
-              let allThinking = "";
-              thinkMatches.forEach(match => {
-                const thinkContent = match.replace(/<think>|<\/think>/g, "");
-                allThinking += thinkContent + "\n";
-              });
-              
+              let allThinking = ""
+              thinkMatches.forEach((match) => {
+                const thinkContent = match.replace(/<think>|<\/think>/g, "")
+                allThinking += thinkContent + "\n"
+              })
+
               console.log("🧠 Extracted complete thinking content:", {
                 matchesCount: thinkMatches.length,
                 thinkingLength: allThinking.length,
-                thinkingPreview: allThinking.substring(0, 100)
-              });
-              
-              setRealtimeThinking(allThinking);
+                thinkingPreview: allThinking.substring(0, 100),
+              })
+
+              setRealtimeThinking(allThinking)
             }
           } else {
             // Partial thinking block (streaming in progress)
-            const partialMatch = content.match(/<think>([\s\S]*)$/);
+            const partialMatch = content.match(/<think>([\s\S]*)$/)
             if (partialMatch) {
-              const partialThinking = partialMatch[1];
+              const partialThinking = partialMatch[1]
               console.log("🧠 Extracted partial thinking content:", {
                 thinkingLength: partialThinking.length,
-                thinkingPreview: partialThinking.substring(0, 100)
-              });
-              setRealtimeThinking(partialThinking);
+                thinkingPreview: partialThinking.substring(0, 100),
+              })
+              setRealtimeThinking(partialThinking)
             }
           }
         } else if (content.length > 0) {
-          console.log("🧠 Content found but no thinking tags detected");
+          console.log("🧠 Content found but no thinking tags detected")
         }
       }
     } else {
       // Reset thinking when not streaming
       if (!isResuming && status !== "streaming") {
-        console.log("🧠 Resetting thinking state");
-        setShowRealtimeThinking(false);
-        setRealtimeThinking("");
-        currentMessageIdRef.current = null;
+        console.log("🧠 Resetting thinking state")
+        setShowRealtimeThinking(false)
+        setRealtimeThinking("")
+        currentMessageIdRef.current = null
       }
     }
-  }, [messages, status, supportsThinking, isResuming, selectedModel]);
+  }, [messages, status, supportsThinking, isResuming, selectedModel])
 
   const scrollToBottom = () => {
     isAutoScrolling.current = true
@@ -479,6 +487,81 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
   // Use the keyboard shortcut manager
   useKeyboardShortcutManager(shortcuts)
 
+  // Add state for tracking artifact creation
+  const [artifactsCreated, setArtifactsCreated] = useState(0)
+  const [showArtifactIndicator, setShowArtifactIndicator] = useState(false)
+  const lastProcessedMessageRef = useRef<string | null>(null)
+
+  // Improved artifact detection - check when messages change and status becomes ready
+  useEffect(() => {
+    if (status === "ready" && messages.length > 0) {
+      const lastMessage = messages[messages.length - 1]
+      
+      // Only process if this is a new assistant message we haven't processed yet
+      if (
+        lastMessage?.role === "assistant" && 
+        lastMessage.content && 
+        lastMessage.id !== lastProcessedMessageRef.current
+      ) {
+        console.log("🎨 Checking for artifacts in message:", lastMessage.id)
+        
+        const content = lastMessage.content
+        let artifactCount = 0
+        
+        // Count code blocks (more than 3 lines or 100 characters)
+        const codeBlocks = content.match(/\`\`\`[\w]*\n([\s\S]*?)\`\`\`/g) || []
+        const substantialCodeBlocks = codeBlocks.filter(block => {
+          const codeContent = block.replace(/\`\`\`[\w]*\n|\`\`\`/g, '').trim()
+          return codeContent.split('\n').length > 3 || codeContent.length > 100
+        })
+        artifactCount += substantialCodeBlocks.length
+        
+        // Check for structured documents (markdown with headers and substantial content)
+        const hasHeaders = content.includes("# ") || content.includes("## ") || content.includes("### ")
+        const hasStructuredContent = content.includes("- ") || content.includes("1. ") || content.includes("| ")
+        const isSubstantial = content.length > 500
+        
+        if (hasHeaders && hasStructuredContent && isSubstantial) {
+          artifactCount += 1
+        }
+        
+        // Check for JSON/YAML data structures
+        const jsonBlocks = content.match(/\`\`\`json\n([\s\S]*?)\`\`\`/g) || []
+        const yamlBlocks = content.match(/\`\`\`ya?ml\n([\s\S]*?)\`\`\`/g) || []
+        const substantialDataBlocks = [...jsonBlocks, ...yamlBlocks].filter(block => {
+          const dataContent = block.replace(/\`\`\`[\w]*\n|\`\`\`/g, '').trim()
+          return dataContent.length > 50
+        })
+        artifactCount += substantialDataBlocks.length
+        
+        console.log("🎨 Artifact detection results:", {
+          messageId: lastMessage.id,
+          codeBlocks: substantialCodeBlocks.length,
+          hasStructuredDoc: hasHeaders && hasStructuredContent && isSubstantial ? 1 : 0,
+          dataBlocks: substantialDataBlocks.length,
+          totalArtifacts: artifactCount
+        })
+        
+        if (artifactCount > 0) {
+          console.log(`🎨 Found ${artifactCount} artifacts, showing indicator`)
+          setArtifactsCreated(artifactCount)
+          setShowArtifactIndicator(true)
+          
+          // Hide indicator after 5 seconds
+          setTimeout(() => {
+            setShowArtifactIndicator(false)
+            setArtifactsCreated(0)
+          }, 5000)
+        }
+        
+        // Mark this message as processed
+        lastProcessedMessageRef.current = lastMessage.id
+      }
+    }
+  }, [status, messages])
+
+// Remove the old artifact detection useEffect that was conflicting
+
   if (!isAuthenticated) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -501,15 +584,13 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
           <div className="p-2 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 text-xs font-bold">
             REALTIME THINKING VISIBLE
           </div>
-          <RealtimeThinking 
-            isVisible={showRealtimeThinking} 
-            thinkingContent={realtimeThinking} 
-            messageId={currentMessageIdRef.current || "thinking"} 
+          <RealtimeThinking
+            isVisible={showRealtimeThinking}
+            thinkingContent={realtimeThinking}
+            messageId={currentMessageIdRef.current || "thinking"}
           />
         </div>
       )}
-
-
 
       {/* Pinned Messages Panel */}
       {showPinnedMessages && (

@@ -10,6 +10,254 @@ import { v4 as uuidv4 } from "uuid"
 import { CustomResumableStream } from "@/lib/resumable-streams-server"
 import { StreamProtection, StreamCircuitBreaker } from "@/lib/stream-protection"
 
+// Artifact creation utilities
+interface ArtifactCandidate {
+  type: "code" | "document" | "data"
+  title: string
+  content: string
+  language?: string
+  fileExtension?: string
+  description?: string
+}
+
+function extractArtifacts(content: string, messageId: string): ArtifactCandidate[] {
+  const artifacts: ArtifactCandidate[] = []
+
+  // Extract code blocks
+  const codeBlockRegex = /\`\`\`(\w+)?\n([\s\S]*?)\`\`\`/g
+  let match
+
+  while ((match = codeBlockRegex.exec(content)) !== null) {
+    const language = match[1] || "text"
+    const code = match[2].trim()
+
+    // Only create artifacts for substantial code blocks (more than 3 lines or 100 characters)
+    if (code.split("\n").length > 3 || code.length > 100) {
+      const fileExtension = getFileExtension(language)
+      const title = generateCodeTitle(code, language)
+
+      artifacts.push({
+        type: "code",
+        title,
+        content: code,
+        language,
+        fileExtension,
+        description: `Generated ${language} code`,
+      })
+    }
+  }
+
+  // Extract structured documents (markdown with headers, lists, etc.)
+  if (content.includes("# ") || content.includes("## ") || content.includes("### ")) {
+    const hasSubstantialContent =
+      content.length > 500 && (content.includes("- ") || content.includes("1. ") || content.includes("| "))
+
+    if (hasSubstantialContent) {
+      const title = extractDocumentTitle(content)
+      artifacts.push({
+        type: "document",
+        title,
+        content,
+        fileExtension: "md",
+        description: "Generated documentation",
+      })
+    }
+  }
+
+  // Extract JSON/YAML data structures
+  const jsonRegex = /\`\`\`json\n([\s\S]*?)\`\`\`/g
+  while ((match = jsonRegex.exec(content)) !== null) {
+    const jsonContent = match[1].trim()
+    if (jsonContent.length > 50) {
+      artifacts.push({
+        type: "data",
+        title: "Generated JSON Data",
+        content: jsonContent,
+        language: "json",
+        fileExtension: "json",
+        description: "Generated JSON data structure",
+      })
+    }
+  }
+
+  const yamlRegex = /\`\`\`ya?ml\n([\s\S]*?)\`\`\`/g
+  while ((match = yamlRegex.exec(content)) !== null) {
+    const yamlContent = match[1].trim()
+    if (yamlContent.length > 50) {
+      artifacts.push({
+        type: "data",
+        title: "Generated YAML Configuration",
+        content: yamlContent,
+        language: "yaml",
+        fileExtension: "yml",
+        description: "Generated YAML configuration",
+      })
+    }
+  }
+
+  return artifacts
+}
+
+function getFileExtension(language: string): string {
+  const extensions: Record<string, string> = {
+    javascript: "js",
+    typescript: "ts",
+    python: "py",
+    java: "java",
+    cpp: "cpp",
+    c: "c",
+    csharp: "cs",
+    php: "php",
+    ruby: "rb",
+    go: "go",
+    rust: "rs",
+    swift: "swift",
+    kotlin: "kt",
+    scala: "scala",
+    html: "html",
+    css: "css",
+    scss: "scss",
+    sql: "sql",
+    json: "json",
+    yaml: "yml",
+    xml: "xml",
+    markdown: "md",
+    bash: "sh",
+    shell: "sh",
+    powershell: "ps1",
+    dockerfile: "dockerfile",
+    vue: "vue",
+    react: "jsx",
+    svelte: "svelte",
+  }
+  return extensions[language.toLowerCase()] || "txt"
+}
+
+function generateCodeTitle(code: string, language: string): string {
+  // Try to extract a meaningful title from the code
+  const lines = code.split("\n").filter((line) => line.trim())
+
+  // Look for function/class definitions
+  const functionMatch = lines.find(
+    (line) =>
+      line.includes("function ") ||
+      line.includes("def ") ||
+      line.includes("class ") ||
+      line.includes("const ") ||
+      line.includes("let ") ||
+      line.includes("var "),
+  )
+
+  if (functionMatch) {
+    const match = functionMatch.match(/(?:function|def|class|const|let|var)\s+([a-zA-Z_][a-zA-Z0-9_]*)/)
+    if (match) {
+      return `${match[1]} (${language})`
+    }
+  }
+
+  // Look for comments that might indicate purpose
+  const commentMatch = lines.find(
+    (line) => line.trim().startsWith("//") || line.trim().startsWith("#") || line.trim().startsWith("/*"),
+  )
+
+  if (commentMatch) {
+    const comment = commentMatch
+      .replace(/^[\s/*#]+/, "")
+      .replace(/\*\/$/, "")
+      .trim()
+    if (comment.length > 0 && comment.length < 50) {
+      return comment
+    }
+  }
+
+  // Default titles based on language
+  const defaultTitles: Record<string, string> = {
+    javascript: "JavaScript Code",
+    typescript: "TypeScript Code",
+    python: "Python Script",
+    java: "Java Code",
+    cpp: "C++ Code",
+    c: "C Code",
+    html: "HTML Document",
+    css: "CSS Styles",
+    sql: "SQL Query",
+    bash: "Shell Script",
+    dockerfile: "Dockerfile",
+  }
+
+  return defaultTitles[language.toLowerCase()] || `${language} Code`
+}
+
+function extractDocumentTitle(content: string): string {
+  // Look for the first # header
+  const headerMatch = content.match(/^#\s+(.+)$/m)
+  if (headerMatch) {
+    return headerMatch[1].trim()
+  }
+
+  // Look for the first ## header
+  const subHeaderMatch = content.match(/^##\s+(.+)$/m)
+  if (subHeaderMatch) {
+    return subHeaderMatch[1].trim()
+  }
+
+  return "Generated Document"
+}
+
+async function createArtifactsFromContent(
+  content: string,
+  threadId: string,
+  messageId: string,
+  userId: string,
+): Promise<void> {
+  try {
+    console.log(`🎨 Analyzing content for artifacts in message ${messageId}`)
+    console.log(`📝 Content length: ${content.length} characters`)
+
+    const artifacts = extractArtifacts(content, messageId)
+
+    if (artifacts.length === 0) {
+      console.log("🎨 No artifacts detected in content")
+      return
+    }
+
+    console.log(`🎨 Creating ${artifacts.length} artifacts for message ${messageId}:`)
+    artifacts.forEach((artifact, index) => {
+      console.log(`  ${index + 1}. ${artifact.type}: "${artifact.title}" (${artifact.content.length} chars)`)
+    })
+
+    for (const artifact of artifacts) {
+      const { error } = await supabaseServer.from("artifacts").insert({
+        user_id: userId,
+        thread_id: threadId,
+        message_id: messageId,
+        title: artifact.title,
+        description: artifact.description,
+        content: artifact.content,
+        content_type: artifact.type,
+        language: artifact.language,
+        file_extension: artifact.fileExtension,
+        tags: [artifact.type, artifact.language].filter(Boolean),
+        metadata: {
+          auto_generated: true,
+          source: "ai_response",
+          created_from_message: messageId,
+        },
+      })
+
+      if (error) {
+        console.error("❌ Failed to create artifact:", error)
+      } else {
+        console.log(`✅ Created artifact: ${artifact.title}`)
+      }
+    }
+
+    console.log(`🎉 Successfully processed ${artifacts.length} artifacts for message ${messageId}`)
+  } catch (error) {
+    console.error("❌ Error creating artifacts:", error)
+  }
+}
+
 export const runtime = "nodejs"
 export const maxDuration = 60
 
@@ -48,7 +296,7 @@ export async function GET(request: Request) {
         headers: {
           "Content-Type": "text/plain; charset=utf-8",
           "Cache-Control": "no-cache",
-          Connection: "keep-alive",
+          "Connection": "keep-alive",
         },
       })
     }
@@ -78,6 +326,14 @@ export async function POST(req: NextRequest) {
 
     console.log("📨 Received messages:", messages?.length || 0)
     console.log("🤖 Using model:", model)
+    console.log("🚨 FULL REQUEST JSON:", JSON.stringify(json, null, 2))
+    console.log("📦 Request data received:", data ? "present" : "not present")
+    if (data) {
+      console.log("📦 Data content:", {
+        hasUserPreferences: !!data.userPreferences,
+        userPreferences: data.userPreferences,
+      })
+    }
 
     // Validate required fields
     if (!messages || !Array.isArray(messages)) {
@@ -93,7 +349,7 @@ export async function POST(req: NextRequest) {
     // Check if this is an Ollama model
     if (model.startsWith("ollama:")) {
       console.log("🦙 Ollama model detected, routing to Ollama handler")
-      return handleOllamaChat(req, messages, model, headersList)
+      return handleOllamaChat(req, messages, model, headersList, data)
     }
 
     // Get authorization header
@@ -249,7 +505,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Process messages - create AI-specific content with file data
+    // Process messages - create AI-specific content with file data AND artifact data
     const processedMessages = []
 
     for (const msg of messages) {
@@ -263,6 +519,65 @@ export async function POST(req: NextRequest) {
 
       // Get the base content (user's actual message text)
       let messageContent = typeof msg.content === "string" ? msg.content : ""
+
+      // Process artifact references in the message content
+      if (messageContent.includes("@artifact[")) {
+        console.log("🎨 Found artifact references in message")
+
+        // Extract artifact references
+        const artifactRegex = /@artifact\[([a-f0-9-]+)(?::insert)?\]/g
+        const artifactMatches = [...messageContent.matchAll(artifactRegex)]
+
+        if (artifactMatches.length > 0) {
+          console.log(`🎨 Processing ${artifactMatches.length} artifact references`)
+
+          // Fetch all referenced artifacts
+          const artifactIds = artifactMatches.map((match) => match[1])
+          const { data: artifacts, error: artifactError } = await supabaseServer
+            .from("artifacts")
+            .select("*")
+            .in("id", artifactIds)
+            .eq("user_id", user.id)
+
+          if (artifactError) {
+            console.error("❌ Failed to fetch artifacts:", artifactError)
+          } else if (artifacts && artifacts.length > 0) {
+            console.log(`✅ Found ${artifacts.length} artifacts`)
+
+            // Replace artifact references with actual content
+            let processedContent = messageContent
+
+            for (const match of artifactMatches) {
+              const fullMatch = match[0] // e.g., "@artifact[id]" or "@artifact[id:insert]"
+              const artifactId = match[1]
+              const isInsert = fullMatch.includes(":insert")
+
+              const artifact = artifacts.find((a) => a.id === artifactId)
+              if (artifact) {
+                let replacement = ""
+
+                if (isInsert) {
+                  // INSERT: Include full content with clear labeling
+                  replacement = `\n\n**Artifact: ${artifact.title}** (${artifact.content_type})\n\`\`\`${artifact.language || artifact.content_type}\n${artifact.content}\n\`\`\`\n`
+                  console.log(`🎨 Inserting full content for artifact: ${artifact.title}`)
+                } else {
+                  // REFERENCE: Also include full content but with different context
+                  replacement = `\n\n**Referenced Artifact: ${artifact.title}** (${artifact.content_type})\nHere's the content for your reference:\n\`\`\`${artifact.language || artifact.content_type}\n${artifact.content}\n\`\`\`\n`
+                  console.log(`🎨 Providing full content for referenced artifact: ${artifact.title}`)
+                }
+
+                processedContent = processedContent.replace(fullMatch, replacement)
+              } else {
+                console.warn(`⚠️ Artifact not found: ${artifactId}`)
+                processedContent = processedContent.replace(fullMatch, `[Artifact not found: ${artifactId}]`)
+              }
+            }
+
+            messageContent = processedContent
+            console.log("🎨 Processed message with artifacts:", messageContent.substring(0, 200) + "...")
+          }
+        }
+      }
 
       // Handle file attachments if present - add file content for AI processing only
       if (msg.parts) {
@@ -309,8 +624,28 @@ export async function POST(req: NextRequest) {
 
     console.log("📨 Processed messages for AI:", processedMessages.length)
 
-    // Create system prompt with persona integration
-    const systemPrompt = getSystemPrompt(webSearchEnabled, modelSupportsSearch, user.email || "", threadPersona)
+    // Extract user preferences from request data
+    const userPreferences = data?.userPreferences || null
+    console.log("👤 User preferences:", userPreferences ? "present" : "not found")
+    if (userPreferences) {
+      console.log("👤 User preferences details:", {
+        preferredName: userPreferences.preferredName,
+        occupation: userPreferences.occupation,
+        assistantTraits: userPreferences.assistantTraits,
+        customInstructions: userPreferences.customInstructions,
+      })
+    }
+
+    // Create system prompt with persona integration and user preferences
+    const systemPrompt = getSystemPrompt(
+      webSearchEnabled,
+      modelSupportsSearch,
+      user.email || "",
+      threadPersona,
+      userPreferences,
+    )
+    console.log("📝 Generated system prompt preview:", systemPrompt.substring(0, 200) + "...")
+    console.log("📝 Full system prompt:", systemPrompt)
 
     // Check if this is a thinking model
     const isThinkingModel = modelConfig.supportsThinking
@@ -331,18 +666,18 @@ export async function POST(req: NextRequest) {
           let cleanedText = text
           let reasoning = null
 
-          if (text.includes("<think>") && text.includes("</think>")) {
+          if (text.includes("<Thinking>") && text.includes("</Thinking>")) {
             console.log("🧠 Detected thinking content in response")
 
             // Extract thinking content (note: using <Thinking> not <Thinking>)
-            const thinkMatch = text.match(/<think>([\s\S]*?)<\/think>/)
+            const thinkMatch = text.match(/<Thinking>([\s\S]*?)<\/think>/)
             if (thinkMatch) {
               reasoning = thinkMatch[1].trim()
               console.log("🧠 Extracted reasoning:", reasoning.substring(0, 100) + "...")
             }
 
             // Remove thinking tags from the main content
-            cleanedText = text.replace(/<think>[\s\S]*?<\/think>/g, "").trim()
+            cleanedText = text.replace(/<Thinking>[\s\S]*?<\/think>/g, "").trim()
             console.log("🧠 Cleaned text length:", cleanedText.length)
           }
 
@@ -361,6 +696,7 @@ export async function POST(req: NextRequest) {
       }
 
       console.log("🚀 Starting AI generation...")
+      console.log("🤖 Final system prompt being sent to AI:", systemPrompt)
 
       // Wrap the stream creation in circuit breaker
       return await streamCircuitBreaker.execute(async () => {
@@ -400,15 +736,15 @@ export async function POST(req: NextRequest) {
                 while (i < buffer.length) {
                   if (!insideThinking) {
                     // Look for start of thinking
-                    const thinkStart = buffer.indexOf("<think>", i)
+                    const thinkStart = buffer.indexOf("<Thinking>", i)
                     if (thinkStart !== -1 && thinkStart < buffer.length) {
                       // Add content before thinking
                       processedChunk += buffer.substring(i, thinkStart)
                       // Also include the thinking tag in the output for real-time processing
-                      processedChunk += "<think>"
+                      processedChunk += "<Thinking>"
                       insideThinking = true
-                      i = thinkStart + 10 // Skip "<think>"
-                      lastThinkingTag = "<think>"
+                      i = thinkStart + 10 // Skip "<Thinking>"
+                      lastThinkingTag = "<Thinking>"
                     } else {
                       // No thinking tag found, add rest of buffer
                       processedChunk += buffer.substring(i)
@@ -416,16 +752,16 @@ export async function POST(req: NextRequest) {
                     }
                   } else {
                     // Look for end of thinking
-                    const thinkEnd = buffer.indexOf("</think>", i)
+                    const thinkEnd = buffer.indexOf("</Thinking>", i)
                     if (thinkEnd !== -1) {
                       // Include thinking content in the output
                       const thinkingContent = buffer.substring(i, thinkEnd)
                       processedChunk += thinkingContent
-                      processedChunk += "</think>" // Include closing tag
+                      processedChunk += "<Thinking></Thinking>" // Include closing tag
 
                       insideThinking = false
-                      i = thinkEnd + 11 // Skip "</think>"
-                      lastThinkingTag = "</think>"
+                      i = thinkEnd + 11 // Skip "<Thinking></Thinking>"
+                      lastThinkingTag = "</Thinking>"
                     } else {
                       // Still inside thinking, include partial thinking content
                       processedChunk += buffer.substring(i)
@@ -492,7 +828,7 @@ export async function POST(req: NextRequest) {
           headers: {
             "Content-Type": "text/plain; charset=utf-8",
             "Cache-Control": "no-cache",
-            Connection: "keep-alive",
+            "Connection": "keep-alive",
           },
         })
       })
@@ -509,6 +845,7 @@ export async function POST(req: NextRequest) {
       }
 
       console.log("🚀 Starting AI generation...")
+      console.log("🤖 Final system prompt being sent to AI (non-thinking):", systemPrompt)
 
       // Wrap the stream creation in circuit breaker
       return await streamCircuitBreaker.execute(async () => {
@@ -576,7 +913,7 @@ export async function POST(req: NextRequest) {
           headers: {
             "Content-Type": "text/plain; charset=utf-8",
             "Cache-Control": "no-cache",
-            Connection: "keep-alive",
+            "Connection": "keep-alive",
           },
         })
       })
@@ -596,25 +933,84 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Helper function to get system prompt with persona integration
+// Helper function to get system prompt
 function getSystemPrompt(
   webSearchEnabled: boolean,
   modelSupportsSearch: boolean,
   userEmail: string,
   persona: any = null,
+  userPreferences: any = null,
 ) {
   let basePrompt = `You are LoveChat, an AI assistant that can answer questions and help with tasks.
 Be helpful and provide relevant information.
 Be respectful and polite in all interactions.
-Be engaging and maintain a conversational tone.`
+Be engaging and maintain a conversational tone.
+
+IMPORTANT: If the user has provided personal information in your system instructions (such as their name, preferences, or other details), you DO have access to this information and should use it appropriately. Do not claim you don't have access to information that has been explicitly provided to you in this system prompt.`
+
+  // Build personalization section from user preferences FIRST
+  let personalizationSection = ""
+
+  console.log("🔍 DEBUG: userPreferences value:", userPreferences)
+  console.log("🔍 DEBUG: userPreferences type:", typeof userPreferences)
+  console.log("🔍 DEBUG: userPreferences keys:", userPreferences ? Object.keys(userPreferences) : "null")
+
+  if (userPreferences) {
+    console.log("👤 Incorporating user preferences into system prompt")
+    console.log("👤 Processing preferences:", {
+      preferredName: userPreferences.preferredName,
+      occupation: userPreferences.occupation,
+      assistantTraits: userPreferences.assistantTraits,
+      customInstructions: userPreferences.customInstructions,
+    })
+
+    // Add preferred name
+    if (userPreferences.preferredName) {
+      personalizationSection += `\nPERSONAL CONTEXT:\n- IMPORTANT: The user's name is "${userPreferences.preferredName}". You DO have access to this information because the user has explicitly provided it. When asked about their identity or who they are, you should acknowledge that you know their name is "${userPreferences.preferredName}". Use their name naturally in conversation when appropriate.`
+      console.log("👤 Added preferred name to prompt:", userPreferences.preferredName)
+    }
+
+    // Add occupation context
+    if (userPreferences.occupation) {
+      personalizationSection += `\n- The user works as: ${userPreferences.occupation}. Keep this context in mind when providing relevant examples and explanations.`
+      console.log("👤 Added occupation to prompt:", userPreferences.occupation)
+    }
+
+    // Add assistant traits
+    if (userPreferences.assistantTraits && userPreferences.assistantTraits.length > 0) {
+      personalizationSection += `\n- Embody these personality traits: ${userPreferences.assistantTraits.join(", ")}. Let these traits guide your communication style and approach.`
+      console.log("👤 Added assistant traits to prompt:", userPreferences.assistantTraits)
+    }
+
+    // Add custom instructions
+    if (userPreferences.customInstructions) {
+      personalizationSection += `\n- Custom instructions from the user: ${userPreferences.customInstructions}`
+      console.log("👤 Added custom instructions to prompt:", userPreferences.customInstructions)
+    }
+
+    // Add custom instructions
+    if (userPreferences.customInstructions) {
+      personalizationSection += `\n- Custom instructions from the user: ${userPreferences.customInstructions}`
+      console.log("👤 Added custom instructions to prompt:", userPreferences.customInstructions)
+    }
+
+    if (personalizationSection) {
+      personalizationSection += "\n"
+    }
+
+    console.log("👤 Final personalization section:", personalizationSection)
+  } else {
+    console.log("👤 No user preferences provided to system prompt function")
+  }
 
   // If a persona is active, replace the base prompt with the persona's system prompt
+  // but ALWAYS keep the personalization section
   if (persona && persona.system_prompt) {
     console.log("🎭 Using persona system prompt:", persona.name)
     basePrompt = persona.system_prompt
   }
 
-  return `${basePrompt}
+  const finalPrompt = `${basePrompt}${personalizationSection}
 
 ${
   webSearchEnabled && modelSupportsSearch
@@ -632,11 +1028,19 @@ CRITICAL: You can now see and analyze files that users share:
 - Be specific about what you observe in the files
 - Answer the user's question based on the file content
 
-When you receive files:
-1. Immediately acknowledge you can see them: "I can see the file(s) you've shared: [filename(s)]"
+ARTIFACT SYSTEM:
+You can also work with user artifacts (code, documents, data they've created):
+- When you see [Referenced artifact: "title"], the user is mentioning an artifact they have
+- When you see **Artifact: title** with code blocks, the user has inserted the full artifact content for analysis
+- For referenced artifacts, you can ask the user if they want you to analyze the full content
+- For inserted artifacts, analyze the content directly and provide detailed feedback
+- Artifacts are user-created content from their personal library
+
+When you receive files or artifacts:
+1. Immediately acknowledge you can see them: "I can see the file(s)/artifact(s) you've shared: [names]"
 2. Provide detailed analysis of the content
-3. Answer any questions about the files
-4. Focus on the user's question while referencing the file content
+3. Answer any questions about the files/artifacts
+4. Focus on the user's question while referencing the content
 
 FORMATTING CAPABILITIES:
 You can use rich markdown formatting in your responses:
@@ -669,7 +1073,7 @@ For mathematical expressions, use LaTeX notation:
   - Inline fraction: $\\frac{a}{b}$
   - Display fraction: $$\\frac{a}{b}$$
   - Inline integral: $\\int_a^b f(x) dx$
-  - Display integral: $$\\int_a^b f(x) dx$$
+  - Display integral: $$\\int_a^b f(x) dx$
   - Inline summation: $\\sum_{i=1}^n i^2$
   - Display summation: $$\\sum_{i=1}^n i^2$$
   - Inline limit: $\\lim_{x \\to 0} \\frac{\\sin(x)}{x}$
@@ -688,7 +1092,10 @@ For technical explanations:
 - Use code blocks for any code examples
 - Use tables when comparing features or options
 
-Current user: ${userEmail}`
+Current user: ${userEmail}${personalizationSection ? `\n\nUSER PERSONALIZATION:${personalizationSection}` : ""}`
+
+  console.log("🔍 DEBUG: Final complete system prompt:", finalPrompt)
+  return finalPrompt
 }
 
 // Helper function to handle message saving
@@ -746,15 +1153,35 @@ async function handleMessageSave(
         .eq("id", threadId)
         .eq("user_id", userId)
     }
+    // Add this at the end of the handleMessageSave function, after the message is saved successfully
+    if (threadId && text && text.trim().length > 0) {
+      // Create artifacts from the AI response content
+      await createArtifactsFromContent(text, threadId, aiMessageId, userId)
+    }
   } catch (error) {
     console.error("💥 Error saving AI message:", error)
   }
 }
 
 // Ollama handler function
-async function handleOllamaChat(req: NextRequest, messages: any[], model: string, headersList: Headers) {
+async function handleOllamaChat(req: NextRequest, messages: any[], model: string, headersList: Headers, data?: any) {
   try {
     console.log("🦙 Handling Ollama chat request")
+
+    // Get authorization header and authenticate user
+    const authHeader = headersList.get("authorization")
+    let user = null
+    let userEmail = ""
+
+    if (authHeader?.startsWith("Bearer ")) {
+      const token = authHeader.substring(7)
+      const authResult = await supabaseServer.auth.getUser(token)
+      if (!authResult.error && authResult.data.user) {
+        user = authResult.data.user
+        userEmail = user.email || ""
+        console.log("✅ Ollama user authenticated:", user.id)
+      }
+    }
 
     const ollamaModel = model.replace("ollama:", "")
     console.log("🦙 Using Ollama model:", ollamaModel)
@@ -770,6 +1197,70 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
     const threadId = req.nextUrl.searchParams.get("threadId") as string
     const aiMessageId = uuidv4()
 
+    // Get thread persona if one is assigned and user is authenticated
+    let threadPersona = null
+    if (threadId && user) {
+      try {
+        console.log("🎭 Looking up persona for Ollama thread:", threadId)
+
+        const { data: threadPersonaData, error: personaError } = await supabaseServer
+          .from("thread_personas")
+          .select(`
+            *,
+            personas (
+              id,
+              name,
+              description,
+              system_prompt,
+              avatar_emoji,
+              color,
+              is_default,
+              is_public
+            )
+          `)
+          .eq("thread_id", threadId)
+          .eq("user_id", user.id)
+          .single()
+
+        if (!personaError && threadPersonaData?.personas) {
+          threadPersona = threadPersonaData.personas
+          console.log("✅ Found persona for Ollama thread:", threadPersona.name)
+        } else {
+          console.log("ℹ️ No persona assigned to Ollama thread")
+        }
+      } catch (error) {
+        console.log("⚠️ Error looking up persona for Ollama:", error)
+      }
+    }
+
+    // Extract user preferences from request data
+    const userPreferences = data?.userPreferences || null
+    console.log("👤 Ollama user preferences:", userPreferences ? "present" : "not found")
+    if (userPreferences) {
+      console.log("👤 Ollama user preferences details:", {
+        preferredName: userPreferences.preferredName,
+        occupation: userPreferences.occupation,
+        assistantTraits: userPreferences.assistantTraits,
+        customInstructions: userPreferences.customInstructions,
+      })
+    }
+
+    // Create system prompt for Ollama (will be injected as system message)
+    const systemPrompt = getSystemPrompt(false, false, userEmail, threadPersona, userPreferences) // Ollama doesn't support web search in this context
+    console.log("📝 Ollama generated system prompt preview:", systemPrompt.substring(0, 200) + "...")
+    console.log("🤖 Full Ollama system prompt being sent:", systemPrompt)
+
+    // Prepare messages for Ollama - inject system prompt as system message
+    const ollamaMessages = [
+      {
+        role: "system",
+        content: systemPrompt,
+      },
+      ...messages,
+    ]
+
+    console.log("📨 Ollama messages prepared:", ollamaMessages.length)
+
     const response = await fetch(`${ollamaUrl}/api/chat`, {
       method: "POST",
       headers: {
@@ -777,7 +1268,7 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
       },
       body: JSON.stringify({
         model: ollamaModel,
-        messages: messages,
+        messages: ollamaMessages,
         stream: true,
       }),
     })
@@ -817,6 +1308,7 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
           let insideThinking = false
           let fullResponse = ""
           let reasoning = null
+          let cleanedText = "" // Declare cleanedText here
 
           const safeEnqueue = (chunk: Uint8Array) => {
             if (!isClosed) {
@@ -867,14 +1359,14 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
                     while (i < buffer.length) {
                       if (!insideThinking) {
                         // Look for start of thinking
-                        const thinkStart = buffer.indexOf("<think>", i)
+                        const thinkStart = buffer.indexOf("<Thinking>", i)
                         if (thinkStart !== -1) {
                           // Add content before thinking
                           processedContent += buffer.substring(i, thinkStart)
                           // Also include the thinking tag in the output for real-time processing
-                          processedContent += "<think>"
+                          processedContent += "<Thinking>"
                           insideThinking = true
-                          i = thinkStart + 10 // Skip "<think>"
+                          i = thinkStart + 10 // Skip "<Thinking>"
                         } else {
                           // No thinking tag found, add rest of buffer
                           processedContent += buffer.substring(i)
@@ -882,7 +1374,7 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
                         }
                       } else {
                         // Look for end of thinking
-                        const thinkEnd = buffer.indexOf("</think>", i)
+                        const thinkEnd = buffer.indexOf("</Thinking>", i)
                         if (thinkEnd !== -1) {
                           // Capture thinking content
                           const thinkingContent = buffer.substring(i, thinkEnd)
@@ -891,7 +1383,7 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
 
                           // Skip thinking content
                           insideThinking = false
-                          i = thinkEnd + 11 // Skip "</think>"
+                          i = thinkEnd + 11 // Skip "</Thinking>"
                         } else {
                           // Still inside thinking, skip rest of buffer
                           break
@@ -936,32 +1428,25 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
                     safeEnqueue(new TextEncoder().encode('d:""\n'))
 
                     // Save the message with reasoning
-                    if (threadId) {
+                    if (threadId && user) {
                       // Clean the full response by removing thinking tags
-                      const cleanedText = fullResponse.replace(/<think>[\s\S]*?<\/think>/g, "").trim()
+                      cleanedText = fullResponse.replace(/<Thinking>[\s\S]*?<\/think>/g, "").trim()
 
-                      // Get user ID from auth
-                      const authHeader = headersList.get("authorization")
-                      if (authHeader?.startsWith("Bearer ")) {
-                        const token = authHeader.substring(7)
-                        const {
-                          data: { user },
-                        } = await supabaseServer.auth.getUser(token)
-
-                        if (user) {
-                          await handleMessageSave(
-                            threadId,
-                            aiMessageId,
-                            user.id,
-                            cleanedText,
-                            null, // sources
-                            null, // providerMetadata
-                            modelConfig,
-                            "", // apiKey
-                            reasoning,
-                          )
-                        }
-                      }
+                      await handleMessageSave(
+                        threadId,
+                        aiMessageId,
+                        user.id,
+                        cleanedText,
+                        null, // sources
+                        null, // providerMetadata
+                        modelConfig,
+                        "", // apiKey
+                        reasoning,
+                      )
+                    }
+                    // In the thinking model section, after saving the message, add:
+                    if (threadId && user && cleanedText && cleanedText.trim().length > 0) {
+                      await createArtifactsFromContent(cleanedText, threadId, aiMessageId, user.id)
                     }
 
                     safeClose()
@@ -991,7 +1476,7 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
         headers: {
           "Content-Type": "text/plain; charset=utf-8",
           "Cache-Control": "no-cache",
-          Connection: "keep-alive",
+          "Connection": "keep-alive",
         },
       })
     } else {
@@ -1108,7 +1593,7 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
         headers: {
           "Content-Type": "text/plain; charset=utf-8",
           "Cache-Control": "no-cache",
-          Connection: "keep-alive",
+          "Connection": "keep-alive",
         },
       })
     }

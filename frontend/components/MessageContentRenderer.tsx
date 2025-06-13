@@ -1,6 +1,8 @@
-import React from 'react'
-import RephrasedTextIndicator from './RephrasedTextIndicator'
-import MarkdownRenderer from './MemoizedMarkdown'
+"use client"
+
+import { memo, useMemo } from "react"
+import MarkdownRenderer from "@/frontend/components/MemoizedMarkdown"
+import ArtifactReference from "./ArtifactReference"
 
 interface MessageContentRendererProps {
   content: string
@@ -9,145 +11,167 @@ interface MessageContentRendererProps {
   onCodeConvert?: (originalCode: string, convertedCode: string, target: string) => void
   onRevertRephrase?: (originalText: string) => void
   isMarkdown?: boolean
+  onViewInGallery?: (artifactId: string) => void
 }
 
-interface RephrasedSection {
-  type: 'normal' | 'rephrased'
-  text: string
-  originalText?: string
-}
-
-// Parse content to identify rephrased sections
-function parseContentForRephrasing(content: string): RephrasedSection[] {
-  const sections: RephrasedSection[] = []
-  
-  // Look for rephrased patterns like "*[Rephrased]: new text*"
-  const rephrasedRegex = /\*\[Rephrased\]:\s*(.*?)\*/g
-  let lastIndex = 0
-  let match
-  
-  while ((match = rephrasedRegex.exec(content)) !== null) {
-    // Add normal text before this match
-    if (match.index > lastIndex) {
-      const beforeText = content.slice(lastIndex, match.index).trim()
-      if (beforeText) {
-        sections.push({
-          type: 'normal',
-          text: beforeText
-        })
-      }
-    }
-    
-    // Add the rephrased section
-    const rephrasedText = match[1]
-    const beforeMatch = content.slice(0, match.index).trim()
-    
-    // Try to find the original text by looking at what comes before
-    // This is a simple heuristic - in practice you might want more sophisticated parsing
-    const originalText = extractOriginalText(beforeMatch, rephrasedText)
-    
-    sections.push({
-      type: 'rephrased',
-      text: rephrasedText,
-      originalText: originalText || rephrasedText
-    })
-    
-    lastIndex = rephrasedRegex.lastIndex
-  }
-  
-  // Add remaining normal text
-  if (lastIndex < content.length) {
-    const remainingText = content.slice(lastIndex).trim()
-    if (remainingText) {
-      sections.push({
-        type: 'normal',
-        text: remainingText
-      })
-    }
-  }
-  
-  // If no rephrased sections found, return the entire content as normal
-  if (sections.length === 0) {
-    sections.push({
-      type: 'normal',
-      text: content
-    })
-  }
-  
-  return sections
-}
-
-// Simple heuristic to extract original text
-function extractOriginalText(beforeText: string, rephrasedText: string): string {
-  // Look for sentences that might be the original
-  const sentences = beforeText.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 0)
-  
-  // Return the last meaningful sentence as a rough approximation
-  // In a real implementation, you might want to track this more precisely
-  const lastSentence = sentences[sentences.length - 1]
-  return lastSentence || rephrasedText
-}
-
-export default function MessageContentRenderer({
+function PureMessageContentRenderer({
   content,
   messageId,
   threadId,
   onCodeConvert,
   onRevertRephrase,
-  isMarkdown = true
+  isMarkdown = true,
+  onViewInGallery,
 }: MessageContentRendererProps) {
-  const sections = parseContentForRephrasing(content)
-  
-  // If there are no rephrased sections, render normally
-  if (sections.length === 1 && sections[0].type === 'normal') {
-    return isMarkdown ? (
-      <MarkdownRenderer
-        content={content}
-        id={messageId}
-        threadId={threadId}
-        messageId={messageId}
-        onCodeConvert={onCodeConvert}
-      />
-    ) : (
-      <span className="whitespace-pre-wrap">{content}</span>
-    )
+  // Parse artifact references in the content and replace with friendly display
+  const processedContent = useMemo(() => {
+    if (!content) return { text: "", artifactRefs: [] }
+
+    // Enhanced artifact reference detection that works across chats
+    const patterns = [
+      // Technical format: [Artifact: Title](artifact://id)
+      /\[Artifact:\s*([^\]]+)\]$$artifact:\/\/([^)]+)$$/g,
+      // Short format: @artifact:id
+      /@artifact:([a-zA-Z0-9-]+)/g,
+      // Our new badge format: @artifact[id] or @artifact[id:insert]
+      /@artifact\[([a-f0-9-]+)(?::insert)?\]/g,
+      // Natural formats that work across chats
+      /(?:my|the)\s+"([^"]+)"\s+artifact/gi,
+      /artifact\s+(?:called|named)\s+"([^"]+)"/gi,
+      /(?:reference|using|with)\s+my\s+"([^"]+)"\s+(?:artifact|code|file)/gi,
+    ]
+
+    const artifactRefs: Array<{ id: string; title: string; match: string; type: "technical" | "natural" }> = []
+
+    patterns.forEach((pattern, patternIndex) => {
+      let match
+      while ((match = pattern.exec(content)) !== null) {
+        if (patternIndex === 0 && match[1] && match[2]) {
+          // Technical format with ID
+          artifactRefs.push({
+            id: match[2],
+            title: match[1],
+            match: match[0],
+            type: "technical",
+          })
+        } else if (patternIndex === 1 && match[1]) {
+          // Short format with ID
+          artifactRefs.push({
+            id: match[1],
+            title: `Artifact ${match[1]}`,
+            match: match[0],
+            type: "technical",
+          })
+        } else if (patternIndex === 2 && match[1]) {
+          // Our badge format - replace with friendly text
+          const isInsert = match[0].includes(":insert")
+          artifactRefs.push({
+            id: match[1],
+            title: isInsert ? "inserted artifact" : "referenced artifact",
+            match: match[0],
+            type: "technical",
+          })
+        } else if (match[1]) {
+          // Natural format - lookup by title
+          artifactRefs.push({
+            id: `title:${match[1]}`,
+            title: match[1],
+            match: match[0],
+            type: "natural",
+          })
+        }
+      }
+    })
+
+    // Replace artifact references with friendly placeholders
+    let processedText = content
+    artifactRefs.forEach((ref, index) => {
+      // Replace ugly @artifact[id] with friendly text
+      if (ref.match.startsWith("@artifact[")) {
+        const isInsert = ref.match.includes(":insert")
+        const friendlyText = isInsert ? "my inserted artifact" : "my referenced artifact"
+        processedText = processedText.replace(ref.match, friendlyText)
+      } else {
+        processedText = processedText.replace(ref.match, `__ARTIFACT_REF_${index}__`)
+      }
+    })
+
+    return { text: processedText, artifactRefs }
+  }, [content])
+
+  // Split content by artifact reference placeholders
+  const contentParts = useMemo(() => {
+    const { text, artifactRefs } = processedContent
+    const parts: Array<{ type: "text" | "artifact"; content: string; artifactId?: string }> = []
+
+    if (artifactRefs.length === 0) {
+      parts.push({ type: "text", content: text })
+      return parts
+    }
+
+    let currentText = text
+    artifactRefs.forEach((ref, index) => {
+      const placeholder = `__ARTIFACT_REF_${index}__`
+      const splitParts = currentText.split(placeholder)
+
+      if (splitParts[0]) {
+        parts.push({ type: "text", content: splitParts[0] })
+      }
+
+      parts.push({ type: "artifact", content: ref.title, artifactId: ref.id })
+
+      currentText = splitParts.slice(1).join(placeholder)
+    })
+
+    if (currentText) {
+      parts.push({ type: "text", content: currentText })
+    }
+
+    return parts
+  }, [processedContent])
+
+  const handleViewInGallery = (artifactId: string) => {
+    if (onViewInGallery) {
+      onViewInGallery(artifactId)
+    }
   }
-  
-  // Render mixed content with highlighted rephrased sections
+
   return (
-    <div className="space-y-1">
-      {sections.map((section, index) => {
-        const key = `${messageId}-section-${index}`
-        
-        if (section.type === 'normal') {
-          return isMarkdown ? (
-            <MarkdownRenderer
-              key={key}
-              content={section.text}
-              id={`${messageId}-${index}`}
-              threadId={threadId}
-              messageId={messageId}
-              onCodeConvert={onCodeConvert}
-            />
-          ) : (
-            <span key={key} className="whitespace-pre-wrap">{section.text}</span>
-          )
-        } else {
-          // Rephrased section
+    <div className="space-y-3">
+      {contentParts.map((part, index) => {
+        if (part.type === "artifact" && part.artifactId) {
           return (
-            <RephrasedTextIndicator
-              key={key}
-              originalText={section.originalText || section.text}
-              rephrasedText={section.text}
-              onRevert={() => {
-                if (onRevertRephrase && section.originalText) {
-                  onRevertRephrase(section.originalText)
-                }
-              }}
+            <ArtifactReference
+              key={`artifact-${part.artifactId}-${index}`}
+              artifactId={part.artifactId}
+              onViewInGallery={(artifact) => handleViewInGallery(artifact.id)}
             />
           )
         }
+
+        if (part.content.trim()) {
+          return isMarkdown ? (
+            <MarkdownRenderer
+              key={`text-${index}`}
+              content={part.content}
+              messageId={messageId}
+              threadId={threadId}
+              onCodeConvert={onCodeConvert}
+              onRevertRephrase={onRevertRephrase}
+            />
+          ) : (
+            <div key={`text-${index}`} className="whitespace-pre-wrap">
+              {part.content}
+            </div>
+          )
+        }
+
+        return null
       })}
     </div>
   )
-} 
+}
+
+const MessageContentRenderer = memo(PureMessageContentRenderer)
+
+export default MessageContentRenderer

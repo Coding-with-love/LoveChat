@@ -20,6 +20,7 @@ interface UseCustomResumableChatProps {
   onFinish?: (message: UIMessage) => void
   onStart?: (message: UIMessage) => void
   autoResume?: boolean
+  userPreferences?: any
 }
 
 export function useCustomResumableChat({
@@ -28,6 +29,7 @@ export function useCustomResumableChat({
   onFinish,
   onStart,
   autoResume = true,
+  userPreferences,
 }: UseCustomResumableChatProps) {
   const { user } = useAuth()
   const getKey = useAPIKeyStore((state) => state.getKey)
@@ -117,6 +119,8 @@ export function useCustomResumableChat({
           model: selectedModel,
           webSearchEnabled,
           apiKey: apiKey, // Include the API key in the body
+          // Preserve any existing data field (which may contain user preferences)
+          ...((newBody as any).data && { data: (newBody as any).data }),
         }
 
         // Create new headers and add the API key in multiple formats
@@ -173,6 +177,7 @@ export function useCustomResumableChat({
     body: {
       model: selectedModel,
       webSearchEnabled,
+      ...(userPreferences && { data: { userPreferences } }),
     },
     api: `/api/chat?threadId=${threadId}`,
     onError: (error) => {

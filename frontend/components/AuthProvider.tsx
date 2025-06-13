@@ -6,6 +6,7 @@ import { createContext, useContext, useEffect, useState, useCallback } from "rea
 import type { User } from "@supabase/supabase-js"
 import { supabase } from "@/lib/supabase/client"
 import { getUserProfile } from "@/lib/supabase/queries"
+import { useUserPreferencesStore } from "@/frontend/stores/UserPreferencesStore"
 
 interface UserProfile {
   username: string | null
@@ -19,6 +20,7 @@ interface AuthContextType {
   loading: boolean
   signOut: () => Promise<void>
   refreshSession: () => Promise<void>
+  isAuthenticated: boolean
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -27,6 +29,7 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   signOut: async () => {},
   refreshSession: async () => {},
+  isAuthenticated: false,
 })
 
 export const useAuth = () => {
@@ -41,6 +44,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
+  
+  // Get the loadFromDatabase function from user preferences store
+  const loadFromDatabase = useUserPreferencesStore((state) => state.loadFromDatabase)
 
   const loadProfile = useCallback(async (userId: string) => {
     try {
@@ -103,6 +109,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(session?.user ?? null)
       if (session?.user) {
         loadProfile(session.user.id)
+        // Load user preferences when user is authenticated
+        loadFromDatabase().catch((error) => {
+          console.error("Failed to load user preferences:", error)
+        })
       }
       setLoading(false)
     })
@@ -115,6 +125,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(session?.user ?? null)
       if (session?.user) {
         await loadProfile(session.user.id)
+        // Load user preferences when user signs in
+        try {
+          await loadFromDatabase()
+        } catch (error) {
+          console.error("Failed to load user preferences:", error)
+        }
       } else {
         setProfile(null)
       }
@@ -122,11 +138,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })
 
     return () => subscription.unsubscribe()
-  }, [loadProfile])
+  }, [loadProfile, loadFromDatabase])
 
   const signOut = async () => {
     await supabase.auth.signOut()
   }
 
-  return <AuthContext.Provider value={{ user, profile, loading, signOut, refreshSession }}>{children}</AuthContext.Provider>
+  return <AuthContext.Provider value={{ user, profile, loading, signOut, refreshSession, isAuthenticated: !!user }}>{children}</AuthContext.Provider>
 }

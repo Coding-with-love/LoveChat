@@ -10,6 +10,7 @@ import Index from "./routes/Index"
 import Thread from "./routes/Thread"
 import Settings from "./routes/Settings"
 import SharedConversation from "./routes/SharedConversation"
+import ArtifactsPage from "./routes/Artifacts"
 import Project from "./routes/Project"
 import { Toaster } from "sonner"
 import { GlobalResumingIndicator } from "./components/ResumingIndicator"
@@ -42,6 +43,7 @@ function AuthenticatedApp() {
         <Route path="settings" element={<Settings />} />
         <Route path="share/:token" element={<SharedConversation />} />
         <Route path="*" element={<p>Not found</p>} />
+        <Route path="artifacts" element={<ArtifactsPage />} />
       </Routes>
     </BrowserRouter>
   )

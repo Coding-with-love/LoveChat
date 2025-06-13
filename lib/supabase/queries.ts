@@ -435,23 +435,6 @@ export const getUserSharedThreads = async () => {
   return data || []
 }
 
-export const getSharedThreadByThreadId = async (threadId: string) => {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) throw new Error("User not authenticated")
-
-  const { data, error } = await supabase
-    .from("shared_threads")
-    .select("*")
-    .eq("thread_id", threadId)
-    .eq("user_id", user.id)
-    .single()
-
-  if (error && error.code !== "PGRST116") throw error // PGRST116 is "not found"
-  return data || null
-}
-
 export const updateSharedThread = async (
   id: string,
   updates: {
@@ -508,6 +491,23 @@ export const deleteSharedThread = async (id: string) => {
   const { error } = await supabase.from("shared_threads").delete().eq("id", id).eq("user_id", user.id)
 
   if (error) throw error
+}
+
+export const getSharedThreadByThreadId = async (threadId: string) => {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error("User not authenticated")
+
+  const { data, error } = await supabase
+    .from("shared_threads")
+    .select("*")
+    .eq("thread_id", threadId)
+    .eq("user_id", user.id)
+    .single()
+
+  if (error && error.code !== "PGRST116") throw error // PGRST116 is "not found"
+  return data || null
 }
 
 // Project Functions
@@ -1117,4 +1117,182 @@ export const updateMessageInDatabase = async (messageId: string, newContent: str
     console.error("❌ Unexpected error in updateMessageInDatabase:", error)
     return false
   }
+}
+
+// User Preferences Functions
+export const getUserPreferences = async () => {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error("User not authenticated")
+
+  try {
+    const { data, error } = await supabase
+      .from("user_preferences")
+      .select("*")
+      .eq("user_id", user.id)
+      .single()
+
+    if (error && error.code !== "PGRST116") {
+      // PGRST116 is "not found" which is fine
+      // 42P01 is "relation does not exist" (table doesn't exist)
+      if (error.code === "42P01") {
+        console.warn("📋 user_preferences table does not exist yet, falling back to localStorage")
+        return null
+      }
+      throw error
+    }
+    return data || null
+  } catch (error: any) {
+    console.warn("📋 Failed to query user_preferences table:", error.message)
+    return null
+  }
+}
+
+export const saveUserPreferences = async (preferences: {
+  preferred_name?: string
+  occupation?: string
+  assistant_traits?: string[]
+  custom_instructions?: string
+  ui_font?: string
+  code_font?: string
+  font_size?: "small" | "medium" | "large"
+}) => {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error("User not authenticated")
+
+  try {
+    // Check if preferences already exist
+    const { data: existing } = await supabase
+      .from("user_preferences")
+      .select("id")
+      .eq("user_id", user.id)
+      .single()
+
+    if (existing) {
+      // Update existing preferences
+      const { data, error } = await supabase
+        .from("user_preferences")
+        .update({
+          ...preferences,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("user_id", user.id)
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    } else {
+      // Insert new preferences
+      const { data, error } = await supabase
+        .from("user_preferences")
+        .insert({
+          user_id: user.id,
+          ...preferences,
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    }
+  } catch (error: any) {
+    // If table doesn't exist, just log and return - preferences will work from localStorage
+    if (error.code === "42P01") {
+      console.warn("📋 user_preferences table does not exist yet, preferences will only be stored locally")
+      return null
+    }
+    console.warn("📋 Failed to save user preferences to database:", error.message)
+    throw error
+  }
+}
+
+export const deleteUserPreferences = async () => {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error("User not authenticated")
+
+  const { error } = await supabase.from("user_preferences").delete().eq("user_id", user.id)
+
+  if (error) throw error
+}
+
+// File Attachment Functions
+export const getAllFileAttachments = async () => {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error("User not authenticated")
+
+  // First get all threads to get their titles
+  const { data: threads, error: threadsError } = await supabase
+    .from("threads")
+    .select("id, title")
+    .eq("user_id", user.id)
+
+  if (threadsError) throw threadsError
+
+  // Create a map of thread IDs to titles
+  const threadTitles: Record<string, string> = {}
+  threads?.forEach((thread) => {
+    threadTitles[thread.id] = thread.title
+  })
+
+  // Get all file attachments for the user
+  const { data, error } = await supabase
+    .from("file_attachments")
+    .select("*")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
+
+  if (error) throw error
+
+  // Add thread titles to the file attachments
+  return (data || []).map((file) => ({
+    ...file,
+    thread_title: threadTitles[file.thread_id] || "Unknown Thread",
+  }))
+}
+
+export const deleteFileAttachment = async (fileId: string) => {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error("User not authenticated")
+
+  // First get the file to get its URL
+  const { data: file, error: fileError } = await supabase
+    .from("file_attachments")
+    .select("file_url")
+    .eq("id", fileId)
+    .eq("user_id", user.id)
+    .single()
+
+  if (fileError) throw fileError
+
+  // Delete the file from storage if it exists
+  if (file?.file_url) {
+    try {
+      // Extract the path from the URL
+      const url = new URL(file.file_url)
+      const pathMatch = url.pathname.match(/\/storage\/v1\/object\/public\/thread-files\/(.+)/)
+
+      if (pathMatch && pathMatch[1]) {
+        const path = pathMatch[1]
+        await supabase.storage.from("thread-files").remove([path])
+      }
+    } catch (error) {
+      console.error("Failed to delete file from storage:", error)
+      // Continue with deleting the record even if storage deletion fails
+    }
+  }
+
+  // Delete the file record from the database
+  const { error } = await supabase.from("file_attachments").delete().eq("id", fileId).eq("user_id", user.id)
+
+  if (error) throw error
 }

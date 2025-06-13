@@ -8,11 +8,18 @@ import {
   SidebarMenu,
   SidebarMenuItem,
   SidebarFooter,
-  SidebarSeparator,
 } from "@/frontend/components/ui/sidebar"
 import { Button, buttonVariants } from "./ui/button"
 import { Input } from "./ui/input"
-import { deleteThread, getThreads, getProjects, moveThreadToProject, deleteProject, getSharedThreadByThreadId, toggleThreadArchived } from "@/lib/supabase/queries"
+import {
+  deleteThread,
+  getThreads,
+  getProjects,
+  moveThreadToProject,
+  deleteProject,
+  getSharedThreadByThreadId,
+  toggleThreadArchived,
+} from "@/lib/supabase/queries"
 import { supabase } from "@/lib/supabase/client"
 import { useEffect, useState, useCallback } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
@@ -156,7 +163,7 @@ export function ChatSidebar() {
   const [showForceLoad, setShowForceLoad] = useState(false)
   const [showArchivedChats, setShowArchivedChats] = useState(false)
   const { state, toggleSidebar } = useSidebar()
-  const collapsed = state === 'collapsed'
+  const collapsed = state === "collapsed"
 
   // Add tab visibility management to refresh sidebar when returning
   useTabVisibility({
@@ -208,8 +215,8 @@ export function ChatSidebar() {
 
         const [threadsData, archivedData, projectsData] = await Promise.all([
           getThreads(false), // Get active threads
-          getThreads(true).then(result => result.filter(thread => thread.is_archived)), // Get only archived threads
-          getProjects()
+          getThreads(true).then((result) => result.filter((thread) => thread.is_archived)), // Get only archived threads
+          getProjects(),
         ])
 
         console.log(
@@ -300,7 +307,7 @@ export function ChatSidebar() {
           console.log("Thread change:", payload)
           const newThread = payload.new as Thread
           const isArchived = newThread?.is_archived
-          
+
           if (payload.eventType === "INSERT") {
             if (isArchived) {
               setArchivedThreads((prev) => [newThread, ...prev])
@@ -312,16 +319,16 @@ export function ChatSidebar() {
             if (isArchived) {
               setThreads((prev) => prev.filter((thread) => thread.id !== newThread.id))
               setArchivedThreads((prev) => {
-                const exists = prev.find(t => t.id === newThread.id)
-                return exists 
+                const exists = prev.find((t) => t.id === newThread.id)
+                return exists
                   ? prev.map((thread) => (thread.id === newThread.id ? newThread : thread))
                   : [newThread, ...prev]
               })
             } else {
               setArchivedThreads((prev) => prev.filter((thread) => thread.id !== newThread.id))
               setThreads((prev) => {
-                const exists = prev.find(t => t.id === newThread.id)
-                return exists 
+                const exists = prev.find((t) => t.id === newThread.id)
+                return exists
                   ? prev.map((thread) => (thread.id === newThread.id ? newThread : thread))
                   : [newThread, ...prev]
               })
@@ -396,7 +403,7 @@ export function ChatSidebar() {
   const handleShareThread = async (threadId: string, title: string) => {
     setShareThreadId(threadId)
     setShareThreadTitle(title)
-    
+
     try {
       // Check if there's already a share for this thread
       const share = await getSharedThreadByThreadId(threadId)
@@ -405,7 +412,7 @@ export function ChatSidebar() {
       console.error("Failed to check for existing share:", error)
       setExistingShare(null)
     }
-    
+
     setShareDialogOpen(true)
   }
 
@@ -546,7 +553,7 @@ export function ChatSidebar() {
                   size="icon"
                   className={cn(
                     "ml-auto h-6 w-6",
-                    openDropdownThreadId === thread.id ? "flex" : "hidden group-hover/thread:flex"
+                    openDropdownThreadId === thread.id ? "flex" : "hidden group-hover/thread:flex",
                   )}
                   onClick={(e) => {
                     e.preventDefault()
@@ -705,7 +712,7 @@ export function ChatSidebar() {
                   size="icon"
                   className={cn(
                     "ml-auto h-6 w-6",
-                    openDropdownThreadId === thread.id ? "flex" : "hidden group-hover/thread:flex"
+                    openDropdownThreadId === thread.id ? "flex" : "hidden group-hover/thread:flex",
                   )}
                   onClick={(e) => {
                     e.preventDefault()
@@ -823,7 +830,7 @@ export function ChatSidebar() {
                     size="icon"
                     className={cn(
                       "ml-auto h-7 w-7",
-                      openDropdownThreadId === thread.id ? "flex" : "hidden group-hover/thread:flex"
+                      openDropdownThreadId === thread.id ? "flex" : "hidden group-hover/thread:flex",
                     )}
                     onClick={(e) => {
                       e.preventDefault()
@@ -963,7 +970,7 @@ export function ChatSidebar() {
               New Chat
             </Link>
           </div>
-          
+
           {/* Fixed Projects Header */}
           <div className="px-4 py-2 border-b border-border/50">
             <div className="flex items-center justify-between">
@@ -1000,11 +1007,7 @@ export function ChatSidebar() {
                 const isExpanded = expandedProjects.has(project.id)
 
                 return (
-                  <Collapsible
-                    key={project.id}
-                    open={isExpanded}
-                    onOpenChange={() => toggleProject(project.id)}
-                  >
+                  <Collapsible key={project.id} open={isExpanded} onOpenChange={() => toggleProject(project.id)}>
                     <div className="px-4 py-1">
                       <div className="flex items-center gap-2 px-2 py-1 hover:bg-secondary rounded-[8px] group">
                         <CollapsibleTrigger asChild>
@@ -1033,12 +1036,7 @@ export function ChatSidebar() {
                               <MoreHorizontal className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent
-                            align="end"
-                            side="right"
-                            className="w-48"
-                            sideOffset={5}
-                          >
+                          <DropdownMenuContent align="end" side="right" className="w-48" sideOffset={5}>
                             <DropdownMenuItem
                               onClick={(e) => {
                                 e.stopPropagation()
@@ -1102,15 +1100,15 @@ export function ChatSidebar() {
               </SidebarGroupContent>
             </SidebarGroup>
           </SidebarContent>
-          
+
           {/* Archived Chats Section - Always visible at bottom */}
           {archivedThreads.length > 0 && (
             <div className="border-t border-border/50">
               <Collapsible open={showArchivedChats} onOpenChange={setShowArchivedChats}>
                 <div className="p-2">
                   <CollapsibleTrigger asChild>
-                    <Button 
-                      variant="ghost" 
+                    <Button
+                      variant="ghost"
                       className="w-full justify-start gap-2 h-8 text-muted-foreground hover:text-foreground"
                     >
                       <Archive className="h-4 w-4" />
@@ -1121,9 +1119,7 @@ export function ChatSidebar() {
                 </div>
                 <CollapsibleContent>
                   <div className="px-2 pb-2 max-h-48 overflow-y-auto">
-                    <div className="space-y-1">
-                      {archivedThreads.map(renderArchivedThread)}
-                    </div>
+                    <div className="space-y-1">{archivedThreads.map(renderArchivedThread)}</div>
                   </div>
                 </CollapsibleContent>
               </Collapsible>

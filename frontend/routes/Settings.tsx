@@ -2,8 +2,11 @@
 
 import APIKeyForm from "@/frontend/components/APIKeyForm"
 import { OllamaSettings } from "@/frontend/components/OllamaSettings"
-import ThemeSettings from "@/frontend/components/ThemeSettings"
 import { ModelManager } from "@/frontend/components/ModelManager"
+import CustomizationSettings from "@/frontend/components/CustomizationSettings"
+import HistorySyncSettings from "@/frontend/components/HistorySyncSettings"
+import AttachmentsSettings from "@/frontend/components/AttachmentsSettings"
+import { ArtifactGallery } from "@/frontend/components/ArtifactGallery"
 import { Link } from "react-router"
 import { buttonVariants } from "../components/ui/button"
 import {
@@ -17,7 +20,10 @@ import {
   SettingsIcon,
   Key,
   Bot,
-  Palette,
+  Sliders,
+  History,
+  Paperclip,
+  Archive,
 } from "lucide-react"
 import { useAuth } from "@/frontend/components/AuthProvider"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/frontend/components/ui/card"
@@ -46,27 +52,27 @@ function Settings() {
       console.log("🔄 Settings page became visible, refreshing shared threads")
       loadSharedThreads(true) // Pass true to indicate this is a refresh
     },
-    refreshStoresOnVisible: false // Don't refresh stores here - APIKeyForm handles its own state
+    refreshStoresOnVisible: false, // Don't refresh stores here - APIKeyForm handles its own state
   })
 
   const loadSharedThreads = async (isRefresh = false) => {
     try {
       console.log("🔄 Loading shared threads", isRefresh ? "(refresh)" : "(initial)")
       setLoadingShares(true)
-      
+
       // Add timeout to prevent infinite loading
       const loadPromise = getUserSharedThreads()
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error("Load shared threads timeout")), 10000)
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Load shared threads timeout")), 10000),
       )
-      
-      const shares = await Promise.race([loadPromise, timeoutPromise]) as any[]
+
+      const shares = (await Promise.race([loadPromise, timeoutPromise])) as any[]
       setSharedThreads(shares)
       console.log("✅ Shared threads loaded:", shares.length)
     } catch (error) {
       console.error("❌ Failed to load shared threads:", error)
       toast.error("Failed to load shared conversations")
-      
+
       // On error, keep existing threads if we have them
       if (sharedThreads.length > 0) {
         console.log("💾 Keeping existing shared threads on error")
@@ -247,23 +253,32 @@ function Settings() {
     </div>
   )
 
-  // Theme Tab Content
-  const ThemeTab = () => (
+  // Customization Tab Content
+  const CustomizationTab = () => <CustomizationSettings />
+
+  // History & Sync Tab Content
+  const HistorySyncTab = () => <HistorySyncSettings />
+
+  // Attachments Tab Content
+  const AttachmentsTab = () => <AttachmentsSettings />
+
+  // Artifacts Tab Content
+  const ArtifactsTab = () => (
     <div className="space-y-6">
       <Card className="shadow-sm border-0 bg-gradient-to-br from-background to-muted/20">
         <CardHeader className="pb-4">
           <div className="flex items-center gap-3">
-            <div className="p-3 rounded-xl bg-gradient-to-br from-green-500/10 to-teal-500/10 border border-green-500/20">
-              <Palette className="h-5 w-5 text-green-600 dark:text-green-400" />
+            <div className="p-3 rounded-xl bg-gradient-to-br from-emerald-500/10 to-teal-500/10 border border-emerald-500/20">
+              <Archive className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
             </div>
             <div>
-              <CardTitle className="text-xl">Theme Settings</CardTitle>
-              <CardDescription>Customize the appearance and feel of the application</CardDescription>
+              <CardTitle className="text-xl">Artifact Management</CardTitle>
+              <CardDescription>Manage your saved artifacts, code snippets, and generated content</CardDescription>
             </div>
           </div>
         </CardHeader>
         <CardContent>
-          <ThemeSettings />
+          <ArtifactGallery />
         </CardContent>
       </Card>
     </div>
@@ -403,13 +418,41 @@ function Settings() {
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-5xl mx-auto">
           <Tabs defaultValue="account" className="space-y-8">
-            <TabsList className="grid w-full grid-cols-5 h-auto p-1.5 bg-gradient-to-r from-muted/50 via-muted/30 to-muted/50 backdrop-blur-xl border border-border/50 shadow-lg">
+            <TabsList className="grid w-full grid-cols-8 h-auto p-1.5 bg-gradient-to-r from-muted/50 via-muted/30 to-muted/50 backdrop-blur-xl border border-border/50 shadow-lg">
               <TabsTrigger
                 value="account"
                 className="flex flex-col gap-2 py-4 px-3 data-[state=active]:bg-gradient-to-br data-[state=active]:from-blue-500/10 data-[state=active]:to-purple-500/10 data-[state=active]:border data-[state=active]:border-blue-500/20 data-[state=active]:shadow-md rounded-lg transition-all duration-300"
               >
                 <User className="h-4 w-4" />
                 <span className="text-xs font-medium">Account</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="customization"
+                className="flex flex-col gap-2 py-4 px-3 data-[state=active]:bg-gradient-to-br data-[state=active]:from-green-500/10 data-[state=active]:to-teal-500/10 data-[state=active]:border data-[state=active]:border-green-500/20 data-[state=active]:shadow-md rounded-lg transition-all duration-300"
+              >
+                <Sliders className="h-4 w-4" />
+                <span className="text-xs font-medium">Customization</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="history"
+                className="flex flex-col gap-2 py-4 px-3 data-[state=active]:bg-gradient-to-br data-[state=active]:from-indigo-500/10 data-[state=active]:to-blue-500/10 data-[state=active]:border data-[state=active]:border-indigo-500/20 data-[state=active]:shadow-md rounded-lg transition-all duration-300"
+              >
+                <History className="h-4 w-4" />
+                <span className="text-xs font-medium">History</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="attachments"
+                className="flex flex-col gap-2 py-4 px-3 data-[state=active]:bg-gradient-to-br data-[state=active]:from-violet-500/10 data-[state=active]:to-indigo-500/10 data-[state=active]:border data-[state=active]:border-violet-500/20 data-[state=active]:shadow-md rounded-lg transition-all duration-300"
+              >
+                <Paperclip className="h-4 w-4" />
+                <span className="text-xs font-medium">Attachments</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="artifacts"
+                className="flex flex-col gap-2 py-4 px-3 data-[state=active]:bg-gradient-to-br data-[state=active]:from-emerald-500/10 data-[state=active]:to-teal-500/10 data-[state=active]:border data-[state=active]:border-emerald-500/20 data-[state=active]:shadow-md rounded-lg transition-all duration-300"
+              >
+                <Archive className="h-4 w-4" />
+                <span className="text-xs font-medium">Artifacts</span>
               </TabsTrigger>
               <TabsTrigger
                 value="api-keys"
@@ -426,13 +469,6 @@ function Settings() {
                 <span className="text-xs font-medium">Models</span>
               </TabsTrigger>
               <TabsTrigger
-                value="theme"
-                className="flex flex-col gap-2 py-4 px-3 data-[state=active]:bg-gradient-to-br data-[state=active]:from-green-500/10 data-[state=active]:to-teal-500/10 data-[state=active]:border data-[state=active]:border-green-500/20 data-[state=active]:shadow-md rounded-lg transition-all duration-300"
-              >
-                <Palette className="h-4 w-4" />
-                <span className="text-xs font-medium">Theme</span>
-              </TabsTrigger>
-              <TabsTrigger
                 value="sharing"
                 className="flex flex-col gap-2 py-4 px-3 data-[state=active]:bg-gradient-to-br data-[state=active]:from-cyan-500/10 data-[state=active]:to-blue-500/10 data-[state=active]:border data-[state=active]:border-cyan-500/20 data-[state=active]:shadow-md rounded-lg transition-all duration-300"
               >
@@ -445,16 +481,28 @@ function Settings() {
               <AccountTab />
             </TabsContent>
 
+            <TabsContent value="customization" className="mt-8">
+              <CustomizationTab />
+            </TabsContent>
+
+            <TabsContent value="history" className="mt-8">
+              <HistorySyncTab />
+            </TabsContent>
+
+            <TabsContent value="attachments" className="mt-8">
+              <AttachmentsTab />
+            </TabsContent>
+
+            <TabsContent value="artifacts" className="mt-8">
+              <ArtifactsTab />
+            </TabsContent>
+
             <TabsContent value="api-keys" className="mt-8">
               <APIKeysTab />
             </TabsContent>
 
             <TabsContent value="models" className="mt-8">
               <ModelsTab />
-            </TabsContent>
-
-            <TabsContent value="theme" className="mt-8">
-              <ThemeTab />
             </TabsContent>
 
             <TabsContent value="sharing" className="mt-8">

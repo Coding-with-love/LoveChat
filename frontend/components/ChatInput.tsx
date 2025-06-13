@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { memo, useCallback, useMemo, useState, useEffect, useRef } from "react"
+import { memo, useCallback, useMemo, useState, useEffect } from "react"
 import { Textarea } from "@/frontend/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import { Button } from "@/frontend/components/ui/button"
@@ -31,7 +31,7 @@ import { useMessageSummary } from "../hooks/useMessageSummary"
 import { useAuth } from "@/frontend/components/AuthProvider"
 import FileUpload, { FilePreviewList } from "./FileUpload"
 import type { FileUploadResult } from "@/lib/supabase/file-upload"
-import { ChevronDown, Check, ArrowUpIcon, Search, Info, Bot, Settings, Sparkles, Zap, Brain, Globe } from 'lucide-react'
+import { ChevronDown, Check, ArrowUpIcon, Search, Info, Bot, Settings, Sparkles, Zap, Brain, Globe, Archive, X, Code, FileText, Copy, Plus } from 'lucide-react'
 import { useKeyboardShortcuts } from "@/frontend/hooks/useKeyboardShortcuts"
 import PersonaTemplateSelector from "./PersonaTemplateSelector"
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover"
@@ -42,14 +42,34 @@ import { EditPersonaDialog } from "./EditPersonaDialog"
 import { EditTemplateDialog } from "./EditTemplateDialog"
 import type { Persona } from "@/lib/supabase/types"
 import type { PromptTemplate } from "@/frontend/stores/PersonaStore"
-import { Badge } from "./ui/badge"
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "./ui/alert-dialog"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "./ui/alert-dialog"
 import { usePersonas } from "@/frontend/hooks/usePersonas"
+import { useUserPreferencesStore } from "@/frontend/stores/UserPreferencesStore"
+import { ArtifactPicker } from "./ArtifactPicker"
+import type { Artifact } from "@/frontend/stores/ArtifactStore"
+import { useArtifactStore } from "@/frontend/stores/ArtifactStore"
+import { Badge } from "@/frontend/components/ui/badge"
+import { CrossChatArtifactIndicator } from "./CrossChatArtifactIndicator"
 
 interface ChatMessagePart {
-  type: "text" | "file_attachments"
+  type: "text" | "file_attachments" | "artifact_references"
   content?: string
   attachments?: { fileName: string; content?: string }[]
+  artifacts?: Array<{
+    id: string
+    title: string
+    type: "reference" | "insert"
+    content_type: string
+  }>
 }
 
 interface ChatMessage {
@@ -77,6 +97,12 @@ interface SendButtonProps {
   disabled: boolean
 }
 
+interface ArtifactReference {
+  id: string
+  artifact: Artifact
+  type: "reference" | "insert"
+}
+
 const createUserMessage = (id: string, text: string): UIMessage => ({
   id,
   parts: [{ type: "text", text }],
@@ -97,7 +123,13 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
   const [editTemplateOpen, setEditTemplateOpen] = useState(false)
   const [editingPersona, setEditingPersona] = useState<Persona | null>(null)
   const [editingTemplate, setEditingTemplate] = useState<PromptTemplate | null>(null)
-  
+
+  // Artifact references state
+  const [artifactReferences, setArtifactReferences] = useState<ArtifactReference[]>([])
+
+  // Get user preferences for chat
+  const userPreferences = useUserPreferencesStore()
+
   // Delete confirmation states
   const [deletePersonaOpen, setDeletePersonaOpen] = useState(false)
   const [deleteTemplateOpen, setDeleteTemplateOpen] = useState(false)
@@ -113,10 +145,46 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
     }
   }, [ensureValidSelectedModel])
 
+  // Listen for artifact reference events from ArtifactCard components
+  useEffect(() => {
+    const handleArtifactReference = (event: CustomEvent) => {
+      const { reference } = event.detail
+      if (textareaRef.current) {
+        const textarea = textareaRef.current
+        const start = textarea.selectionStart
+        const end = textarea.selectionEnd
+        const currentValue = textarea.value
+
+        const newValue = currentValue.slice(0, start) + reference + currentValue.slice(end)
+        setInput(newValue)
+
+        // Set cursor position after the inserted reference
+        setTimeout(() => {
+          textarea.focus()
+          textarea.setSelectionRange(start + reference.length, start + reference.length)
+          adjustHeight()
+        }, 0)
+      }
+    }
+
+    window.addEventListener("artifactReference", handleArtifactReference as EventListener)
+
+    return () => {
+      window.removeEventListener("artifactReference", handleArtifactReference as EventListener)
+    }
+  }, [setInput])
+
   // Get enabled models that have API keys
   const enabledModels = useMemo(() => {
     return getEnabledModels()
   }, [getEnabledModels])
+
+  // Ensure artifacts are loaded for cross-chat referencing
+  const { fetchArtifacts } = useArtifactStore()
+  useEffect(() => {
+    // Fetch all artifacts when the component mounts to ensure they're available for referencing
+    fetchArtifacts()
+  }, [fetchArtifacts])
 
   // Check if we have an API key for the currently selected model
   const canChat = useMemo(() => {
@@ -137,10 +205,12 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
 
   const isDisabled = useMemo(
     () =>
-      (!(typeof input === "string" ? input.trim() : input) && uploadedFiles.length === 0) ||
+      (!(typeof input === "string" ? input.trim() : input) &&
+        uploadedFiles.length === 0 &&
+        artifactReferences.length === 0) ||
       status === "streaming" ||
       status === "submitted",
-    [input, status, uploadedFiles.length],
+    [input, status, uploadedFiles.length, artifactReferences.length],
   )
 
   const { complete, isAuthenticated } = useMessageSummary()
@@ -213,7 +283,7 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
 
   const confirmDeletePersona = async () => {
     if (!deletingPersona) return
-    
+
     try {
       await deletePersona(deletingPersona.id)
       setDeletePersonaOpen(false)
@@ -225,13 +295,63 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
 
   const confirmDeleteTemplate = async () => {
     if (!deletingTemplate) return
-    
+
     try {
       await deleteTemplate(deletingTemplate.id)
       setDeleteTemplateOpen(false)
       setDeletingTemplate(null)
     } catch (error) {
       // Error handling is done in the deleteTemplate function
+    }
+  }
+
+  // Enhanced artifact picker handler with badge system
+  const handleArtifactSelect = (artifact: Artifact, action: "reference" | "insert" | "view") => {
+    switch (action) {
+      case "reference":
+      case "insert":
+        // Check if artifact is already referenced
+        const existingRef = artifactReferences.find((ref) => ref.artifact.id === artifact.id)
+        if (existingRef) {
+          toast.info(
+            `Artifact "${artifact.title}" is already ${existingRef.type === "reference" ? "referenced" : "inserted"}`,
+          )
+          return
+        }
+
+        // Add artifact reference as a badge
+        const newRef: ArtifactReference = {
+          id: uuidv4(),
+          artifact,
+          type: action,
+        }
+        setArtifactReferences((prev) => [...prev, newRef])
+        toast.success(`${action === "reference" ? "Referenced" : "Inserted"} artifact "${artifact.title}"`)
+        break
+
+      case "view":
+        // Navigate to artifacts gallery with this artifact highlighted
+        window.location.href = `/artifacts?highlight=${artifact.id}`
+        toast.success(`Viewing artifact: ${artifact.title}`)
+        break
+    }
+  }
+
+  // Remove artifact reference
+  const handleRemoveArtifactReference = (refId: string) => {
+    setArtifactReferences((prev) => prev.filter((ref) => ref.id !== refId))
+  }
+
+  // Get artifact icon
+  const getArtifactIcon = (contentType: string) => {
+    switch (contentType) {
+      case "code":
+      case "javascript":
+      case "typescript":
+      case "python":
+        return <Code className="h-3 w-3" />
+      default:
+        return <FileText className="h-3 w-3" />
     }
   }
 
@@ -242,7 +362,8 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
       textareaValue: textareaRef.current?.value,
       inputState: input,
       status,
-      hasFiles: uploadedFiles.length > 0
+      hasFiles: uploadedFiles.length > 0,
+      hasArtifacts: artifactReferences.length > 0,
     })
 
     if (!user || !isAuthenticated) {
@@ -253,16 +374,18 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
     const currentInput = textareaRef.current?.value || (typeof input === "string" ? input : "")
     const hasText = typeof currentInput === "string" && currentInput.trim().length > 0
     const hasFiles = uploadedFiles.length > 0
+    const hasArtifacts = artifactReferences.length > 0
 
     console.log("📝 Message content check:", {
       currentInput: currentInput.substring(0, 100),
       hasText,
       hasFiles,
+      hasArtifacts,
       status,
-      willProceed: (!(!hasText && !hasFiles)) && status !== "streaming" && status !== "submitted"
+      willProceed: !(!hasText && !hasFiles && !hasArtifacts) && status !== "streaming" && status !== "submitted",
     })
 
-    if ((!hasText && !hasFiles) || status === "streaming" || status === "submitted") return
+    if ((!hasText && !hasFiles && !hasArtifacts) || status === "streaming" || status === "submitted") return
 
     const messageId = uuidv4()
 
@@ -273,6 +396,8 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
         userId: user.id,
         isNewThread: !id,
         hasFiles,
+        hasArtifacts,
+        artifactCount: artifactReferences.length,
         webSearchEnabled,
         modelSupportsSearch: currentModelSupportsSearch,
         personaActive: !!currentPersona,
@@ -315,24 +440,60 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
         })),
       })
 
-      // Create the message content
-      const messageContent = hasText ? currentInput.trim() : `Shared ${uploadedFiles.length} file(s)`
+      // Create the message content - just the text input for display
+      let messageContent = hasText ? currentInput.trim() : ""
 
-      // Create the base message using the helper
-      const message = createUserMessage(messageId, messageContent)
+      if (!messageContent && hasFiles && !hasArtifacts) {
+        messageContent = `Shared ${uploadedFiles.length} file(s)`
+      }
 
-      // Add file attachments to the message if present
+      if (!messageContent && !hasFiles && hasArtifacts) {
+        messageContent = "Shared artifacts"
+      }
+
+      // Create the base message using the helper - this is what the user sees
+      const displayMessage = createUserMessage(messageId, messageContent)
+
+      // Add artifact references as a separate part for display
+      if (hasArtifacts) {
+        if (!displayMessage.parts) {
+          displayMessage.parts = []
+        }
+        ;(displayMessage.parts as any).push({
+          type: "artifact_references",
+          artifacts: artifactReferences.map((ref) => ({
+            id: ref.artifact.id,
+            title: ref.artifact.title,
+            type: ref.type,
+            content_type: ref.artifact.content_type,
+          })),
+        })
+      }
+
+      // Create a separate message for the API with technical tags
+      let apiMessageContent = hasText ? currentInput.trim() : ""
+      if (hasArtifacts) {
+        const artifactTags = artifactReferences
+          .map((ref) => `@artifact[${ref.artifact.id}${ref.type === "insert" ? ":insert" : ""}]`)
+          .join(" ")
+        apiMessageContent = apiMessageContent ? `${apiMessageContent} ${artifactTags}` : artifactTags
+      }
+
+      if (!apiMessageContent && hasFiles) {
+        apiMessageContent = `Shared ${uploadedFiles.length} file(s)`
+      }
+
+      // Add file attachments to the display message if present
       if (hasFiles) {
         console.log("📎 Adding file attachments to message:", uploadedFiles.length)
-        
+
         // Add file attachments to message parts
-        if (!message.parts) {
-          message.parts = []
+        if (!displayMessage.parts) {
+          displayMessage.parts = []
         }
-        
-        (message.parts as any).push({
+        ;(displayMessage.parts as any).push({
           type: "file_attachments",
-          attachments: uploadedFiles.map(file => ({
+          attachments: uploadedFiles.map((file) => ({
             id: file.id,
             fileName: file.fileName,
             fileType: file.fileType,
@@ -341,30 +502,38 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
             thumbnailUrl: file.thumbnailUrl,
             content: file.content,
             extractedText: file.extractedText,
-            category: file.category
-          }))
+            category: file.category,
+          })),
         })
-        
-        await createMessage(threadId, message, uploadedFiles)
+
+        await createMessage(threadId, displayMessage, uploadedFiles)
       } else {
-        await createMessage(threadId, message)
+        await createMessage(threadId, displayMessage)
       }
 
-      // Send the message with file attachments included
-      console.log("📤 About to call append with message:", {
-        messageId: message.id,
-        content: message.content.substring(0, 100),
-        hasFileParts: message.parts?.some(p => (p as any).type === "file_attachments"),
-        appendFunction: typeof append
+      // Include user preferences in the data sent to the API
+      const userPrefsToSend = {
+        preferredName: userPreferences.preferredName,
+        occupation: userPreferences.occupation,
+        assistantTraits: userPreferences.assistantTraits,
+        customInstructions: userPreferences.customInstructions,
+      }
+
+      // Create API message with technical tags for the AI
+      const apiMessage = createUserMessage(messageId + "_api", apiMessageContent)
+
+      const result = await append(apiMessage, {
+        data: {
+          userPreferences: userPrefsToSend,
+        },
       })
-      
-      const result = await append(message)
-      
+
       console.log("📤 append() returned:", result)
 
-      // Clear input and files after successful send
+      // Clear input, files, and artifact references after successful send
       setInput("")
       setUploadedFiles([])
+      setArtifactReferences([])
       adjustHeight()
 
       console.log("✅ Message sent successfully")
@@ -378,6 +547,7 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
     textareaRef,
     input,
     uploadedFiles,
+    artifactReferences,
     status,
     threadId,
     id,
@@ -389,11 +559,13 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
     setInput,
     adjustHeight,
     currentPersona,
+    userPreferences,
   ])
 
   const handleClearInput = useCallback(() => {
     setInput("")
     setUploadedFiles([])
+    setArtifactReferences([])
     adjustHeight()
   }, [setInput, adjustHeight])
 
@@ -448,7 +620,7 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
         console.log("⌨️ Enter pressed, submitting message:", {
           currentInput: currentInput.substring(0, 100),
           isDisabled,
-          status
+          status,
         })
         setInput("")
         handleSubmit()
@@ -461,8 +633,9 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
     adjustHeight()
   }
 
-  // Calculate dynamic height based on files
+  // Calculate dynamic height based on files and artifacts
   const hasFiles = uploadedFiles.length > 0
+  const hasArtifacts = artifactReferences.length > 0
 
   // Determine search status message
   const getSearchStatusMessage = () => {
@@ -487,6 +660,67 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
           </div>
         )}
 
+        {/* Artifact References - appears above the input */}
+        {hasArtifacts && (
+          <div className="pt-4 px-4">
+            <div className="bg-muted/50 rounded-xl p-3 border border-border/50">
+              <div className="flex items-center gap-2 mb-2">
+                <Archive className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium text-muted-foreground">Referenced Artifacts</span>
+                {artifactReferences.some(ref => ref.artifact.thread_id !== threadId) && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="flex items-center gap-1 text-primary">
+                          <Archive className="h-3 w-3" />
+                          <span className="text-xs">Cross-Chat</span>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Some artifacts are from other conversations</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {artifactReferences.map((ref) => {
+                  const isCrossChat = ref.artifact.thread_id !== threadId
+                  return (
+                    <Badge 
+                      key={ref.id} 
+                      variant="secondary" 
+                                             className={cn(
+                         "flex items-center gap-2 pr-1 pl-2 py-1 text-xs",
+                         isCrossChat && "border-accent bg-accent/20 dark:border-accent dark:bg-accent/10"
+                       )}
+                    >
+                      {getArtifactIcon(ref.artifact.content_type)}
+                      <span className="max-w-[120px] truncate">{ref.artifact.title}</span>
+                                             {isCrossChat && (
+                         <Archive className="h-2 w-2 text-primary" />
+                       )}
+                      {ref.type === "insert" ? (
+                        <Copy className="h-3 w-3 text-blue-500" />
+                      ) : (
+                        <Plus className="h-3 w-3 text-green-500" />
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-4 w-4 p-0 hover:bg-destructive/20"
+                        onClick={() => handleRemoveArtifactReference(ref.id)}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </Badge>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* File preview area - appears above the input */}
         {hasFiles && (
           <div className="pt-4 px-4">
@@ -505,8 +739,8 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
                 placeholder={
                   currentPersona
                     ? `Ask ${currentPersona.name} anything...`
-                    : uploadedFiles.length > 0
-                      ? "Ask me anything about your files, or send them without additional text..."
+                    : uploadedFiles.length > 0 || artifactReferences.length > 0
+                      ? "Ask me anything about your files or artifacts, or send them without additional text..."
                       : webSearchEnabled && currentModelSupportsSearch
                         ? "Ask anything - I'll search the web for current info..."
                         : webSearchEnabled && !currentModelSupportsSearch
@@ -582,6 +816,40 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
                       onRemoveFile={handleRemoveFile}
                       disabled={status === "streaming" || status === "submitted"}
                     />
+
+                    {/* Enhanced Artifact Picker */}
+                    <div className="flex items-center gap-1">
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div>
+                              <ArtifactPicker
+                                threadId={threadId}
+                                onSelectArtifact={handleArtifactSelect}
+                                trigger={
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-9 w-9 transition-all duration-200 rounded-lg hover:bg-muted border border-border/50"
+                                    aria-label="Insert artifacts from your library"
+                                    disabled={status === "streaming" || status === "submitted"}
+                                  >
+                                    <Archive className="h-4 w-4" />
+                                  </Button>
+                                }
+                              />
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Insert artifacts from your library</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                      
+                      {/* Cross-Chat Artifact Indicator */}
+                      <CrossChatArtifactIndicator currentThreadId={threadId} />
+                    </div>
 
                     {/* Web Search Toggle */}
                     <TooltipProvider>
@@ -706,7 +974,10 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDeletePersona} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            <AlertDialogAction
+              onClick={confirmDeletePersona}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -723,7 +994,10 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDeleteTemplate} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            <AlertDialogAction
+              onClick={confirmDeleteTemplate}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -759,7 +1033,7 @@ const PureChatModelDropdown = () => {
 
   const getModelIcon = useCallback((model: AIModel) => {
     const modelConfig = getModelConfig(model)
-    
+
     // Provider icons
     switch (modelConfig.provider) {
       case "openai":
@@ -778,45 +1052,46 @@ const PureChatModelDropdown = () => {
   const getModelBadges = useCallback((model: AIModel) => {
     const modelConfig = getModelConfig(model)
     const badges = []
-    
+
     if (modelConfig.supportsSearch) {
-      badges.push(
-        <Search key="search" className="w-3 h-3 text-blue-500" />
-      )
+      badges.push(<Search key="search" className="w-3 h-3 text-blue-500" />)
     }
-    
+
     if (modelConfig.supportsThinking) {
-      badges.push(
-        <Sparkles key="thinking" className="w-3 h-3 text-purple-500" />
-      )
+      badges.push(<Sparkles key="thinking" className="w-3 h-3 text-purple-500" />)
     }
-    
+
     return badges
   }, [])
 
   const getProviderName = useCallback((model: AIModel) => {
     const modelConfig = getModelConfig(model)
     switch (modelConfig.provider) {
-      case "openai": return "OpenAI"
-      case "google": return "Google"
-      case "openrouter": return "OpenRouter"
-      case "ollama": return "Ollama"
-      default: return ""
+      case "openai":
+        return "OpenAI"
+      case "google":
+        return "Google"
+      case "openrouter":
+        return "OpenRouter"
+      case "ollama":
+        return "Ollama"
+      default:
+        return ""
     }
   }, [])
 
   // Group models by provider
   const groupedModels = useMemo(() => {
     const groups: Record<string, AIModel[]> = {}
-    
-    availableModels.forEach(model => {
+
+    availableModels.forEach((model) => {
       const provider = getProviderName(model)
       if (!groups[provider]) {
         groups[provider] = []
       }
       groups[provider].push(model)
     })
-    
+
     return groups
   }, [availableModels, getProviderName])
 
@@ -845,12 +1120,8 @@ const PureChatModelDropdown = () => {
           >
             <div className="flex items-center gap-2">
               {getModelIcon(selectedModel)}
-              <span className="font-medium max-w-[120px] truncate">
-                {selectedModel.replace("ollama:", "")}
-              </span>
-              <div className="flex items-center gap-1">
-                {getModelBadges(selectedModel)}
-              </div>
+              <span className="font-medium max-w-[120px] truncate">{selectedModel.replace("ollama:", "")}</span>
+              <div className="flex items-center gap-1">{getModelBadges(selectedModel)}</div>
               <ChevronDown className="w-3 h-3 opacity-50" />
             </div>
           </Button>
@@ -876,18 +1147,14 @@ const PureChatModelDropdown = () => {
                 >
                   <div className="flex items-center gap-2 flex-1 min-w-0">
                     <span className="truncate">{model.replace("ollama:", "")}</span>
-                    <div className="flex items-center gap-1">
-                      {getModelBadges(model)}
-                    </div>
+                    <div className="flex items-center gap-1">{getModelBadges(model)}</div>
                   </div>
-                  {selectedModel === model && (
-                    <Check className="w-4 h-4 text-primary flex-shrink-0" />
-                  )}
+                  {selectedModel === model && <Check className="w-4 h-4 text-primary flex-shrink-0" />}
                 </DropdownMenuItem>
               ))}
             </div>
           ))}
-          
+
           {availableModels.length < AI_MODELS.length && (
             <>
               <DropdownMenuSeparator />
