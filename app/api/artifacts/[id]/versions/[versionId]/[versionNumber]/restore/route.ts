@@ -4,7 +4,7 @@ import { headers } from "next/headers"
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string; versionNumber: string } }
+  { params }: { params: { id: string; versionId: string } }
 ) {
   try {
     const headersList = await headers()
@@ -19,11 +19,6 @@ export async function PUT(
 
     if (authError || !user) {
       return NextResponse.json({ error: "Invalid authentication token" }, { status: 401 })
-    }
-
-    const versionNumber = parseInt(params.versionNumber)
-    if (isNaN(versionNumber)) {
-      return NextResponse.json({ error: "Invalid version number" }, { status: 400 })
     }
 
     // First verify the artifact belongs to the user
@@ -43,7 +38,7 @@ export async function PUT(
       .from("artifact_versions")
       .select("*")
       .eq("artifact_id", params.id)
-      .eq("version", versionNumber)
+      .eq("id", params.versionId)
       .single()
 
     if (versionError) {
@@ -59,7 +54,7 @@ export async function PUT(
         content: artifact.content,
         metadata: {
           ...artifact.metadata,
-          change_description: `Backup before restoring to version ${versionNumber}`,
+          change_description: `Backup before restoring to version ${version.version}`,
           previous_version: artifact.version,
           content_length: artifact.content.length,
           lines_count: artifact.content.split('\n').length,
@@ -81,7 +76,7 @@ export async function PUT(
         version: artifact.version + 1,
         metadata: {
           ...artifact.metadata,
-          restored_from_version: versionNumber,
+          restored_from_version: version.version,
           restored_at: new Date().toISOString()
         },
         updated_at: new Date().toISOString()

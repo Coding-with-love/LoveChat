@@ -64,12 +64,13 @@ export function ArtifactViewer({ open, onOpenChange, artifact }: ArtifactViewerP
     }
   }
 
-  const handleRestoreVersion = async (versionNumber: number) => {
+  const handleRestoreVersion = async (versionId: string) => {
     if (!artifact) return
     
     try {
-      await restoreArtifactVersion(artifact.id, versionNumber)
-      toast.success(`Restored to version ${versionNumber}`)
+      const version = versions.find(v => v.id === versionId)
+      await restoreArtifactVersion(artifact.id, versionId)
+      toast.success(`Restored to version ${version?.version || 'unknown'}`)
       await loadVersions() // Reload versions
     } catch (error) {
       console.error("Error restoring version:", error)
@@ -524,7 +525,7 @@ export function ArtifactViewer({ open, onOpenChange, artifact }: ArtifactViewerP
                                 <Button 
                                   variant="ghost" 
                                   size="sm" 
-                                  onClick={() => handleRestoreVersion(version.version)}
+                                  onClick={() => handleRestoreVersion(version.id)}
                                   className="h-7 text-xs text-orange-600 hover:text-orange-700"
                                 >
                                   <RotateCcw className="h-3 w-3 mr-1" />

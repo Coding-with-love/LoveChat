@@ -52,7 +52,7 @@ interface ArtifactStore {
   // Version history methods
   fetchArtifactVersions: (artifactId: string) => Promise<ArtifactVersion[]>
   createArtifactVersion: (artifactId: string, content: string, changeDescription?: string, metadata?: Record<string, any>) => Promise<void>
-  restoreArtifactVersion: (artifactId: string, versionNumber: number) => Promise<void>
+  restoreArtifactVersion: (artifactId: string, versionId: string) => Promise<void>
   downloadArtifactVersion: (artifactId: string, versionId: string) => Promise<void>
 
   // Enhanced Utility Methods
@@ -340,10 +340,10 @@ export const useArtifactStore = create<ArtifactStore>()(
         }
       },
 
-      restoreArtifactVersion: async (artifactId, versionNumber) => {
+      restoreArtifactVersion: async (artifactId, versionId) => {
         try {
           const headers = await getAuthHeaders()
-          const response = await fetch(`${API_BASE}/${artifactId}/versions/${versionNumber}/restore`, {
+          const response = await fetch(`${API_BASE}/${artifactId}/versions/${versionId}/restore`, {
             method: "PUT",
             headers,
           })
