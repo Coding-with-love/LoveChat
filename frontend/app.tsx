@@ -16,7 +16,12 @@ import { GlobalResumingIndicator } from "./components/ResumingIndicator"
 import ThemeProvider from "./components/ThemeProvider"
 import GlobalLanguageDialog from "./components/GlobalLanguageDialog"
 import { useTabVisibility } from "./hooks/useTabVisibility"
+import { useAPIKeyHydration } from "./hooks/useAPIKeyHydration"
+
 function AuthenticatedApp() {
+  // Ensure API keys are properly loaded and persist across tab switches
+  useAPIKeyHydration()
+  
   // Add tab visibility management
   useTabVisibility({
     onVisible: () => {

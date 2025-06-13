@@ -19,6 +19,7 @@ import AIActionResultDialog from "./AIActionResultDialog"
 import { ThinkingToggle } from "./ThinkingToggle"
 import ThinkingContent from "./ThinkingContent"
 import { ThinkingIndicator } from "./ThinkingIndicator"
+import MessageContentRenderer from "./MessageContentRenderer"
 
 // Helper function to check equality (you might want to import this from a utility library)
 function equal(a: any, b: any): boolean {
@@ -43,6 +44,7 @@ function PureMessage({
   showThinking,
   toggleThinking,
   isThinkingModel,
+  onRevertToOriginal,
 }: {
   threadId: string
   message: ExtendedUIMessage
@@ -56,6 +58,7 @@ function PureMessage({
   showThinking?: boolean
   toggleThinking?: () => void
   isThinkingModel?: boolean
+  onRevertToOriginal?: (originalText: string) => void
 }) {
   const [mode, setMode] = useState<"view" | "edit">("view")
   const [showAnimation, setShowAnimation] = useState(false)
@@ -106,7 +109,7 @@ function PureMessage({
   }, [resumeComplete, resumedMessageId, message.id])
 
   // Extract file attachments from message parts
-  const fileAttachments: any[] = []
+  const fileAttachments = (message.parts?.find((part) => (part as any).type === "file_attachments") as any)?.attachments || []
 
   // Extract sources if available
   const sources: any[] = []
@@ -261,8 +264,9 @@ function PureMessage({
             }
 
             if (type === "text") {
-              // Clean the text content by removing thinking tags
-              let cleanText = part.text
+              // CRITICAL FIX: Use message.content if available (for updated messages), otherwise fall back to part.text
+              // This ensures that rephrased text saved to the database is displayed correctly
+              let cleanText = message.content || part.text
               let extractedThinking = ""
 
               if (cleanText.includes("<Thinking>") && cleanText.includes("</Thinking>")) {
@@ -293,7 +297,7 @@ function PureMessage({
 
                   {/* Thinking Content - Show when expanded */}
                   {message.role === "assistant" && (reasoning || extractedThinking) && showThinking && (
-                    <ThinkingContent reasoning={reasoning || extractedThinking} isExpanded={showThinking} />
+                    <ThinkingContent reasoning={reasoning || extractedThinking} />
                   )}
 
                   <div
@@ -310,12 +314,13 @@ function PureMessage({
                     )}
                     data-message-text-content="true" // Add this attribute to help identify text content areas
                   >
-                    <MarkdownRenderer
+                    <MessageContentRenderer
                       content={cleanText}
-                      id={message.id}
-                      threadId={threadId}
                       messageId={message.id}
+                      threadId={threadId}
                       onCodeConvert={handleCodeConvert}
+                      onRevertRephrase={onRevertToOriginal}
+                      isMarkdown={true}
                     />
 
                     {/* Completion celebration effect */}
@@ -353,8 +358,9 @@ function PureMessage({
           }
 
           if (type === "text") {
-            // Clean the text content by removing thinking tags
-            let cleanText = part.text
+            // CRITICAL FIX: Use message.content if available (for updated messages), otherwise fall back to part.text
+            // This ensures that rephrased text saved to the database is displayed correctly
+            let cleanText = message.content || part.text
             if (cleanText.includes("<Thinking>") && cleanText.includes("</Thinking>")) {
               cleanText = cleanText.replace(/<Thinking>[\s\S]*?<\/Thinking>/g, "").trim()
             }
@@ -377,9 +383,13 @@ function PureMessage({
                   />
                 )}
                 {mode === "view" && (
-                  <p className="whitespace-pre-wrap select-text" data-message-text-content="true">
-                    {cleanText}
-                  </p>
+                  <MessageContentRenderer
+                    content={cleanText}
+                    messageId={message.id}
+                    threadId={threadId}
+                    onRevertRephrase={onRevertToOriginal}
+                    isMarkdown={false}
+                  />
                 )}
 
                 {mode === "view" && (
@@ -412,7 +422,7 @@ function PureMessage({
 
                 {/* Thinking Content - Show when expanded */}
                 {message.role === "assistant" && reasoning && showThinking && (
-                  <ThinkingContent reasoning={reasoning} isExpanded={showThinking} />
+                  <ThinkingContent reasoning={reasoning} />
                 )}
 
                 <div
@@ -429,12 +439,13 @@ function PureMessage({
                   )}
                   data-message-text-content="true" // Add this attribute to help identify text content areas
                 >
-                  <MarkdownRenderer
+                  <MessageContentRenderer
                     content={cleanText}
-                    id={message.id}
-                    threadId={threadId}
                     messageId={message.id}
+                    threadId={threadId}
                     onCodeConvert={handleCodeConvert}
+                    onRevertRephrase={onRevertToOriginal}
+                    isMarkdown={true}
                   />
 
                   {/* Completion celebration effect */}
@@ -496,6 +507,7 @@ const Message = memo(PureMessage, (prevProps, nextProps) => {
   if (prevProps.resumedMessageId !== nextProps.resumedMessageId) return false
   if (prevProps.showThinking !== nextProps.showThinking) return false
   if (prevProps.isThinkingModel !== nextProps.isThinkingModel) return false
+  if (prevProps.message.content !== nextProps.message.content) return false
   if (!equal(prevProps.message.parts, nextProps.message.parts)) return false
   if (prevProps.message.reasoning !== nextProps.message.reasoning) return false
   return true

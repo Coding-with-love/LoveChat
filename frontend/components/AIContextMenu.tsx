@@ -7,7 +7,6 @@ import { Button } from "./ui/button"
 import { Card } from "./ui/card"
 import { Loader2, Languages, RefreshCw, FileText, MessageSquare } from 'lucide-react'
 import { useLanguageDialogStore } from "@/frontend/stores/LanguageDialogStore"
-import InlineReplacement from "./InlineReplacement"
 
 interface AIContextMenuProps {
   selectedText: string
@@ -23,10 +22,6 @@ interface AIContextMenuProps {
 
 const AIContextMenu: React.FC<AIContextMenuProps> = ({ selectedText, position, onClose, onAction, isProcessing }) => {
   const { openDialog } = useLanguageDialogStore()
-  const [showReplacement, setShowReplacement] = useState(false)
-  const [replacementText, setReplacementText] = useState("")
-  const [isReplacing, setIsReplacing] = useState(false)
-  const [replacementPosition, setReplacementPosition] = useState({ x: 0, y: 0 })
   const menuRef = useRef<HTMLDivElement>(null)
   const [adjustedPosition, setAdjustedPosition] = useState({ x: position.x, y: position.y })
   const [processingAction, setProcessingAction] = useState<string | null>(null)
@@ -91,9 +86,7 @@ const AIContextMenu: React.FC<AIContextMenuProps> = ({ selectedText, position, o
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        if (!showReplacement) {
-          onClose()
-        }
+        onClose()
       }
     }
 
@@ -101,7 +94,7 @@ const AIContextMenu: React.FC<AIContextMenuProps> = ({ selectedText, position, o
     return () => {
       document.removeEventListener("mousedown", handleClickOutside)
     }
-  }, [onClose, showReplacement])
+  }, [onClose])
 
   // Handle escape key
   useEffect(() => {
@@ -132,37 +125,17 @@ const AIContextMenu: React.FC<AIContextMenuProps> = ({ selectedText, position, o
   const handleRephrase = async () => {
     console.log("🔄 Rephrase button clicked!")
     setProcessingAction("rephrase")
-    setIsReplacing(true)
-
-    // Calculate position for the replacement dialog
-    // Use selection position if available
-    const selection = window.getSelection()
-    if (selection && selection.rangeCount > 0) {
-      const range = selection.getRangeAt(0)
-      const rect = range.getBoundingClientRect()
-      setReplacementPosition({
-        x: rect.left,
-        y: rect.bottom + 10,
-      })
-    } else {
-      // Fallback to context menu position
-      setReplacementPosition({
-        x: position.x,
-        y: position.y + 50,
-      })
-    }
-
+    
     try {
-      // Call the action handler and get the result
-      const result = await onAction("rephrase", selectedText, undefined)
-      if (result) {
-        setReplacementText(result)
-        setShowReplacement(true)
-      }
+      // Delegate to the parent's onAction handler which handles the proper save flow
+      await onAction("rephrase", selectedText, undefined)
+      console.log("✅ Rephrase delegated to parent successfully")
+      
+      // Close the context menu since the parent will handle the replacement UI
+      onClose()
     } catch (error) {
       console.error("Failed to rephrase:", error)
     } finally {
-      setIsReplacing(false)
       setProcessingAction(null)
     }
   }
@@ -185,52 +158,7 @@ const AIContextMenu: React.FC<AIContextMenuProps> = ({ selectedText, position, o
     }
   }
 
-  if (showReplacement) {
-    return (
-      <div
-        style={{
-          position: "fixed",
-          left: replacementPosition.x,
-          top: replacementPosition.y,
-          zIndex: 50,
-        }}
-      >
-        <InlineReplacement
-          newText={replacementText}
-          onAccept={() => {
-            // Replace the selected text
-            const selection = window.getSelection()
-            if (selection && selection.rangeCount > 0) {
-              const range = selection.getRangeAt(0)
-              range.deleteContents()
-              range.insertNode(document.createTextNode(replacementText))
-              selection.removeAllRanges()
-            }
-            setShowReplacement(false)
-            onClose()
-          }}
-          onReject={() => {
-            setShowReplacement(false)
-            onClose()
-          }}
-          onRetry={async () => {
-            setIsReplacing(true)
-            try {
-              const result = await onAction("rephrase", selectedText, undefined)
-              if (result) {
-                setReplacementText(result)
-              }
-            } catch (error) {
-              console.error("Failed to retry rephrase:", error)
-            } finally {
-              setIsReplacing(false)
-            }
-          }}
-          isProcessing={isReplacing}
-        />
-      </div>
-    )
-  }
+
 
   return (
     <Card

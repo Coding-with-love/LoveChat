@@ -53,6 +53,7 @@ export default function CodeConverter({
   const [isLoadingConversions, setIsLoadingConversions] = useState(false)
   const [activeTab, setActiveTab] = useState<TabType>("new")
   const [hasHistory, setHasHistory] = useState(false)
+  const [dropdownPosition, setDropdownPosition] = useState<'above' | 'below'>('above')
   const buttonRef = useRef<HTMLButtonElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -84,6 +85,23 @@ export default function CodeConverter({
 
   // Toggle dropdown
   const toggleDropdown = () => {
+    if (!isOpen) {
+      // Check if there's enough space above for the dropdown
+      if (buttonRef.current) {
+        const buttonRect = buttonRef.current.getBoundingClientRect()
+        const dropdownHeight = 400 // max height of dropdown
+        const spaceAbove = buttonRect.top
+        const spaceBelow = window.innerHeight - buttonRect.bottom
+        
+        // Position below if there's not enough space above or if this is near the top of the viewport
+        if (spaceAbove < dropdownHeight + 20 || buttonRect.top < 100) {
+          setDropdownPosition('below')
+        } else {
+          setDropdownPosition('above')
+        }
+      }
+    }
+    
     setIsOpen(!isOpen)
     setSearchTerm("")
 
@@ -348,7 +366,12 @@ export default function CodeConverter({
       {isOpen && (
         <div
           ref={dropdownRef}
-          className="absolute right-0 top-0 transform -translate-y-full -mt-1 w-80 bg-background border border-border rounded-md shadow-lg z-[9999] overflow-hidden"
+          className={cn(
+            "absolute right-0 w-80 bg-background border border-border rounded-md shadow-lg z-[9999] overflow-hidden",
+            dropdownPosition === 'above' 
+              ? "top-0 transform -translate-y-full -mt-1" 
+              : "top-full mt-1"
+          )}
           style={{ maxHeight: "400px" }}
         >
           {/* Tabs */}

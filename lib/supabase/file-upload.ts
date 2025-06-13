@@ -41,8 +41,11 @@ export async function uploadFile(
 
   console.log("✅ User authenticated:", user.id)
 
+  // Sanitize filename to remove invalid characters for storage
+  const sanitizedFileName = sanitizeFileName(file.name)
+  
   // Use user ID in the file path for better organization and permissions
-  const fileName = `${user.id}/${threadId}/${Date.now()}-${file.name}`
+  const fileName = `${user.id}/${threadId}/${Date.now()}-${sanitizedFileName}`
   console.log("📁 Uploading to path:", fileName)
 
   const { data: uploadData, error: uploadError } = await supabaseClient.storage
@@ -154,6 +157,106 @@ The file has been uploaded successfully and is available at: ${urlData.publicUrl
 
 The PDF file has been saved and is available at: ${urlData.publicUrl}`
     }
+  } else if (file.type.startsWith("image/")) {
+    console.log("🖼️ Processing image file:", file.name)
+
+    try {
+      // Use the image analysis API to get a description
+      const formData = new FormData()
+      formData.append("file", file)
+
+      // Get the auth token from the current session
+      const { data: { session } } = await supabaseClient.auth.getSession()
+      const authToken = session?.access_token
+
+      console.log("🔄 Analyzing image with vision AI...")
+      const analysisResponse = await fetch("/api/analyze-image", {
+        method: "POST",
+        body: formData,
+        headers: authToken ? {
+          'Authorization': `Bearer ${authToken}`
+        } : {}
+      })
+
+      if (analysisResponse.ok) {
+        const analysisResult = await analysisResponse.json()
+        
+        console.log("📊 Image analysis response:", {
+          success: analysisResult.success,
+          method: analysisResult.method,
+          hasDescription: !!analysisResult.description,
+          descriptionPreview: analysisResult.description?.substring(0, 100) + "...",
+          hasError: !!analysisResult.error
+        })
+
+        if (analysisResult.success && analysisResult.description) {
+          // Check if this is a real vision analysis or a fallback
+          if (analysisResult.method === "fallback" || analysisResult.method === "error-fallback") {
+            console.log("⚠️ Image analysis returned fallback response:", analysisResult.error)
+            content = `🖼️ **Image: ${file.name}** (${formatFileSize(file.size)})
+
+Image analysis is not working: ${analysisResult.error || "Unknown error"}
+
+**To discuss this image:**
+- Describe what you see in the image
+- Ask specific questions about the image content
+- The AI can help analyze any descriptions you provide
+
+The image is available for viewing at: ${urlData.publicUrl}`
+          } else {
+            console.log("✅ Image analysis successful:", {
+              descriptionLength: analysisResult.description.length,
+              method: analysisResult.method,
+            })
+
+            extractedText = analysisResult.description
+            content = `🖼️ **Image: ${file.name}** (analyzed with ${analysisResult.method})
+
+${analysisResult.description}`
+          }
+        } else {
+          console.log("⚠️ Image analysis failed, using fallback...")
+          content = `🖼️ **Image: ${file.name}** (${formatFileSize(file.size)})
+
+This is an image file that has been uploaded successfully. The AI vision analysis is currently unavailable.
+
+**To discuss this image:**
+- Describe what you see in the image
+- Ask specific questions about the image content
+- The AI can help analyze any descriptions you provide
+
+The image is available for viewing at: ${urlData.publicUrl}`
+        }
+      } else {
+        console.log("⚠️ Image analysis API failed, using fallback...")
+        content = `🖼️ **Image: ${file.name}** (${formatFileSize(file.size)})
+
+This is an image file that has been uploaded successfully. 
+
+**To discuss this image:**
+- Describe what you see in the image  
+- Ask specific questions about the image content
+- The AI can help analyze any descriptions you provide
+
+The image is available for viewing at: ${urlData.publicUrl}`
+      }
+    } catch (error) {
+      console.error("❌ Error during image analysis:", error)
+      content = `🖼️ **Image: ${file.name}** (${formatFileSize(file.size)})
+
+**File Details:**
+- Type: ${file.type}
+- Size: ${formatFileSize(file.size)}
+- Status: Successfully uploaded
+- Analysis Error: ${error instanceof Error ? error.message : "Unknown error"}
+
+**To discuss this image:**
+- Describe what you see in the image
+- Ask specific questions about the image content  
+- The AI can help analyze any descriptions you provide
+
+The image is available for viewing at: ${urlData.publicUrl}`
+    }
   } else if (isTextBasedFile(file.name, file.type)) {
     try {
       console.log("📝 Attempting text extraction for text-based file:", file.name)
@@ -172,8 +275,8 @@ The PDF file has been saved and is available at: ${urlData.publicUrl}`
       content = null
     }
   } else {
-    console.log("📄 Skipping text extraction for binary file:", file.name, file.type)
-    // For other binary files like images, videos, etc., we don't extract text content
+    console.log("📄 Skipping content extraction for binary file:", file.name, file.type)
+    // For other binary files like videos, audio, etc., we don't extract content
     content = `[${getFileCategory(file.name, file.type)} file uploaded - ${file.name}]`
   }
 
@@ -458,4 +561,25 @@ export function cleanTextContent(content: string): string {
     .replace(/\uFFFD/g, "") // Remove replacement characters
     .replace(/\s+/g, " ") // Normalize whitespace
     .trim()
+}
+
+export function sanitizeFileName(fileName: string): string {
+  if (!fileName) return "file"
+
+  // Get file extension
+  const lastDotIndex = fileName.lastIndexOf(".")
+  const name = lastDotIndex > 0 ? fileName.substring(0, lastDotIndex) : fileName
+  const extension = lastDotIndex > 0 ? fileName.substring(lastDotIndex) : ""
+
+  // Sanitize the name part
+  const sanitizedName = name
+    .replace(/[^a-zA-Z0-9._-]/g, "_") // Replace invalid chars with underscore
+    .replace(/_{2,}/g, "_") // Replace multiple underscores with single
+    .replace(/^_+|_+$/g, "") // Remove leading/trailing underscores
+    .substring(0, 100) // Limit length
+
+  // Ensure we have a valid name
+  const finalName = sanitizedName || "file"
+  
+  return finalName + extension
 }

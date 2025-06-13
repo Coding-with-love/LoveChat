@@ -21,131 +21,80 @@ export default function APIKeyForm() {
   const [isSaving, setIsSaving] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
 
-  // Load keys on mount and set up tab visibility refresh
+  // Load keys on mount
   useEffect(() => {
     const initializeKeys = async () => {
       try {
         console.log("🔄 APIKeyForm initializing...")
         setIsLoading(true)
         
-        // Try to load from store first (in case already loaded)
-        let openaiKeyValue = getKey("openai") || ""
-        let googleKeyValue = getKey("google") || ""
-        let openrouterKeyValue = getKey("openrouter") || ""
-        
-        // If no keys found, try loading from database
-        if (!openaiKeyValue && !googleKeyValue && !openrouterKeyValue) {
-          console.log("🔄 No keys in store, loading from database...")
-          
-          // Add timeout to prevent infinite loading
-          const loadPromise = loadKeys()
-          const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error("Load keys timeout")), 10000)
-          )
-          
-          try {
-            await Promise.race([loadPromise, timeoutPromise])
-            
-            // Get keys again after loading
-            openaiKeyValue = getKey("openai") || ""
-            googleKeyValue = getKey("google") || ""
-            openrouterKeyValue = getKey("openrouter") || ""
-          } catch (loadError) {
-            console.warn("⚠️ Database load failed, using store state:", loadError)
-          }
+        // First check if we already have keys in the store
+        const currentKeys = getAllKeys()
+        if (Object.keys(currentKeys).length > 0) {
+          console.log("✅ Found keys in store, using them")
+          setOpenaiKey(getKey("openai") || "")
+          setGoogleKey(getKey("google") || "")
+          setOpenrouterKey(getKey("openrouter") || "")
+          setIsLoading(false)
+          return
         }
-
-        console.log("✅ Keys loaded:", {
-          openai: !!openaiKeyValue,
-          google: !!googleKeyValue,
-          openrouter: !!openrouterKeyValue,
-        })
-
-        setOpenaiKey(openaiKeyValue)
-        setGoogleKey(googleKeyValue)
-        setOpenrouterKey(openrouterKeyValue)
+        
+        // If no keys in store, try to load from database
+        console.log("🔄 No keys in store, loading from database...")
+        await loadKeys()
+        
+        // Update form state with loaded keys
+        setOpenaiKey(getKey("openai") || "")
+        setGoogleKey(getKey("google") || "")
+        setOpenrouterKey(getKey("openrouter") || "")
+        
+        console.log("✅ API keys loaded successfully")
       } catch (error) {
         console.error("❌ Error loading API keys:", error)
         toast.error("Failed to load API keys")
         
-        // Even on error, try to get keys from current store state
-        const openaiKeyValue = getKey("openai") || ""
-        const googleKeyValue = getKey("google") || ""
-        const openrouterKeyValue = getKey("openrouter") || ""
-        
-        setOpenaiKey(openaiKeyValue)
-        setGoogleKey(googleKeyValue)
-        setOpenrouterKey(openrouterKeyValue)
+        // Even on error, show the form so user can still configure keys
+        setOpenaiKey(getKey("openai") || "")
+        setGoogleKey(getKey("google") || "")
+        setOpenrouterKey(getKey("openrouter") || "")
       } finally {
         setIsLoading(false)
-        console.log("🔄 APIKeyForm initialization complete")
       }
     }
 
     initializeKeys()
-  }, [getKey, loadKeys])
+  }, [getKey, getAllKeys, loadKeys])
 
-  // Handle tab visibility changes - refresh keys when tab becomes visible
+  // Show loading for maximum 5 seconds, then force show the form
   useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        console.log("🔄 Settings tab became visible, refreshing API keys")
+    const loadingTimeout = setTimeout(() => {
+      if (isLoading || storeLoading) {
+        console.warn("⚠️ APIKeyForm loading timeout - forcing display")
+        setIsLoading(false)
         
-        // Refresh keys from current store state (don't reload from DB)
-        const openaiKeyValue = getKey("openai") || ""
-        const googleKeyValue = getKey("google") || ""
-        const openrouterKeyValue = getKey("openrouter") || ""
-        
-        setOpenaiKey(openaiKeyValue)
-        setGoogleKey(googleKeyValue)
-        setOpenrouterKey(openrouterKeyValue)
+        // Load keys from current store state
+        setOpenaiKey(getKey("openai") || "")
+        setGoogleKey(getKey("google") || "")
+        setOpenrouterKey(getKey("openrouter") || "")
       }
-    }
-
-    document.addEventListener("visibilitychange", handleVisibilityChange)
-    window.addEventListener("focus", handleVisibilityChange)
-
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange)
-      window.removeEventListener("focus", handleVisibilityChange)
-    }
-  }, [getKey])
-
-  // Show error toast when store error occurs
-  useEffect(() => {
-    if (storeError) {
-      toast.error(storeError)
-    }
-  }, [storeError])
+    }, 5000)
+    
+    return () => clearTimeout(loadingTimeout)
+  }, [isLoading, storeLoading, getKey])
 
   const handleSaveKeys = async () => {
-    setIsSaving(true)
-
     try {
-      console.log("💾 Saving API keys...")
+      setIsSaving(true)
 
-      // Only save non-empty keys
-      if (openaiKey.trim()) {
-        await setKey("openai", openaiKey.trim())
-        console.log("✅ OpenAI key saved")
-      }
+      const updates = []
+      if (openaiKey.trim()) updates.push(setKey("openai", openaiKey.trim()))
+      if (googleKey.trim()) updates.push(setKey("google", googleKey.trim()))
+      if (openrouterKey.trim()) updates.push(setKey("openrouter", openrouterKey.trim()))
 
-      if (googleKey.trim()) {
-        await setKey("google", googleKey.trim())
-        console.log("✅ Google key saved")
-      }
-
-      if (openrouterKey.trim()) {
-        await setKey("openrouter", openrouterKey.trim())
-        console.log("✅ OpenRouter key saved")
-      }
-
-      // Log all available keys after saving
-      console.log("📋 All keys after saving:", getAllKeys())
-
+      await Promise.all(updates)
       toast.success("API keys saved successfully")
     } catch (error) {
-      console.error("❌ Error saving API keys:", error)
+      console.error("Error saving API keys:", error)
       toast.error("Failed to save API keys")
     } finally {
       setIsSaving(false)
@@ -154,88 +103,53 @@ export default function APIKeyForm() {
 
   const handleClearKey = async (provider: string) => {
     try {
-      if (provider === "openai") {
-        setOpenaiKey("")
-        await removeKey("openai")
-      } else if (provider === "google") {
-        setGoogleKey("")
-        await removeKey("google")
-      } else if (provider === "openrouter") {
-        setOpenrouterKey("")
-        await removeKey("openrouter")
+      await removeKey(provider)
+
+      // Update local state
+      switch (provider) {
+        case "openai":
+          setOpenaiKey("")
+          break
+        case "google":
+          setGoogleKey("")
+          break
+        case "openrouter":
+          setOpenrouterKey("")
+          break
       }
 
-      console.log(`🗑️ ${provider} key removed`)
-      toast.success(`${provider.charAt(0).toUpperCase() + provider.slice(1)} API key removed`)
+      toast.success(`${provider} API key removed`)
     } catch (error) {
-      console.error(`❌ Error removing ${provider} key:`, error)
+      console.error(`Error removing ${provider} API key:`, error)
       toast.error(`Failed to remove ${provider} API key`)
     }
   }
 
-  // Fallback mechanism: if loading for more than 15 seconds, show the form anyway
-  useEffect(() => {
-    if (isLoading || storeLoading) {
-      const fallbackTimer = setTimeout(() => {
-        if (isLoading || storeLoading) {
-          console.warn("⚠️ APIKeyForm loading timeout - forcing display")
-          setIsLoading(false)
-          
-          // Load keys from current store state
-          const openaiKeyValue = getKey("openai") || ""
-          const googleKeyValue = getKey("google") || ""
-          const openrouterKeyValue = getKey("openrouter") || ""
-          
-          setOpenaiKey(openaiKeyValue)
-          setGoogleKey(googleKeyValue)
-          setOpenrouterKey(openrouterKeyValue)
-        }
-      }, 15000)
-      
-      return () => clearTimeout(fallbackTimer)
-    }
-  }, [isLoading, storeLoading, getKey])
-
-  const [showForceLoad, setShowForceLoad] = useState(false)
-
-  // Show force load button after 5 seconds
-  useEffect(() => {
-    if (isLoading || storeLoading) {
-      const timer = setTimeout(() => {
-        setShowForceLoad(true)
-      }, 5000)
-      return () => clearTimeout(timer)
-    } else {
-      setShowForceLoad(false)
-    }
-  }, [isLoading, storeLoading])
-
-  const handleForceLoad = () => {
-    console.log("🔧 Force loading API keys form")
-    setIsLoading(false)
-    
-    // Load keys from current store state
-    const openaiKeyValue = getKey("openai") || ""
-    const googleKeyValue = getKey("google") || ""
-    const openrouterKeyValue = getKey("openrouter") || ""
-    
-    setOpenaiKey(openaiKeyValue)
-    setGoogleKey(googleKeyValue)
-    setOpenrouterKey(openrouterKeyValue)
-    
-    setShowForceLoad(false)
-  }
-
-  if (isLoading || storeLoading) {
+  // Show loading state only if we're actually loading and for less than 5 seconds
+  if (isLoading && !storeError) {
     return (
       <div className="flex flex-col items-center justify-center p-8 space-y-4">
         <div className="animate-spin rounded-full h-8 w-8 border-2 border-foreground border-t-transparent"></div>
         <p className="text-sm text-muted-foreground">Loading API keys...</p>
-        {showForceLoad && (
-          <Button onClick={handleForceLoad} variant="outline" size="sm">
-            Force Load
-          </Button>
-        )}
+      </div>
+    )
+  }
+
+  // Show error state if there's an error
+  if (storeError) {
+    return (
+      <div className="flex flex-col items-center justify-center p-8 space-y-4">
+        <p className="text-sm text-destructive">Error loading API keys: {storeError}</p>
+        <Button 
+          onClick={() => {
+            setIsLoading(true)
+            loadKeys().finally(() => setIsLoading(false))
+          }} 
+          variant="outline" 
+          size="sm"
+        >
+          Retry
+        </Button>
       </div>
     )
   }
@@ -348,7 +262,7 @@ export default function APIKeyForm() {
           <Label htmlFor="openrouter-key" className="text-sm font-medium">
             OpenRouter API Key
           </Label>
-          <span className="text-xs text-muted-foreground">Required for Claude and Llama models</span>
+          <span className="text-xs text-muted-foreground">Required for Claude and other models</span>
         </div>
         <div className="relative">
           <Input
@@ -392,8 +306,7 @@ export default function APIKeyForm() {
         </div>
       </div>
 
-      {/* Save Button */}
-      <Button onClick={handleSaveKeys} className="w-full" disabled={isSaving || storeLoading}>
+      <Button onClick={handleSaveKeys} className="w-full" disabled={isSaving}>
         {isSaving ? (
           <>
             <span className="animate-spin mr-2">⟳</span>

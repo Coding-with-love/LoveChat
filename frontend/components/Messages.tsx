@@ -14,6 +14,7 @@ import { useAIActions } from "@/frontend/hooks/useAIActions"
 import AIContextMenu from "./AIContextMenu"
 import AIActionResultDialog from "./AIActionResultDialog"
 import InlineReplacement from "./InlineReplacement"
+import RephrasedTextIndicator from "./RephrasedTextIndicator"
 import { supabase } from "@/lib/supabase/client"
 import { updateMessageInDatabase } from "@/lib/supabase/queries"
 import { toast } from "sonner"
@@ -72,6 +73,72 @@ function PureMessages({
   const [targetMessageId, setTargetMessageId] = useState<string | null>(null)
   const lastSelectionRef = useRef<Range | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+  
+  // Track original text for each message to detect rephrased content
+  const [originalTexts, setOriginalTexts] = useState<Record<string, string>>({})
+
+  // Helper function to detect if a message contains rephrased content
+  const isMessageRephrased = (message: ExtendedUIMessage): boolean => {
+    return message.content.includes('*[Rephrased]:') || !!originalTexts[message.id]
+  }
+
+  // Helper function to extract original text from rephrased content
+  const getOriginalText = (message: ExtendedUIMessage): string => {
+    // First check our tracked original texts
+    if (originalTexts[message.id]) {
+      return originalTexts[message.id]
+    }
+    
+    // Try to extract from content if it contains rephrased markers
+    if (message.content.includes('*[Rephrased]:')) {
+      // Extract text before the first rephrased marker
+      const beforeRephrased = message.content.split('*[Rephrased]:')[0].trim()
+      if (beforeRephrased) {
+        return beforeRephrased
+      }
+    }
+    
+    // Fallback to parts if available
+    const textPart = message.parts?.find(part => part.type === 'text')
+    return textPart?.text || message.content
+  }
+
+  // Helper function to get current rephrased text
+  const getRephrasedText = (message: ExtendedUIMessage): string => {
+    if (message.content.includes('*[Rephrased]:')) {
+      // Extract the latest rephrased text
+      const rephrasedMatches = message.content.match(/\*\[Rephrased\]: (.*?)\*/g)
+      if (rephrasedMatches && rephrasedMatches.length > 0) {
+        const lastMatch = rephrasedMatches[rephrasedMatches.length - 1]
+        const extracted = lastMatch.replace(/\*\[Rephrased\]: (.*?)\*/, '$1')
+        return extracted
+      }
+    }
+    return message.content
+  }
+
+  // Handle reverting to original text
+  const handleRevertToOriginalText = async (messageId: string, originalText: string) => {
+    const message = messages.find(m => m.id === messageId)
+    if (!message) return
+    
+    console.log("🔄 Reverting message to original text:", {
+      messageId,
+      originalText: originalText.substring(0, 100),
+      currentContent: message.content.substring(0, 100)
+    })
+
+    const success = await updateMessageContent(messageId, originalText)
+    if (success) {
+      // Remove from tracked original texts since it's no longer rephrased
+      setOriginalTexts(prev => {
+        const updated = { ...prev }
+        delete updated[messageId]
+        return updated
+      })
+      toast.success("Reverted to original text")
+    }
+  }
 
   const handleAIAction = async (
     action: "explain" | "translate" | "rephrase" | "summarize",
@@ -85,16 +152,54 @@ function PureMessages({
     if (selection && selection.rangeCount > 0) {
       lastSelectionRef.current = selection.getRangeAt(0).cloneRange()
 
+      // Enhanced debugging for message detection
+      console.log("🔍 Selection debug info:", {
+        selectionText: selection.toString().substring(0, 100),
+        rangeCount: selection.rangeCount,
+        anchorNode: selection.anchorNode?.nodeType,
+        anchorNodeText: selection.anchorNode?.textContent?.substring(0, 50),
+      })
+
       // Find which message contains this selection
       let messageElement = selection.anchorNode?.parentElement
-      while (messageElement && !messageElement.dataset.messageId) {
+      let attempts = 0
+      const maxAttempts = 10
+      
+      console.log("🔍 Starting DOM traversal to find message ID...")
+      while (messageElement && !messageElement.dataset.messageId && attempts < maxAttempts) {
+        attempts++
+        console.log(`🔍 Attempt ${attempts}: Checking element:`, {
+          tagName: messageElement.tagName,
+          className: messageElement.className,
+          hasMessageId: !!messageElement.dataset.messageId,
+          messageId: messageElement.dataset.messageId,
+          hasMessageContent: !!messageElement.dataset.messageContent,
+        })
         messageElement = messageElement.parentElement
       }
 
       if (messageElement?.dataset.messageId) {
         setTargetMessageId(messageElement.dataset.messageId)
-        console.log("🎯 Target message ID:", messageElement.dataset.messageId)
+        console.log("✅ Target message ID found:", messageElement.dataset.messageId)
+        
+        // Additional verification - find the actual message in our state
+        const foundMessage = messages.find(m => m.id === messageElement.dataset.messageId)
+        if (foundMessage) {
+          console.log("✅ Message verified in state:", {
+            messageId: foundMessage.id,
+            role: foundMessage.role,
+            contentLength: foundMessage.content.length,
+            contentPreview: foundMessage.content.substring(0, 100),
+          })
+        } else {
+          console.error("❌ Message ID found in DOM but not in state!")
+        }
+      } else {
+        console.error("❌ Could not find target message ID after", attempts, "attempts")
+        console.error("❌ Final element:", messageElement?.tagName, messageElement?.className)
       }
+    } else {
+      console.error("❌ No selection found")
     }
 
     // For rephrase, show inline replacement
@@ -250,6 +355,7 @@ function PureMessages({
     console.log("🔄 Starting replaceSelectedText with:", {
       newText: newText.substring(0, 100),
       originalText: originalText.substring(0, 100),
+      currentText: currentText.substring(0, 100),
       targetMessageId,
     })
 
@@ -276,46 +382,68 @@ function PureMessages({
       role: message.role,
     })
 
-    // Strategy: Replace the entire message content with a version where the original text is replaced
-    // We'll use a more aggressive approach - find any occurrence of the original text and replace it
+    // CRITICAL FIX: Use currentText instead of originalText for replacement
+    // currentText tracks the most recent version of the text being replaced
+    const textToReplace = currentText || originalText
+    console.log("🎯 Text to replace:", `"${textToReplace}"`)
+    console.log("🎯 New text:", `"${newText}"`)
+    
+    // DEBUG: Show detailed comparison
+    console.log("🔍 DETAILED DEBUG INFO:")
+    console.log("📝 Message content (first 500 chars):", `"${message.content.substring(0, 500)}"`)
+    console.log("📝 Message content length:", message.content.length)
+    console.log("🎯 Text to replace (first 200 chars):", `"${textToReplace.substring(0, 200)}"`)
+    console.log("🎯 Text to replace length:", textToReplace.length)
+    console.log("🔍 Direct includes check:", message.content.includes(textToReplace))
+    
+    // Show character-by-character comparison for first few characters
+    console.log("🔍 Character comparison (first 20 chars):")
+    for (let i = 0; i < Math.min(20, textToReplace.length); i++) {
+      const char = textToReplace[i]
+      const charCode = char.charCodeAt(0)
+      const inContent = message.content.includes(char)
+      console.log(`  [${i}] '${char}' (${charCode}) - in content: ${inContent}`)
+    }
+
     let updatedContent = message.content
 
-    // Try multiple replacement strategies
-    console.log("🔄 Trying replacement strategies...")
-    console.log("🔍 Original text to find:", `"${originalText}"`)
-    console.log("🔍 Message content:", `"${message.content}"`)
-    console.log("🔍 Does content include original?", message.content.includes(originalText))
-
-    // Strategy 1: Direct replacement
-    if (updatedContent.includes(originalText)) {
-      console.log("✅ Strategy 1: Direct replacement")
-      updatedContent = updatedContent.replace(originalText, newText)
+    // Strategy 1: Direct replacement with currentText
+    if (updatedContent.includes(textToReplace)) {
+      console.log("✅ Strategy 1: Direct replacement with currentText")
+      // Use global replacement to handle multiple occurrences
+      updatedContent = updatedContent.replace(new RegExp(textToReplace.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"), newText)
       console.log("✅ Strategy 1 result:", updatedContent.substring(0, 200))
     }
-    // Strategy 2: Normalize whitespace and try again
+    // Strategy 2: Try with originalText if currentText didn't work
+    else if (updatedContent.includes(originalText)) {
+      console.log("✅ Strategy 2: Direct replacement with originalText")
+      updatedContent = updatedContent.replace(new RegExp(originalText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"), newText)
+      console.log("✅ Strategy 2 result:", updatedContent.substring(0, 200))
+    }
+    // Strategy 3: Normalize whitespace and try again
     else {
-      const normalizedOriginal = originalText.replace(/\s+/g, " ").trim()
+      const normalizedTextToReplace = textToReplace.replace(/\s+/g, " ").trim()
       const normalizedContent = updatedContent.replace(/\s+/g, " ")
 
-      console.log("🔍 Strategy 2 - Normalized original:", `"${normalizedOriginal}"`)
-      console.log("🔍 Strategy 2 - Normalized content:", `"${normalizedContent}"`)
-      console.log("🔍 Strategy 2 - Does normalized content include normalized original?", normalizedContent.includes(normalizedOriginal))
+      console.log("🔍 Strategy 3 - Normalized text to replace:", `"${normalizedTextToReplace}"`)
+      console.log("🔍 Strategy 3 - Normalized content:", `"${normalizedContent.substring(0, 200)}"`)
+      console.log("🔍 Strategy 3 - Does normalized content include normalized text?", normalizedContent.includes(normalizedTextToReplace))
 
-      if (normalizedContent.includes(normalizedOriginal)) {
-        console.log("✅ Strategy 2: Normalized replacement")
-        updatedContent = updatedContent.replace(
-          new RegExp(originalText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
-          newText,
-        )
-        console.log("✅ Strategy 2 result:", updatedContent.substring(0, 200))
+      if (normalizedContent.includes(normalizedTextToReplace)) {
+        console.log("✅ Strategy 3: Normalized replacement")
+        // Use regex to handle different whitespace patterns
+        const escapedText = textToReplace.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+")
+        const regex = new RegExp(escapedText, "g")
+        updatedContent = updatedContent.replace(regex, newText)
+        console.log("✅ Strategy 3 result:", updatedContent.substring(0, 200))
       }
-      // Strategy 3: Word-by-word replacement for partial matches
+      // Strategy 4: Word-by-word replacement for partial matches
       else {
-        console.log("🔄 Strategy 3: Word-by-word replacement")
-        const words = originalText.split(/\s+/).filter((w) => w.length > 2)
+        console.log("🔄 Strategy 4: Word-by-word replacement")
+        const words = textToReplace.split(/\s+/).filter((w) => w.length > 3)
         let foundWords = 0
 
-        console.log("🔍 Strategy 3 - Words to find:", words)
+        console.log("🔍 Strategy 4 - Words to find:", words)
 
         for (const word of words) {
           if (updatedContent.includes(word)) {
@@ -326,46 +454,164 @@ function PureMessages({
           }
         }
 
-        console.log("🔍 Strategy 3 - Found words:", foundWords, "out of", words.length)
+        console.log("🔍 Strategy 4 - Found words:", foundWords, "out of", words.length)
 
-        if (foundWords > words.length * 0.7) {
-          console.log("✅ Strategy 3: Partial word replacement")
-          // Replace the most significant words
-          for (const word of words) {
-            if (updatedContent.includes(word) && word.length > 4) {
-              updatedContent = updatedContent.replace(word, newText.split(/\s+/)[0] || newText)
-              console.log("✅ Strategy 3 - Replaced word:", word, "with:", newText.split(/\s+/)[0] || newText)
-              break // Only replace the first significant word
+        if (foundWords >= Math.max(1, words.length * 0.7)) {
+          console.log("✅ Strategy 4: Partial word replacement")
+          // Find the longest matching word sequence
+          for (let i = words.length; i >= 1; i--) {
+            for (let j = 0; j <= words.length - i; j++) {
+              const wordSequence = words.slice(j, j + i).join(" ")
+              if (updatedContent.includes(wordSequence)) {
+                console.log("✅ Strategy 4 - Replacing word sequence:", wordSequence)
+                updatedContent = updatedContent.replace(wordSequence, newText)
+                console.log("✅ Strategy 4 result:", updatedContent.substring(0, 200))
+                break
+              }
+            }
+            if (updatedContent !== message.content) break // Exit if we found something to replace
+          }
+        }
+        
+        // Strategy 5: Fuzzy matching - handle cases where content has different formatting
+        if (updatedContent === message.content) {
+          console.log("🔄 Strategy 5: Fuzzy matching approach")
+          
+          // Try removing common markdown/formatting differences
+          const cleanedMessage = message.content
+            .replace(/\*\*(.*?)\*\*/g, '$1') // Remove bold markdown
+            .replace(/\*(.*?)\*/g, '$1')     // Remove italic markdown
+            .replace(/`(.*?)`/g, '$1')       // Remove code markdown
+            .replace(/\s+/g, ' ')            // Normalize all whitespace to single spaces
+            .trim()
+            
+          const cleanedTextToReplace = textToReplace
+            .replace(/\s+/g, ' ')            // Normalize all whitespace to single spaces
+            .trim()
+            
+          console.log("🔍 Strategy 5 - Cleaned message (first 200 chars):", `"${cleanedMessage.substring(0, 200)}"`)
+          console.log("🔍 Strategy 5 - Cleaned text to replace:", `"${cleanedTextToReplace}"`)
+          console.log("🔍 Strategy 5 - Cleaned includes check:", cleanedMessage.includes(cleanedTextToReplace))
+          
+          if (cleanedMessage.includes(cleanedTextToReplace)) {
+            console.log("✅ Strategy 5: Found match with cleaned text")
+            // Use regex to find and replace with more flexible whitespace matching
+            const flexibleRegex = new RegExp(
+              cleanedTextToReplace.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+"),
+              "gi"
+            )
+            
+            if (flexibleRegex.test(message.content)) {
+              updatedContent = message.content.replace(flexibleRegex, newText)
+              console.log("✅ Strategy 5 result:", updatedContent.substring(0, 200))
+            } else {
+              console.log("❌ Strategy 5: Regex test failed")
             }
           }
-          console.log("✅ Strategy 3 result:", updatedContent.substring(0, 200))
         }
-        // Strategy 4: Append the new text with context
-        else {
-          console.log("🔄 Strategy 4: Append with context")
-          updatedContent = updatedContent + `\n\n*[Rephrased]: ${newText}*`
-          console.log("✅ Strategy 4 result:", updatedContent.substring(0, 200))
+        
+        // Strategy 6: Last resort - targeted word replacement
+        if (updatedContent === message.content) {
+          console.log("🔄 Strategy 6: Last resort word replacement")
+          
+          // Find the most unique words (3+ chars, not common words)
+          const words = textToReplace.split(/\s+/).filter(word => 
+            word.length >= 3 && 
+            !['the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'had', 'her', 'was', 'one', 'our', 'out', 'day', 'get', 'has', 'him', 'his', 'how', 'man', 'new', 'now', 'old', 'see', 'two', 'way', 'who', 'boy', 'did', 'its', 'let', 'put', 'say', 'she', 'too', 'use'].includes(word.toLowerCase())
+          )
+          
+          console.log("🔍 Strategy 6 - Unique words:", words)
+          
+          // Try to find a unique sequence of 2-3 words that exists in the content
+          for (let seqLen = Math.min(3, words.length); seqLen >= 2; seqLen--) {
+            for (let i = 0; i <= words.length - seqLen; i++) {
+              const sequence = words.slice(i, i + seqLen).join(' ')
+              if (message.content.includes(sequence)) {
+                console.log("✅ Strategy 6: Found unique sequence:", sequence)
+                // Replace the sequence with a corresponding part of the new text
+                const newWords = newText.split(/\s+/)
+                const replacementSequence = newWords.slice(i, i + seqLen).join(' ') || newText
+                updatedContent = message.content.replace(sequence, replacementSequence)
+                console.log("✅ Strategy 6 result:", updatedContent.substring(0, 200))
+                break
+              }
+            }
+            if (updatedContent !== message.content) break
+          }
+        }
+        
+        // Strategy 7: Handle already-rephrased content
+        if (updatedContent === message.content) {
+          console.log("🔄 Strategy 7: Handling already-rephrased content")
+          
+          // Check if the message content contains rephrased entries
+          const rephrasedPattern = /\*\[Rephrased\]: (.*?)\n?\*/g
+          const rephrasedMatches = [...message.content.matchAll(rephrasedPattern)]
+          
+          console.log("🔍 Strategy 7 - Found rephrased entries:", rephrasedMatches.length)
+          
+          if (rephrasedMatches.length > 0) {
+            console.log("✅ Strategy 7: Cleaning up multiple rephrased entries and adding new one")
+            
+            // Remove all existing rephrased entries
+            let cleanedContent = message.content.replace(/\n*\*\[Rephrased\]: .*?\n?\*\n*/g, '')
+            cleanedContent = cleanedContent.trim()
+            
+            // Add the new rephrased text cleanly
+            updatedContent = `${cleanedContent}\n\n*[Rephrased]: ${newText}*`
+            
+            console.log("✅ Strategy 7 result:", updatedContent.substring(0, 200))
+          } else {
+            // No rephrased entries found, try one more approach - replace the entire content
+            console.log("🔄 Strategy 7b: Replacing entire message content")
+            updatedContent = newText
+            console.log("✅ Strategy 7b result:", updatedContent.substring(0, 200))
+          }
+        }
+        
+        // Final fallback - show detailed error
+        if (updatedContent === message.content) {
+          console.error("❌ All replacement strategies failed")
+          console.error("🔍 Final debug - message content snippet:")
+          console.error(message.content.substring(0, 300))
+          console.error("🔍 Final debug - text to replace:")
+          console.error(textToReplace)
+          
+          toast.error("Could not locate the selected text in the message. This might be due to formatting differences between display and storage.")
+          return
         }
       }
     }
 
     console.log("🔍 Final content comparison:")
-    console.log("📄 Original content:", message.content.substring(0, 200))
-    console.log("📄 Updated content:", updatedContent.substring(0, 200))
+    console.log("📄 Original content length:", message.content.length)
+    console.log("📄 Updated content length:", updatedContent.length)
     console.log("📄 Content changed?", message.content !== updatedContent)
+    console.log("📄 Content changed by chars:", updatedContent.length - message.content.length)
+
+    // Verify the replacement actually happened
+    if (updatedContent === message.content) {
+      console.error("❌ No changes were made to the content")
+      toast.error("Failed to replace text - no changes detected")
+      return
+    }
 
     // Update the DOM immediately for visual feedback
     if (lastSelectionRef.current) {
-      const selection = window.getSelection()
-      if (selection) {
-        selection.removeAllRanges()
-        selection.addRange(lastSelectionRef.current)
+      try {
+        const selection = window.getSelection()
+        if (selection) {
+          selection.removeAllRanges()
+          selection.addRange(lastSelectionRef.current)
 
-        const range = selection.getRangeAt(0)
-        range.deleteContents()
-        range.insertNode(document.createTextNode(newText))
-        selection.removeAllRanges()
-        console.log("✅ Text replaced in DOM")
+          const range = selection.getRangeAt(0)
+          range.deleteContents()
+          range.insertNode(document.createTextNode(newText))
+          selection.removeAllRanges()
+          console.log("✅ Text replaced in DOM")
+        }
+      } catch (error) {
+        console.warn("⚠️ Could not update DOM, but will proceed with database update:", error)
       }
     }
 
@@ -375,6 +621,7 @@ function PureMessages({
       targetMessageId,
       updatedContentLength: updatedContent.length,
       updatedContentPreview: updatedContent.substring(0, 200),
+      originalContentPreview: message.content.substring(0, 200),
     })
     
     const success = await updateMessageContent(targetMessageId, updatedContent)
@@ -383,6 +630,30 @@ function PureMessages({
       toast.warning("Changes may not persist after reload")
     } else {
       console.log("✅ updateMessageContent returned success")
+      // Update currentText to the new text for future replacements
+      setCurrentText(newText)
+      
+      // Track original text for this message if it's not already tracked
+      if (!originalTexts[targetMessageId]) {
+        const originalText = getOriginalText(message)
+        setOriginalTexts(prev => ({
+          ...prev,
+          [targetMessageId]: originalText
+        }))
+        console.log("📝 Tracking original text for message:", targetMessageId)
+      }
+      
+      // Additional verification: check if the content was actually updated in the local state
+      const updatedMessage = messages.find(m => m.id === targetMessageId)
+      if (updatedMessage) {
+        console.log("🔍 Post-update verification:", {
+          messageId: updatedMessage.id,
+          contentLength: updatedMessage.content.length,
+          contentPreview: updatedMessage.content.substring(0, 100),
+          containsNewText: updatedMessage.content.includes(newText),
+          containsOldText: updatedMessage.content.includes(textToReplace),
+        })
+      }
     }
   }
 
@@ -432,6 +703,8 @@ function PureMessages({
               showThinking={showThinking[message.id] || false}
               toggleThinking={() => toggleThinking(message.id)}
               isThinkingModel={isThinkingModel(message.model || "")}
+              // Pass rephrased text info
+              onRevertToOriginal={(originalText: string) => handleRevertToOriginalText(message.id, originalText)}
             />
           </div>
         ))}

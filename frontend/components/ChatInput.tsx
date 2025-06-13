@@ -321,20 +321,40 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
       // Create the base message using the helper
       const message = createUserMessage(messageId, messageContent)
 
-      // NOTE: Personas work by modifying the system prompt in the chat API route
-      // The persona's system_prompt is automatically added when a persona is active for this thread
-      // This happens in the chat API route by checking the thread's assigned persona
-
+      // Add file attachments to the message if present
       if (hasFiles) {
+        console.log("📎 Adding file attachments to message:", uploadedFiles.length)
+        
+        // Add file attachments to message parts
+        if (!message.parts) {
+          message.parts = []
+        }
+        
+        (message.parts as any).push({
+          type: "file_attachments",
+          attachments: uploadedFiles.map(file => ({
+            id: file.id,
+            fileName: file.fileName,
+            fileType: file.fileType,
+            fileSize: file.fileSize,
+            fileUrl: file.fileUrl || file.url,
+            thumbnailUrl: file.thumbnailUrl,
+            content: file.content,
+            extractedText: file.extractedText,
+            category: file.category
+          }))
+        })
+        
         await createMessage(threadId, message, uploadedFiles)
       } else {
         await createMessage(threadId, message)
       }
 
-      // Send the message
+      // Send the message with file attachments included
       console.log("📤 About to call append with message:", {
         messageId: message.id,
         content: message.content.substring(0, 100),
+        hasFileParts: message.parts?.some(p => (p as any).type === "file_attachments"),
         appendFunction: typeof append
       })
       

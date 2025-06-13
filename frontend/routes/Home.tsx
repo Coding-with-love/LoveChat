@@ -6,8 +6,7 @@ import { v4 as uuidv4 } from "uuid"
 import { useAPIKeyStore } from "../stores/APIKeyStore"
 import { useModelStore } from "../stores/ModelStore"
 import { useAuth } from "@/frontend/components/AuthProvider"
-import { useTabVisibility } from "@/frontend/hooks/useTabVisibility"
-import { useMemo, useEffect } from "react"
+import { useMemo, useEffect, useState } from "react"
 
 export default function Home() {
   const { user } = useAuth()
@@ -16,30 +15,47 @@ export default function Home() {
   const hasRequiredKeys = useAPIKeyStore((state) => state.hasRequiredKeys(modelConfig.provider))
   const loadKeys = useAPIKeyStore((state) => state.loadKeys)
   const isLoading = useAPIKeyStore((state) => state.isLoading)
+  const getAllKeys = useAPIKeyStore((state) => state.getAllKeys)
 
-  // Add tab visibility management to refresh API keys when returning to home
-  useTabVisibility({
-    onVisible: () => {
-      console.log("🔄 Home page became visible, checking API keys")
-      if (user) {
-        loadKeys().catch(console.error)
-      }
-    },
-    refreshStoresOnVisible: true
-  })
+  // Local loading state to prevent conflicts with global hydration
+  const [localLoading, setLocalLoading] = useState(true)
 
-  // Load API keys when component mounts
+  // Check if we have keys and set local loading state
   useEffect(() => {
-    if (user) {
-      loadKeys().catch(console.error)
-    }
-  }, [user, loadKeys])
+    const checkKeys = () => {
+      const keys = getAllKeys()
+      const hasKeys = Object.keys(keys).length > 0
+      
+      console.log("🏠 Home - Checking API keys:", {
+        hasKeys,
+        keyCount: Object.keys(keys).length,
+        isAPILoading: isLoading,
+        hasRequiredKeys: hasRequiredKeys
+      })
 
-  // Show loading while stores are hydrating or API keys are loading
-  if (isLoading) {
+      // If we have keys or the API key store is not loading, we can show content
+      if (hasKeys || !isLoading) {
+        setLocalLoading(false)
+      }
+    }
+
+    // Check immediately
+    checkKeys()
+
+    // If still no keys and not loading, try to load once
+    if (!hasRequiredKeys && !isLoading && user) {
+      console.log("🏠 Home - Loading API keys...")
+      loadKeys().finally(() => {
+        setLocalLoading(false)
+      })
+    }
+  }, [user, hasRequiredKeys, isLoading, getAllKeys, loadKeys])
+
+  // Show loading while checking for keys
+  if (localLoading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 dark:border-gray-100"></div>
       </div>
     )
   }

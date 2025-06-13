@@ -203,7 +203,8 @@ export const useAPIKeyStore = create<APIKeyStore>()(
     }),
     {
       name: "api-key-storage", // name of the item in localStorage
-      skipHydration: true, // Skip initial hydration to prevent flashing
+      version: 1,
+      // Enable proper hydration to restore state on tab switches
     }
   )
 )
