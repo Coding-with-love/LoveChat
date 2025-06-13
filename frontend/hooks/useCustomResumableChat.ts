@@ -8,7 +8,7 @@ import { useModelStore } from "@/frontend/stores/ModelStore"
 import { useWebSearchStore } from "@/frontend/stores/WebSearchStore"
 import { apiClient } from "@/lib/api-client"
 import { getActiveStreamsForThread, resumeStream } from "./resumable-streams-client"
-import type { UIMessage } from "ai"
+import type { UIMessage, Message, CreateMessage } from "ai"
 import { toast } from "sonner"
 import { v4 as uuidv4 } from "uuid"
 import { createMessage } from "@/lib/supabase/queries"
@@ -83,13 +83,23 @@ export function useCustomResumableChat({
         const { getModelConfig } = useModelStore.getState()
         const modelConfig = getModelConfig()
 
-        console.log("🔑 Getting API key for provider:", modelConfig.provider)
+        console.log("🔑 [FETCH] Getting API key for provider:", modelConfig.provider)
+        
+        // Get fresh API key each time to handle state changes
         const apiKey = getKey(modelConfig.provider)
-        console.log("🔑 API key found:", !!apiKey, "Length:", apiKey?.length || 0)
+        
+        console.log("🔑 [FETCH] API key check:", {
+          provider: modelConfig.provider,
+          hasKey: !!apiKey,
+          keyLength: apiKey?.length || 0,
+          timestamp: new Date().toISOString()
+        })
 
         // Only require API key for providers that need it
         if (modelConfig.provider !== "ollama" && !apiKey) {
-          throw new Error(`${modelConfig.provider} API key is required`)
+          const errorMsg = `${modelConfig.provider} API key is required but not found. Please check your API key settings.`
+          console.error("🔑 [FETCH] API key error:", errorMsg)
+          throw new Error(errorMsg)
         }
 
         // Parse and update the body to include webSearchEnabled and API key
@@ -112,32 +122,42 @@ export function useCustomResumableChat({
         // Create new headers and add the API key in multiple formats
         const headers = new Headers(options?.headers || {})
 
-        // Set the API key in multiple header formats to ensure it's received
-        headers.set(modelConfig.headerKey, apiKey)
+        // Only set headers if we have an API key
+        if (apiKey) {
+          // Set the API key in multiple header formats to ensure it's received
+          if (modelConfig.headerKey) {
+            headers.set(modelConfig.headerKey, apiKey)
+          }
 
-        // Add provider-specific headers
-        if (modelConfig.provider === "google") {
-          headers.set("x-google-api-key", apiKey)
-          headers.set("google-api-key", apiKey)
-          headers.set("x-api-key", apiKey)
-        } else if (modelConfig.provider === "openai") {
-          headers.set("x-openai-api-key", apiKey)
-          headers.set("openai-api-key", apiKey)
-          headers.set("x-api-key", apiKey)
-        } else if (modelConfig.provider === "openrouter") {
-          headers.set("x-openrouter-api-key", apiKey)
-          headers.set("openrouter-api-key", apiKey)
-          headers.set("x-api-key", apiKey)
+          // Add provider-specific headers
+          if (modelConfig.provider === "google") {
+            headers.set("x-google-api-key", apiKey)
+            headers.set("google-api-key", apiKey)
+            headers.set("x-api-key", apiKey)
+          } else if (modelConfig.provider === "openai") {
+            headers.set("x-openai-api-key", apiKey)
+            headers.set("openai-api-key", apiKey)
+            headers.set("x-api-key", apiKey)
+          } else if (modelConfig.provider === "openrouter") {
+            headers.set("x-openrouter-api-key", apiKey)
+            headers.set("openrouter-api-key", apiKey)
+            headers.set("x-api-key", apiKey)
+          }
         }
 
-        // Add provider-specific API key header
-        if (apiKey && modelConfig.provider !== "ollama" && modelConfig.headerKey) {
-          headers.set(modelConfig.headerKey, apiKey)
-        }
-
-        // Log headers for debugging
-        console.log("📋 Request headers:", Object.fromEntries(headers.entries()))
-        console.log("📦 Request body:", JSON.stringify(newBody, null, 2))
+        // Log headers for debugging (but mask API keys)
+        const headerEntries = Object.fromEntries(headers.entries())
+        const maskedHeaders = Object.keys(headerEntries).reduce((acc, key) => {
+          if (key.toLowerCase().includes('key') || key.toLowerCase().includes('auth')) {
+            acc[key] = '***MASKED***'
+          } else {
+            acc[key] = headerEntries[key]
+          }
+          return acc
+        }, {} as Record<string, string>)
+        
+        console.log("📋 [FETCH] Request headers:", maskedHeaders)
+        console.log("📦 [FETCH] Request body model:", newBody.model)
 
         // Use apiClient.fetch to ensure proper authentication headers are included
         return apiClient.fetch(url, {
@@ -146,7 +166,7 @@ export function useCustomResumableChat({
           body: JSON.stringify(newBody),
         })
       } catch (error) {
-        console.error("Failed to make chat request:", error)
+        console.error("❌ [FETCH] Failed to make chat request:", error)
         throw error
       }
     },
@@ -165,6 +185,19 @@ export function useCustomResumableChat({
   useEffect(() => {
     setLocalMessages(chat.messages)
   }, [chat.messages])
+
+  // Sync initialMessages changes with chat (important for tab switching)
+  useEffect(() => {
+    console.log("🔄 initialMessages changed, syncing with chat", {
+      newCount: initialMessages.length,
+      currentCount: localMessages.length,
+      threadId
+    })
+    
+    // Always update localMessages when initialMessages changes
+    setLocalMessages(initialMessages)
+    console.log("✅ Local messages synced with new initialMessages")
+  }, [initialMessages, threadId])
 
   // Function to find potentially interrupted message
   const findInterruptedMessage = useCallback(() => {
@@ -411,11 +444,44 @@ export function useCustomResumableChat({
 
   // Enhanced append function
   const enhancedAppend = async (message: UIMessage | CreateMessage) => {
-    console.log("🚀 Starting new chat message:", 'id' in message ? message.id : 'new message')
+    console.log("🚀 Starting new chat message:", 'id' in message ? message.id : 'new message', {
+      role: message.role,
+      content: message.content.substring(0, 100) + '...',
+      localMessagesCount: localMessages.length,
+      chatMessagesCount: chat.messages.length
+    })
+    
+    // Convert CreateMessage to UIMessage if needed
+    const uiMessage: UIMessage = 'id' in message ? message : {
+      id: uuidv4(),
+      role: message.role,
+      content: message.content,
+      createdAt: new Date(),
+      parts: [{ type: 'text', text: message.content }]
+    }
+    
+    // Add to local messages immediately for UI responsiveness
+    setLocalMessages(prev => {
+      console.log("📝 Adding message to local state:", uiMessage.id, "New count:", prev.length + 1)
+      return [...prev, uiMessage]
+    })
+    
     if ('id' in message) {
       onStart?.(message)
     }
-    return chat.append(message)
+    
+    try {
+      // Also append to the chat hook for processing
+      console.log("🔄 Calling chat.append with message:", uiMessage.id)
+      const result = await chat.append(message)
+      console.log("✅ chat.append completed successfully for:", uiMessage.id)
+      return result
+    } catch (error) {
+      console.error("❌ chat.append failed for message:", uiMessage.id, error)
+      // The message is already in localMessages, so the UI will show it
+      // but we should still throw to let the caller know there was an issue
+      throw error
+    }
   }
 
   return {

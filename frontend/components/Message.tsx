@@ -227,116 +227,204 @@ function PureMessage({
         </div>
       )}
 
-      {displayParts.map((part, index) => {
-        const { type } = part
-        const key = `message-${message.id}-part-${index}`
+            {(() => {
+        // For assistant messages, render reasoning parts first, then text parts
+        if (message.role === "assistant") {
+          const reasoningParts = displayParts.filter(part => part.type === "reasoning")
+          const textParts = displayParts.filter(part => part.type === "text")
+          const orderedParts = [...reasoningParts, ...textParts]
+          
+          return orderedParts.map((part, index) => {
+            const { type } = part
+            const key = `message-${message.id}-part-${index}`
 
-        if (type === "reasoning") {
-          return <MessageReasoning key={key} reasoning={part.reasoning} id={message.id} />
+            if (type === "reasoning") {
+              return <MessageReasoning key={key} reasoning={part.reasoning} id={message.id} />
+            }
+
+            if (type === "text") {
+              // Clean the text content by removing thinking tags
+              let cleanText = part.text
+              if (cleanText.includes('<think>') && cleanText.includes('</think>')) {
+                cleanText = cleanText.replace(/<think>[\s\S]*?<\/think>/g, '').trim()
+              }
+
+              return (
+                <div key={key} className="group flex flex-col gap-2 w-full relative">
+                  {/* Thinking Toggle - Show before content for assistant messages with reasoning */}
+                  {message.role === "assistant" && reasoning && (
+                    <div className="flex items-center gap-2 mb-2">
+                      <ThinkingToggle
+                        isExpanded={showThinking || false}
+                        onToggle={toggleThinking || (() => {})}
+                        hasReasoning={!!reasoning}
+                      />
+                    </div>
+                  )}
+
+                  {/* Thinking Content - Show when expanded */}
+                  {message.role === "assistant" && reasoning && showThinking && (
+                    <ThinkingContent reasoning={reasoning} isExpanded={showThinking} />
+                  )}
+
+                  <div
+                    className={cn(
+                      "transition-all duration-500 relative select-text",
+                      usedWebSearch &&
+                        "border-l-4 border-blue-500 pl-4 bg-blue-50/50 dark:bg-blue-950/20 rounded-lg shadow-sm",
+                      showAnimation && [
+                        "transform scale-[1.02] shadow-lg",
+                        "bg-gradient-to-r from-green-50 via-blue-50 to-purple-50",
+                        "dark:from-green-950/20 dark:via-blue-950/20 dark:to-purple-950/20",
+                        "border border-green-200 dark:border-green-800",
+                      ],
+                    )}
+                  >
+                    <MarkdownRenderer
+                      content={cleanText}
+                      id={message.id}
+                      threadId={threadId}
+                      messageId={message.id}
+                      onCodeConvert={handleCodeConvert}
+                    />
+
+                    {/* Completion celebration effect */}
+                    {showAnimation && <div className="absolute -top-2 -right-2 text-2xl animate-bounce">✨</div>}
+                  </div>
+
+                  {!isStreaming && (
+                    <MessageControls
+                      threadId={threadId}
+                      content={cleanText}
+                      message={message}
+                      setMessages={setMessages}
+                      reload={reload}
+                      stop={stop}
+                      onCopy={handleCopy}
+                      onEdit={handleEdit}
+                      onPin={handlePin}
+                    />
+                  )}
+                </div>
+              )
+            }
+
+            return null
+          })
         }
+        
+        // For user messages, keep original order
+        return displayParts.map((part, index) => {
+          const { type } = part
+          const key = `message-${message.id}-part-${index}`
 
-        if (type === "text") {
-          // Clean the text content by removing thinking tags
-          let cleanText = part.text
-          if (cleanText.includes('<think>') && cleanText.includes('</think>')) {
-            cleanText = cleanText.replace(/<think>[\s\S]*?<\/think>/g, '').trim()
+          if (type === "reasoning") {
+            return <MessageReasoning key={key} reasoning={part.reasoning} id={message.id} />
           }
 
-          return message.role === "user" ? (
-            <div
-              key={key}
-              className="relative group px-4 py-3 rounded-xl bg-secondary border border-secondary-foreground/2 max-w-[80%]"
-            >
-              {mode === "edit" && (
-                <MessageEditor
-                  threadId={threadId}
-                  message={message}
-                  content={cleanText}
-                  setMessages={setMessages}
-                  reload={reload}
-                  setMode={setMode}
-                  stop={stop}
-                />
-              )}
-              {mode === "view" && <p className="whitespace-pre-wrap select-text">{cleanText}</p>}
+          if (type === "text") {
+            // Clean the text content by removing thinking tags
+            let cleanText = part.text
+            if (cleanText.includes('<think>') && cleanText.includes('</think>')) {
+              cleanText = cleanText.replace(/<think>[\s\S]*?<\/think>/g, '').trim()
+            }
 
-              {mode === "view" && (
-                <MessageControls
-                  threadId={threadId}
-                  content={cleanText}
-                  message={message}
-                  setMode={setMode}
-                  setMessages={setMessages}
-                  reload={reload}
-                  stop={stop}
-                  onCopy={handleCopy}
-                  onEdit={handleEdit}
-                  onPin={handlePin}
-                />
-              )}
-            </div>
-          ) : (
-            <div key={key} className="group flex flex-col gap-2 w-full relative">
-              {/* Thinking Toggle - Show before content for assistant messages with reasoning */}
-              {message.role === "assistant" && reasoning && !isStreaming && (
-                <div className="flex items-center gap-2 mb-2">
-                  <ThinkingToggle
-                    isExpanded={showThinking || false}
-                    onToggle={toggleThinking || (() => {})}
-                    hasReasoning={!!reasoning}
-                  />
-                </div>
-              )}
-
-              {/* Thinking Content - Show when expanded */}
-              {message.role === "assistant" && reasoning && showThinking && (
-                <ThinkingContent reasoning={reasoning} isExpanded={showThinking} />
-              )}
-
+            return message.role === "user" ? (
               <div
-                className={cn(
-                  "transition-all duration-500 relative select-text",
-                  usedWebSearch &&
-                    "border-l-4 border-blue-500 pl-4 bg-blue-50/50 dark:bg-blue-950/20 rounded-lg shadow-sm",
-                  showAnimation && [
-                    "transform scale-[1.02] shadow-lg",
-                    "bg-gradient-to-r from-green-50 via-blue-50 to-purple-50",
-                    "dark:from-green-950/20 dark:via-blue-950/20 dark:to-purple-950/20",
-                    "border border-green-200 dark:border-green-800",
-                  ],
-                )}
+                key={key}
+                className="relative group px-4 py-3 rounded-xl bg-secondary border border-secondary-foreground/2 max-w-[80%]"
               >
-                <MarkdownRenderer
-                  content={cleanText}
-                  id={message.id}
-                  threadId={threadId}
-                  messageId={message.id}
-                  onCodeConvert={handleCodeConvert}
-                />
+                {mode === "edit" && (
+                  <MessageEditor
+                    threadId={threadId}
+                    message={message}
+                    content={cleanText}
+                    setMessages={setMessages}
+                    reload={reload}
+                    setMode={setMode}
+                    stop={stop}
+                  />
+                )}
+                {mode === "view" && <p className="whitespace-pre-wrap select-text">{cleanText}</p>}
 
-                {/* Completion celebration effect */}
-                {showAnimation && <div className="absolute -top-2 -right-2 text-2xl animate-bounce">✨</div>}
+                {mode === "view" && (
+                  <MessageControls
+                    threadId={threadId}
+                    content={cleanText}
+                    message={message}
+                    setMode={setMode}
+                    setMessages={setMessages}
+                    reload={reload}
+                    stop={stop}
+                    onCopy={handleCopy}
+                    onEdit={handleEdit}
+                    onPin={handlePin}
+                  />
+                )}
               </div>
+            ) : (
+              <div key={key} className="group flex flex-col gap-2 w-full relative">
+                {/* Thinking Toggle - Show before content for assistant messages with reasoning */}
+                {message.role === "assistant" && reasoning && (
+                  <div className="flex items-center gap-2 mb-2">
+                    <ThinkingToggle
+                      isExpanded={showThinking || false}
+                      onToggle={toggleThinking || (() => {})}
+                      hasReasoning={!!reasoning}
+                    />
+                  </div>
+                )}
 
-              {!isStreaming && (
-                <MessageControls
-                  threadId={threadId}
-                  content={cleanText}
-                  message={message}
-                  setMessages={setMessages}
-                  reload={reload}
-                  stop={stop}
-                  onCopy={handleCopy}
-                  onEdit={handleEdit}
-                  onPin={handlePin}
-                />
-              )}
-            </div>
-          )
-        }
+                {/* Thinking Content - Show when expanded */}
+                {message.role === "assistant" && reasoning && showThinking && (
+                  <ThinkingContent reasoning={reasoning} isExpanded={showThinking} />
+                )}
 
-        return null
-      })}
+                <div
+                  className={cn(
+                    "transition-all duration-500 relative select-text",
+                    usedWebSearch &&
+                      "border-l-4 border-blue-500 pl-4 bg-blue-50/50 dark:bg-blue-950/20 rounded-lg shadow-sm",
+                    showAnimation && [
+                      "transform scale-[1.02] shadow-lg",
+                      "bg-gradient-to-r from-green-50 via-blue-50 to-purple-50",
+                      "dark:from-green-950/20 dark:via-blue-950/20 dark:to-purple-950/20",
+                      "border border-green-200 dark:border-green-800",
+                    ],
+                  )}
+                >
+                  <MarkdownRenderer
+                    content={cleanText}
+                    id={message.id}
+                    threadId={threadId}
+                    messageId={message.id}
+                    onCodeConvert={handleCodeConvert}
+                  />
+
+                  {/* Completion celebration effect */}
+                  {showAnimation && <div className="absolute -top-2 -right-2 text-2xl animate-bounce">✨</div>}
+                </div>
+
+                {!isStreaming && (
+                  <MessageControls
+                    threadId={threadId}
+                    content={cleanText}
+                    message={message}
+                    setMessages={setMessages}
+                    reload={reload}
+                    stop={stop}
+                    onCopy={handleCopy}
+                    onEdit={handleEdit}
+                    onPin={handlePin}
+                  />
+                )}
+              </div>
+            )
+          }
+
+          return null
+        })
+      })()}
 
       {/* Display sources if available */}
       {sources.length > 0 && message.role === "assistant" && !isStreaming && <MessageSources sources={sources} />}

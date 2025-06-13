@@ -176,7 +176,7 @@
 }
 
 /* KaTeX Math Styling */
-.prose, 
+.prose,
 .markdown,
 [class*="content"] {
   --math-display-size: 1.4em;
@@ -225,7 +225,7 @@
 
 /* Mobile responsiveness */
 @media (max-width: 640px) {
-  .prose, 
+  .prose,
   .markdown,
   [class*="content"] {
     --math-display-size: 1.2em;
@@ -238,4 +238,122 @@
   src: url("https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/fonts/KaTeX_Main-Regular.woff2") format("woff2");
   font-weight: normal;
   font-style: normal;
+}
+
+/* Table styling for markdown */
+.prose table {
+  width: 100%;
+  margin: 1.5em 0;
+  border-collapse: collapse;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.prose table thead {
+  background-color: hsl(var(--muted));
+}
+
+.prose table th {
+  border: 1px solid hsl(var(--border));
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+}
+
+.prose table td {
+  border: 1px solid hsl(var(--border));
+  padding: 0.75rem 1rem;
+  color: hsl(var(--foreground));
+}
+
+.prose table tr:nth-child(even) {
+  background-color: hsl(var(--muted) / 0.3);
+}
+
+.prose table tr:hover {
+  background-color: hsl(var(--accent) / 0.5);
+}
+
+/* Dark mode table styling */
+.dark .prose table {
+  border-color: hsl(var(--border));
+}
+
+.dark .prose table th {
+  background-color: hsl(var(--muted));
+  border-color: hsl(var(--border));
+  color: hsl(var(--foreground));
+}
+
+.dark .prose table td {
+  border-color: hsl(var(--border));
+  color: hsl(var(--foreground));
+}
+
+.dark .prose table tr:nth-child(even) {
+  background-color: hsl(var(--muted) / 0.3);
+}
+
+.dark .prose table tr:hover {
+  background-color: hsl(var(--accent) / 0.5);
+}
+
+/* Responsive table styling */
+@media (max-width: 640px) {
+  .prose table {
+    font-size: 0.875rem;
+  }
+
+  .prose table th,
+  .prose table td {
+    padding: 0.5rem 0.75rem;
+  }
+}
+
+/* Add spacing between sidebar and content */
+.sidebar-with-spacing {
+  margin-right: 1rem;
+}
+
+/* Make sidebar trigger visible when sidebar is collapsed */
+.sidebar-trigger-persistent {
+  position: relative;
+  z-index: 50;
+  transition: transform 0.2s ease;
+}
+
+/* Ensure the button remains visible when sidebar collapses and stays at the bottom */
+[data-collapsed="true"] .sidebar-trigger-persistent {
+  position: fixed;
+  left: 0;
+  bottom: 1rem;
+  background-color: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  padding: 0.5rem;
+}
+
+/* Rotate the chevron icon when sidebar is expanded */
+[data-collapsed="false"] .sidebar-trigger-persistent svg {
+  transform: rotate(0deg);
+}
+
+/* Rotate the chevron icon when sidebar is collapsed */
+[data-collapsed="true"] .sidebar-trigger-persistent svg {
+  transform: rotate(180deg);
+}
+
+/* Add spacing between content and sidebar on small screens */
+@media (max-width: 768px) {
+  .sidebar-with-spacing {
+    margin-right: 0.5rem;
+  }
+  
+  /* Add padding to main content area */
+  main {
+    padding-left: 0.5rem;
+  }
 }

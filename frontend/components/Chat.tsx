@@ -5,7 +5,7 @@ import ChatInput from "./ChatInput"
 import type { UIMessage } from "ai"
 import { useAPIKeyStore } from "@/frontend/stores/APIKeyStore"
 import { useModelStore } from "@/frontend/stores/ModelStore"
-import { SidebarTrigger, useSidebar } from "./ui/sidebar"
+import { useSidebar } from "./ui/sidebar"
 import { Button } from "./ui/button"
 import { ChevronDown } from "lucide-react"
 import { useCustomResumableChat } from "@/frontend/hooks/useCustomResumableChat"
@@ -20,6 +20,7 @@ import { toast } from "sonner"
 import { ThinkingIndicator } from "./ThinkingIndicator"
 import type { Message, CreateMessage } from "ai"
 import { getMessageParts } from "@ai-sdk/ui-utils"
+import { useTabVisibility } from "@/frontend/hooks/useTabVisibility"
 
 // Extend UIMessage to include reasoning field
 interface ExtendedUIMessage extends UIMessage {
@@ -46,6 +47,17 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
   const navigate = useNavigate()
   const { toggleSidebar } = useSidebar()
   const { id } = useParams()
+
+  // Monitor API key state for debugging
+  const currentApiKey = getKey(modelConfig.provider)
+  useEffect(() => {
+    console.log("🔑 Chat API key check:", {
+      provider: modelConfig.provider,
+      hasKey: !!currentApiKey,
+      keyLength: currentApiKey?.length || 0,
+      selectedModel
+    })
+  }, [currentApiKey, modelConfig.provider, selectedModel])
 
   // Check if the current model supports thinking
   const supportsThinking = useMemo(() => {
@@ -104,6 +116,20 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
       return uiMessage
     },
     autoResume: true,
+  })
+
+  // Add minimal tab visibility management for stream resumption
+  // (Thread component handles message loading)
+  useTabVisibility({
+    onVisible: () => {
+      console.log("🔄 Chat became visible for thread:", threadId)
+      // Only trigger resume check, don't refresh messages
+      if (manualResume) {
+        console.log("🔄 Checking for resumable streams...")
+        manualResume()
+      }
+    },
+    refreshStoresOnVisible: false // Don't refresh stores here, Thread handles it
   })
 
   // Debug logging
@@ -368,7 +394,6 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
 
   return (
     <div className="relative w-full">
-      <SidebarTrigger />
 
       {/* Global Resuming Indicator */}
       <GlobalResumingIndicator isResuming={isResuming} resumeProgress={resumeProgress} threadTitle="Current Chat" />

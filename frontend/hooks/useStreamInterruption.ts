@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase/client"
 export function useStreamInterruption() {
   const activeStreamsRef = useRef<Set<string>>(new Set())
   const isUnloadingRef = useRef(false)
+  const hideTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const registerStream = useCallback((messageId: string) => {
     console.log("🔵 [STREAM DEBUG] Registering stream:", messageId)
@@ -221,8 +222,18 @@ export function useStreamInterruption() {
       console.log("👁️ [STREAM DEBUG] Current active streams:", Array.from(activeStreamsRef.current))
 
       if (document.visibilityState === "hidden" && !isUnloadingRef.current) {
-        console.log("👁️ [STREAM DEBUG] Page hidden, marking active streams as interrupted")
-        markAllActiveAsInterrupted()
+        // Only interrupt streams if we've been hidden for a significant time
+        hideTimeoutRef.current = setTimeout(() => {
+          console.log("👁️ [STREAM DEBUG] Page hidden for more than 5 seconds, marking active streams as interrupted")
+          markAllActiveAsInterrupted()
+        }, 5000) // Wait 5 seconds before interrupting
+      } else if (document.visibilityState === "visible") {
+        // Clear any pending interruption timeout
+        if (hideTimeoutRef.current) {
+          clearTimeout(hideTimeoutRef.current)
+          hideTimeoutRef.current = null
+        }
+        console.log("👁️ [STREAM DEBUG] Page visible again, streams preserved")
       }
     }
 
@@ -252,6 +263,12 @@ export function useStreamInterruption() {
       window.removeEventListener("unload", handleUnload)
       window.removeEventListener("pagehide", handlePageHide)
       document.removeEventListener("visibilitychange", handleVisibilityChange)
+      
+      // Clean up any pending timeout
+      if (hideTimeoutRef.current) {
+        clearTimeout(hideTimeoutRef.current)
+        hideTimeoutRef.current = null
+      }
     }
   }, [markAllActiveAsInterrupted])
 

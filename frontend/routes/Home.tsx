@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from "uuid"
 import { useAPIKeyStore } from "../stores/APIKeyStore"
 import { useModelStore } from "../stores/ModelStore"
 import { useAuth } from "@/frontend/components/AuthProvider"
+import { useTabVisibility } from "@/frontend/hooks/useTabVisibility"
 import { useMemo, useEffect } from "react"
 
 export default function Home() {
@@ -15,6 +16,17 @@ export default function Home() {
   const hasRequiredKeys = useAPIKeyStore((state) => state.hasRequiredKeys(modelConfig.provider))
   const loadKeys = useAPIKeyStore((state) => state.loadKeys)
   const isLoading = useAPIKeyStore((state) => state.isLoading)
+
+  // Add tab visibility management to refresh API keys when returning to home
+  useTabVisibility({
+    onVisible: () => {
+      console.log("🔄 Home page became visible, checking API keys")
+      if (user) {
+        loadKeys().catch(console.error)
+      }
+    },
+    refreshStoresOnVisible: true
+  })
 
   // Load API keys when component mounts
   useEffect(() => {

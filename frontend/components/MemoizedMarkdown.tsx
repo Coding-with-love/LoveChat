@@ -45,6 +45,16 @@ interface MarkdownProps {
 const components: Components = {
   code: CodeBlock as Components["code"],
   pre: ({ children }) => <>{children}</>,
+  table: ({ children, ...props }) => (
+    <div className="table-wrapper overflow-x-auto my-6">
+      <table {...props}>{children}</table>
+    </div>
+  ),
+  thead: ({ children, ...props }) => <thead {...props}>{children}</thead>,
+  tbody: ({ children, ...props }) => <tbody {...props}>{children}</tbody>,
+  tr: ({ children, ...props }) => <tr {...props}>{children}</tr>,
+  th: ({ children, ...props }) => <th {...props}>{children}</th>,
+  td: ({ children, ...props }) => <td {...props}>{children}</td>,
 }
 
 type MathComponentProps = {

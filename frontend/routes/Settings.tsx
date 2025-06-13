@@ -30,30 +30,87 @@ import { toast } from "sonner"
 import { Button } from "@/frontend/components/ui/button"
 import { Badge } from "@/frontend/components/ui/badge"
 import { Separator } from "@/frontend/components/ui/separator"
+import { useTabVisibility } from "@/frontend/hooks/useTabVisibility"
 
 function Settings() {
   const [sharedThreads, setSharedThreads] = useState<any[]>([])
   const [loadingShares, setLoadingShares] = useState(true)
   const [shareDialogOpen, setShareDialogOpen] = useState(false)
   const [editingShare, setEditingShare] = useState<any>(null)
+  const [showForceLoadShares, setShowForceLoadShares] = useState(false)
   const { user, signOut } = useAuth()
 
-  const loadSharedThreads = async () => {
+  // Add tab visibility management to refresh state when returning to settings
+  useTabVisibility({
+    onVisible: () => {
+      console.log("🔄 Settings page became visible, refreshing shared threads")
+      loadSharedThreads(true) // Pass true to indicate this is a refresh
+    },
+    refreshStoresOnVisible: false // Don't refresh stores here - APIKeyForm handles its own state
+  })
+
+  const loadSharedThreads = async (isRefresh = false) => {
     try {
+      console.log("🔄 Loading shared threads", isRefresh ? "(refresh)" : "(initial)")
       setLoadingShares(true)
-      const shares = await getUserSharedThreads()
+      
+      // Add timeout to prevent infinite loading
+      const loadPromise = getUserSharedThreads()
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("Load shared threads timeout")), 10000)
+      )
+      
+      const shares = await Promise.race([loadPromise, timeoutPromise]) as any[]
       setSharedThreads(shares)
+      console.log("✅ Shared threads loaded:", shares.length)
     } catch (error) {
-      console.error("Failed to load shared threads:", error)
+      console.error("❌ Failed to load shared threads:", error)
       toast.error("Failed to load shared conversations")
+      
+      // On error, keep existing threads if we have them
+      if (sharedThreads.length > 0) {
+        console.log("💾 Keeping existing shared threads on error")
+      }
     } finally {
+      // Always clear loading state
       setLoadingShares(false)
+      console.log("🔄 Shared threads loading state cleared")
     }
   }
 
   useEffect(() => {
     loadSharedThreads()
   }, [])
+
+  // Show force load button after 5 seconds, auto-clear after 15 seconds
+  useEffect(() => {
+    if (loadingShares) {
+      const forceLoadTimer = setTimeout(() => {
+        setShowForceLoadShares(true)
+      }, 5000)
+
+      const autoRecoveryTimer = setTimeout(() => {
+        if (loadingShares) {
+          console.warn("⚠️ Auto-clearing stuck sharing loading state")
+          setLoadingShares(false)
+          setShowForceLoadShares(false)
+        }
+      }, 15000)
+
+      return () => {
+        clearTimeout(forceLoadTimer)
+        clearTimeout(autoRecoveryTimer)
+      }
+    } else {
+      setShowForceLoadShares(false)
+    }
+  }, [loadingShares])
+
+  const handleForceLoadShares = () => {
+    console.log("🔧 Force clearing sharing loading state")
+    setLoadingShares(false)
+    setShowForceLoadShares(false)
+  }
 
   const handleDeleteShare = async (shareId: string) => {
     try {
@@ -232,8 +289,14 @@ function Settings() {
         </CardHeader>
         <CardContent>
           {loadingShares ? (
-            <div className="flex items-center justify-center p-12">
+            <div className="flex flex-col items-center justify-center p-12 space-y-4">
               <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent"></div>
+              <p className="text-sm text-muted-foreground">Loading shared conversations...</p>
+              {showForceLoadShares && (
+                <Button onClick={handleForceLoadShares} variant="outline" size="sm">
+                  Force Load
+                </Button>
+              )}
             </div>
           ) : sharedThreads.length === 0 ? (
             <div className="text-center py-12">

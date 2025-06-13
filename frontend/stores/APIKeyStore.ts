@@ -150,6 +150,13 @@ export const useAPIKeyStore = create<APIKeyStore>()(
         return state.keys
       },
       loadKeys: async () => {
+        // Prevent concurrent loadKeys calls
+        const state = get()
+        if (state.isLoading) {
+          console.log("🔄 loadKeys already in progress, skipping...")
+          return
+        }
+
         try {
           set({ isLoading: true, error: null })
           
@@ -176,9 +183,13 @@ export const useAPIKeyStore = create<APIKeyStore>()(
         } catch (error) {
           console.error("❌ Error loading API keys:", error)
           set({ error: error instanceof Error ? error.message : "Failed to load API keys" })
-          throw error
+          
+          // Don't throw error to prevent infinite loading states
+          // The UI can handle the error state gracefully
         } finally {
+          // Always ensure loading state is cleared
           set({ isLoading: false })
+          console.log("🔄 loadKeys loading state cleared")
         }
       },
       debug: () => {

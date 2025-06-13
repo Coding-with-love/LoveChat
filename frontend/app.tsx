@@ -15,8 +15,16 @@ import { Toaster } from "sonner"
 import { GlobalResumingIndicator } from "./components/ResumingIndicator"
 import ThemeProvider from "./components/ThemeProvider"
 import GlobalLanguageDialog from "./components/GlobalLanguageDialog"
-
+import { useTabVisibility } from "./hooks/useTabVisibility"
 function AuthenticatedApp() {
+  // Add tab visibility management
+  useTabVisibility({
+    onVisible: () => {
+      console.log("🔄 App became visible")
+    },
+    refreshStoresOnVisible: false // Let individual components handle their own store refreshing
+  })
+
   return (
     <BrowserRouter>
       <Routes>
@@ -58,7 +66,8 @@ export default function App() {
         defaultOptions: {
           queries: {
             staleTime: 1000 * 60 * 5, // 5 minutes
-            refetchOnWindowFocus: false,
+            refetchOnWindowFocus: true, // Enable refetch on window focus for fresh data
+            refetchOnMount: "always", // Always refetch when component mounts
           },
         },
       }),

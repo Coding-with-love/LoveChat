@@ -232,6 +232,15 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
   }
 
   const handleSubmit = useCallback(async () => {
+    console.log("🚀 ChatInput handleSubmit called", {
+      user: !!user,
+      isAuthenticated,
+      textareaValue: textareaRef.current?.value,
+      inputState: input,
+      status,
+      hasFiles: uploadedFiles.length > 0
+    })
+
     if (!user || !isAuthenticated) {
       toast.error("Please sign in to send messages")
       return
@@ -240,6 +249,14 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
     const currentInput = textareaRef.current?.value || (typeof input === "string" ? input : "")
     const hasText = typeof currentInput === "string" && currentInput.trim().length > 0
     const hasFiles = uploadedFiles.length > 0
+
+    console.log("📝 Message content check:", {
+      currentInput: currentInput.substring(0, 100),
+      hasText,
+      hasFiles,
+      status,
+      willProceed: (!(!hasText && !hasFiles)) && status !== "streaming" && status !== "submitted"
+    })
 
     if ((!hasText && !hasFiles) || status === "streaming" || status === "submitted") return
 
@@ -311,7 +328,15 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
       }
 
       // Send the message
-      await append(message)
+      console.log("📤 About to call append with message:", {
+        messageId: message.id,
+        content: message.content.substring(0, 100),
+        appendFunction: typeof append
+      })
+      
+      const result = await append(message)
+      
+      console.log("📤 append() returned:", result)
 
       // Clear input and files after successful send
       setInput("")
@@ -396,6 +421,11 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
         e.preventDefault()
         // Clear input immediately before submission
         const currentInput = e.currentTarget.value
+        console.log("⌨️ Enter pressed, submitting message:", {
+          currentInput: currentInput.substring(0, 100),
+          isDisabled,
+          status
+        })
         setInput("")
         handleSubmit()
       }

@@ -1,4 +1,5 @@
 import { supabaseServer } from "./supabase/server"
+import { StreamProtection } from "./stream-protection"
 
 export interface ResumableStream {
   id: string
@@ -50,6 +51,7 @@ export class CustomResumableStream {
   private content = ""
   private controller: ReadableStreamDefaultController | null = null
   private isActive = false
+  private streamProtection: StreamProtection | null = null
 
   constructor(streamId: string, threadId: string, userId: string, messageId: string, initialContent = "") {
     this.streamId = streamId
@@ -57,6 +59,15 @@ export class CustomResumableStream {
     this.userId = userId
     this.messageId = messageId
     this.content = initialContent
+    
+    // Initialize stream protection
+    this.streamProtection = new StreamProtection({
+      maxRepetitions: 5,
+      repetitionWindowSize: 80,
+      maxResponseLength: 50000,
+      timeoutMs: 120000,
+      maxSimilarChunks: 8,
+    })
   }
 
   async create(): Promise<ReadableStream> {
@@ -96,6 +107,22 @@ export class CustomResumableStream {
     if (!this.isActive || !this.controller) return
 
     try {
+      // Check with stream protection first
+      if (this.streamProtection) {
+        const protectionResult = this.streamProtection.analyzeChunk(chunk)
+        
+        if (!protectionResult.allowed) {
+          console.warn(`🛡️ Resumable stream protection triggered for ${this.streamId}:`, protectionResult.reason)
+          console.log("📊 Resumable stream stats:", this.streamProtection.getStats())
+          
+          // Send error message and terminate
+          const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
+          this.controller.enqueue(new TextEncoder().encode(`0:${JSON.stringify(errorMsg)}\n`))
+          await this.fail(protectionResult.reason || 'Stream protection triggered')
+          return
+        }
+      }
+
       this.content += chunk
 
       // Update in-memory store
@@ -114,7 +141,7 @@ export class CustomResumableStream {
       }
     } catch (error) {
       console.error(`Error writing to stream ${this.streamId}:`, error)
-      await this.fail(error.message)
+      await this.fail((error as Error)?.message || 'Unknown error')
     }
   }
 

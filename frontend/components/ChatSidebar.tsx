@@ -9,7 +9,6 @@ import {
   SidebarMenuItem,
   SidebarFooter,
   SidebarSeparator,
-  SidebarTrigger,
 } from "@/frontend/components/ui/sidebar"
 import { Button, buttonVariants } from "./ui/button"
 import { Input } from "./ui/input"
@@ -17,6 +16,7 @@ import { deleteThread, getThreads, getProjects, moveThreadToProject, deleteProje
 import { supabase } from "@/lib/supabase/client"
 import { useEffect, useState, useCallback } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
+import { useTabVisibility } from "@/frontend/hooks/useTabVisibility"
 import {
   User,
   LogOut,
@@ -34,9 +34,9 @@ import {
   X,
   HelpCircle,
   Keyboard,
-  FileText,
-  Bug,
   Info,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/frontend/components/AuthProvider"
@@ -66,6 +66,7 @@ import {
   AlertDialogTitle,
 } from "@/frontend/components/ui/alert-dialog"
 import { KeyboardShortcutsDialog } from "./KeyboardShortcutsDialog"
+import { useSidebar } from "./ui/sidebar"
 
 interface Thread {
   id: string
@@ -106,7 +107,7 @@ function ProfileSection() {
             <div className="relative">
               {avatarUrl ? (
                 <img
-                  src={avatarUrl}
+                  src={avatarUrl || "/placeholder.svg"}
                   alt={displayName}
                   className="w-8 h-8 rounded-full object-cover"
                 />
@@ -139,7 +140,7 @@ function ProfileSection() {
   )
 }
 
-export default function ChatSidebar() {
+export function ChatSidebar() {
   const { id } = useParams()
   const navigate = useNavigate()
   const { user, loading: authLoading } = useAuth()
@@ -147,6 +148,26 @@ export default function ChatSidebar() {
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [showForceLoad, setShowForceLoad] = useState(false)
+  const { state, toggleSidebar } = useSidebar()
+  const collapsed = state === 'collapsed'
+
+  // Add tab visibility management to refresh sidebar when returning
+  useTabVisibility({
+    onVisible: () => {
+      console.log("🔄 Sidebar became visible, checking state:", {
+        threadsCount: threads.length,
+        projectsCount: projects.length,
+        hasUser: !!user,
+        isLoading: loading,
+      })
+
+      // Always do a gentle refresh to ensure data is up-to-date
+      // This ensures any stuck loading states are cleared
+      fetchData(true) // Pass true to indicate this is a refresh
+    },
+    refreshStoresOnVisible: false, // Don't refresh API key stores - let specific components handle that
+  })
   const [shareDialogOpen, setShareDialogOpen] = useState(false)
   const [shareThreadId, setShareThreadId] = useState<string | null>(null)
   const [shareThreadTitle, setShareThreadTitle] = useState("")
@@ -157,33 +178,50 @@ export default function ChatSidebar() {
   const [editingThreadId, setEditingThreadId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState("")
   const [isKeyboardShortcutsOpen, setIsKeyboardShortcutsOpen] = useState(false)
+  const [openDropdownThreadId, setOpenDropdownThreadId] = useState<string | null>(null)
 
-  const fetchData = useCallback(async () => {
-    if (!user) {
-      console.log("No user, skipping data fetch")
-      return
-    }
+  const fetchData = useCallback(
+    async (isRefresh = false) => {
+      if (!user) {
+        console.log("No user, skipping data fetch")
+        return
+      }
 
-    try {
-      console.log("Fetching threads and projects for user:", user.id)
-      setLoading(true)
-      setError(null)
+      try {
+        console.log("Fetching threads and projects for user:", user.id, isRefresh ? "(refresh)" : "(initial)")
 
-      const [threadsData, projectsData] = await Promise.all([getThreads(), getProjects()])
+        // For initial load, show loading state
+        // For refresh, ensure loading is false (in case it was stuck)
+        if (isRefresh) {
+          setLoading(false) // Clear any stuck loading state
+        } else {
+          setLoading(true)
+        }
+        setError(null)
 
-      console.log("Fetched threads:", threadsData)
-      console.log("Fetched projects:", projectsData)
+        const [threadsData, projectsData] = await Promise.all([getThreads(), getProjects()])
 
-      setThreads(threadsData || [])
-      setProjects(projectsData || [])
-    } catch (error) {
-      console.error("Failed to fetch data:", error)
-      setError(error instanceof Error ? error.message : "Failed to load data")
-      toast.error("Failed to load data")
-    } finally {
-      setLoading(false)
-    }
-  }, [user])
+        console.log(
+          "Fetched threads:",
+          threadsData?.length || 0,
+          "projects:",
+          projectsData?.length || 0,
+          isRefresh ? "(refresh)" : "(initial)",
+        )
+
+        setThreads(threadsData || [])
+        setProjects(projectsData || [])
+      } catch (error) {
+        console.error("Failed to fetch data:", error)
+        setError(error instanceof Error ? error.message : "Failed to load data")
+        toast.error("Failed to load data")
+      } finally {
+        // Always ensure loading is false when done, regardless of refresh type
+        setLoading(false)
+      }
+    },
+    [user],
+  )
 
   // Fetch data when user is available
   useEffect(() => {
@@ -201,6 +239,32 @@ export default function ChatSidebar() {
     console.log("User authenticated, fetching data...")
     fetchData()
   }, [user, authLoading, fetchData])
+
+  // Force load mechanism - show force load button after 5 seconds
+  useEffect(() => {
+    if (loading && !authLoading && user) {
+      const timer = setTimeout(() => {
+        setShowForceLoad(true)
+      }, 5000)
+      return () => clearTimeout(timer)
+    } else {
+      setShowForceLoad(false)
+    }
+  }, [loading, authLoading, user])
+
+  const handleForceLoad = () => {
+    console.log("🔧 Force loading ChatSidebar data")
+    setLoading(false)
+    setShowForceLoad(false)
+    setError(null)
+
+    // Keep existing data if we have it
+    if (threads.length === 0 && projects.length === 0) {
+      console.log("📋 No existing data, setting empty state")
+      setThreads([])
+      setProjects([])
+    }
+  }
 
   // Set up real-time subscriptions
   useEffect(() => {
@@ -418,12 +482,15 @@ export default function ChatSidebar() {
           ) : (
             <>
               <span className="truncate block">{thread.title}</span>
-              <DropdownMenu>
+              <DropdownMenu modal={false} onOpenChange={(open) => setOpenDropdownThreadId(open ? thread.id : null)}>
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="hidden group-hover/thread:flex ml-auto h-7 w-7"
+                    className={cn(
+                      "ml-auto h-7 w-7",
+                      openDropdownThreadId === thread.id ? "flex" : "hidden group-hover/thread:flex"
+                    )}
                     onClick={(e) => {
                       e.preventDefault()
                       e.stopPropagation()
@@ -432,12 +499,7 @@ export default function ChatSidebar() {
                     <MoreHorizontal size={16} />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  align="end"
-                  side="right"
-                  className="w-48"
-                  style={{ position: "fixed" }}
-                >
+                <DropdownMenuContent align="end" side="right" className="w-48" sideOffset={5} avoidCollisions={true}>
                   <DropdownMenuItem
                     onClick={(e) => {
                       e.preventDefault()
@@ -513,9 +575,11 @@ export default function ChatSidebar() {
   // Show loading state while auth is loading
   if (authLoading) {
     return (
-      <Sidebar>
+      <Sidebar className="sidebar-with-spacing" data-collapsed={collapsed}>
         <div className="flex flex-col h-full">
-          <ProfileSection />
+          <div className="p-4 border-b border-border/50">
+            <h1 className="text-lg font-bold">LoveChat</h1>
+          </div>
           <SidebarContent>
             <div className="flex items-center justify-center p-8">
               <Loader2 className="h-6 w-6 animate-spin" />
@@ -529,9 +593,11 @@ export default function ChatSidebar() {
   // Show login prompt if not authenticated
   if (!user) {
     return (
-      <Sidebar>
+      <Sidebar className="sidebar-with-spacing" data-collapsed={collapsed}>
         <div className="flex flex-col h-full">
-          <ProfileSection />
+          <div className="p-4 border-b border-border/50">
+            <h1 className="text-lg font-bold">LoveChat</h1>
+          </div>
           <SidebarContent>
             <div className="flex items-center justify-center p-8 text-center">
               <p className="text-muted-foreground">Please log in to view your chats</p>
@@ -543,205 +609,233 @@ export default function ChatSidebar() {
   }
 
   return (
-    <Sidebar>
-      <div className="flex flex-col h-full">
-        <ProfileSection />
-        <div className="p-4 border-b border-border/50">
-          <Link to="/chat" className={cn(buttonVariants({ variant: "default" }), "w-full justify-center gap-2")}>
-            <MessageSquarePlus className="h-4 w-4" />
-            New Chat
-          </Link>
-        </div>
-        <SidebarContent className="no-scrollbar">
-          <SidebarGroup>
-            <div className="flex items-center justify-between px-2 py-1">
-              <span className="text-sm font-medium">Projects</span>
-              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setCreateProjectOpen(true)}>
-                <Plus className="h-4 w-4" />
+    <>
+      <Sidebar className="sidebar-with-spacing" data-collapsed={collapsed}>
+        <div className="flex flex-col h-full">
+          <ProfileSection />
+          <div className="p-4 border-b border-border/50">
+            <Link to="/chat" className={cn(buttonVariants({ variant: "default" }), "w-full justify-center gap-2")}>
+              <MessageSquarePlus className="h-4 w-4" />
+              New Chat
+            </Link>
+          </div>
+          <SidebarContent className="no-scrollbar">
+            <SidebarGroup>
+              <div className="flex items-center justify-between px-2 py-1">
+                <span className="text-sm font-medium">Projects</span>
+                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setCreateProjectOpen(true)}>
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {loading ? (
+                    <div className="flex flex-col items-center justify-center p-4 space-y-2">
+                      <Loader2 className="h-6 w-6 animate-spin" />
+                      <p className="text-sm text-muted-foreground">Loading...</p>
+                      {showForceLoad && (
+                        <Button variant="outline" size="sm" onClick={handleForceLoad}>
+                          Force Load
+                        </Button>
+                      )}
+                    </div>
+                  ) : error ? (
+                    <div className="p-4 text-center">
+                      <p className="text-sm text-destructive mb-2">{error}</p>
+                      <Button variant="outline" size="sm" onClick={() => fetchData()}>
+                        Retry
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Projects */}
+                      {projects.map((project) => {
+                        const projectThreads = getProjectThreads(project.id)
+                        const isExpanded = expandedProjects.has(project.id)
+
+                        return (
+                          <Collapsible
+                            key={project.id}
+                            open={isExpanded}
+                            onOpenChange={() => toggleProject(project.id)}
+                          >
+                            <SidebarMenuItem>
+                              <div className="flex items-center gap-2 px-2 py-1 hover:bg-secondary rounded-[8px] group">
+                                <CollapsibleTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-6 w-6 p-0">
+                                    {isExpanded ? <FolderOpen className="h-4 w-4" /> : <Folder className="h-4 w-4" />}
+                                  </Button>
+                                </CollapsibleTrigger>
+                                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: project.color }} />
+                                <span
+                                  className="text-sm font-medium truncate flex-1 cursor-pointer"
+                                  onClick={() => navigate(`/project/${project.id}`)}
+                                >
+                                  {project.name}
+                                </span>
+                                <span className="text-xs text-muted-foreground">{projectThreads.length}</span>
+                                <DropdownMenu modal={false}>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-6 w-6 opacity-0 group-hover:opacity-100"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                      }}
+                                    >
+                                      <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent
+                                    align="end"
+                                    side="right"
+                                    className="w-48"
+                                    sideOffset={5}
+                                  >
+                                    <DropdownMenuItem
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        navigate(`/project/${project.id}`)
+                                      }}
+                                    >
+                                      <Edit className="h-4 w-4 mr-2" />
+                                      Manage Project
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        setProjectToDelete(project)
+                                        setDeleteProjectDialogOpen(true)
+                                      }}
+                                      className="text-destructive"
+                                    >
+                                      <Trash className="h-4 w-4 mr-2" />
+                                      Delete Project
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
+                            </SidebarMenuItem>
+                            <CollapsibleContent>
+                              <div className="ml-6 space-y-1">{projectThreads.map(renderThread)}</div>
+                            </CollapsibleContent>
+                          </Collapsible>
+                        )
+                      })}
+
+                      {/* Unorganized Threads */}
+                      {unorganizedThreads.length > 0 && (
+                        <>
+                          <SidebarSeparator />
+                          <div className="px-2 py-1">
+                            <span className="text-sm font-medium text-muted-foreground">Unorganized</span>
+                          </div>
+                          {unorganizedThreads.map(renderThread)}
+                        </>
+                      )}
+
+                      {/* Empty state */}
+                      {threads.length === 0 && projects.length === 0 && (
+                        <div className="p-4 text-center">
+                          <p className="text-sm text-muted-foreground mb-2">No chats or projects yet</p>
+                          <p className="text-xs text-muted-foreground">Start a new chat to get started!</p>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </SidebarContent>
+          <SidebarFooter className="p-4 mt-auto border-t border-border/50">
+            <div className="flex items-center justify-between w-full">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="icon" className="h-8 w-8">
+                    <HelpCircle className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-56">
+                  <DropdownMenuItem
+                    className="gap-2"
+                    onSelect={(e) => {
+                      e.preventDefault()
+                      setIsKeyboardShortcutsOpen(true)
+                    }}
+                  >
+                    <Keyboard className="h-4 w-4" />
+                    Keyboard Shortcuts
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem className="gap-2">
+                    <Info className="h-4 w-4" />
+                    Version 0.0.1
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* Sidebar toggle button aligned with help button */}
+              <Button variant="outline" size="icon" className="h-8 w-8" onClick={toggleSidebar}>
+                <ChevronLeft className="h-4 w-4" />
               </Button>
             </div>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {loading ? (
-                  <div className="flex items-center justify-center p-4">
-                    <Loader2 className="h-6 w-6 animate-spin" />
-                  </div>
-                ) : error ? (
-                  <div className="p-4 text-center">
-                    <p className="text-sm text-destructive mb-2">{error}</p>
-                    <Button variant="outline" size="sm" onClick={fetchData}>
-                      Retry
-                    </Button>
-                  </div>
-                ) : (
-                  <>
-                    {/* Projects */}
-                    {projects.map((project) => {
-                      const projectThreads = getProjectThreads(project.id)
-                      const isExpanded = expandedProjects.has(project.id)
+          </SidebarFooter>
+        </div>
+        {shareThreadId && (
+          <ShareDialog
+            open={shareDialogOpen}
+            onOpenChange={setShareDialogOpen}
+            threadId={shareThreadId}
+            threadTitle={shareThreadTitle}
+          />
+        )}
+        <CreateProjectDialog open={createProjectOpen} onOpenChange={setCreateProjectOpen} onSuccess={fetchData} />
 
-                      return (
-                        <Collapsible key={project.id} open={isExpanded} onOpenChange={() => toggleProject(project.id)}>
-                          <SidebarMenuItem>
-                            <div className="flex items-center gap-2 px-2 py-1 hover:bg-secondary rounded-[8px] group">
-                              <CollapsibleTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-6 w-6 p-0">
-                                  {isExpanded ? <FolderOpen className="h-4 w-4" /> : <Folder className="h-4 w-4" />}
-                                </Button>
-                              </CollapsibleTrigger>
-                              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: project.color }} />
-                              <span
-                                className="text-sm font-medium truncate flex-1 cursor-pointer"
-                                onClick={() => navigate(`/project/${project.id}`)}
-                              >
-                                {project.name}
-                              </span>
-                              <span className="text-xs text-muted-foreground">{projectThreads.length}</span>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-6 w-6 opacity-0 group-hover:opacity-100"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                    }}
-                                  >
-                                    <MoreHorizontal className="h-4 w-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent
-                                  align="end"
-                                  side="right"
-                                  className="w-48"
-                                  style={{ position: "fixed" }}
-                                >
-                                  <DropdownMenuItem
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      navigate(`/project/${project.id}`)
-                                    }}
-                                  >
-                                    <Edit className="h-4 w-4 mr-2" />
-                                    Manage Project
-                                  </DropdownMenuItem>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      setProjectToDelete(project)
-                                      setDeleteProjectDialogOpen(true)
-                                    }}
-                                    className="text-destructive"
-                                  >
-                                    <Trash className="h-4 w-4 mr-2" />
-                                    Delete Project
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                          </SidebarMenuItem>
-                          <CollapsibleContent>
-                            <div className="ml-6 space-y-1">{projectThreads.map(renderThread)}</div>
-                          </CollapsibleContent>
-                        </Collapsible>
-                      )
-                    })}
+        <AlertDialog open={deleteProjectDialogOpen} onOpenChange={setDeleteProjectDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Project</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete the project "{projectToDelete?.name}"?
+                <br />
+                <br />
+                This will <strong>not</strong> delete the conversations in this project, but they will be moved to
+                "Unorganized".
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteProject}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
-                    {/* Unorganized Threads */}
-                    {unorganizedThreads.length > 0 && (
-                      <>
-                        <SidebarSeparator />
-                        <div className="px-2 py-1">
-                          <span className="text-sm font-medium text-muted-foreground">Unorganized</span>
-                        </div>
-                        {unorganizedThreads.map(renderThread)}
-                      </>
-                    )}
-
-                    {/* Empty state */}
-                    {threads.length === 0 && projects.length === 0 && (
-                      <div className="p-4 text-center">
-                        <p className="text-sm text-muted-foreground mb-2">No chats or projects yet</p>
-                        <p className="text-xs text-muted-foreground">Start a new chat to get started!</p>
-                      </div>
-                    )}
-                  </>
-                )}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        </SidebarContent>
-        <SidebarFooter className="p-4">
-          <div className="flex items-center justify-between w-full">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" className="h-8 w-8">
-                  <HelpCircle className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-56">
-                <DropdownMenuItem
-                  className="gap-2"
-                  onSelect={(e) => {
-                    e.preventDefault()
-                    setIsKeyboardShortcutsOpen(true)
-                  }}
-                >
-                  <Keyboard className="h-4 w-4" />
-                  Keyboard Shortcuts
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem className="gap-2">
-                  <Info className="h-4 w-4" />
-                  Version 0.0.1
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <SidebarTrigger className="h-8 w-8 md:block hidden" />
-          </div>
-        </SidebarFooter>
-      </div>
-      {shareThreadId && (
-        <ShareDialog
-          open={shareDialogOpen}
-          onOpenChange={setShareDialogOpen}
-          threadId={shareThreadId}
-          threadTitle={shareThreadTitle}
+        {/* Keyboard Shortcuts Dialog */}
+        <KeyboardShortcutsDialog
+          trigger={<div style={{ display: "none" }} />}
+          open={isKeyboardShortcutsOpen}
+          onOpenChange={setIsKeyboardShortcutsOpen}
         />
+      </Sidebar>
+
+      {/* Collapsed sidebar toggle button */}
+      {collapsed && (
+        <Button
+          className="fixed bottom-4 left-4 z-50 h-10 w-10 rounded-full shadow-md"
+          variant="outline"
+          size="icon"
+          onClick={toggleSidebar}
+        >
+          <ChevronRight className="h-4 w-4" />
+        </Button>
       )}
-      <CreateProjectDialog open={createProjectOpen} onOpenChange={setCreateProjectOpen} onSuccess={fetchData} />
-
-      <AlertDialog open={deleteProjectDialogOpen} onOpenChange={setDeleteProjectDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Project</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete the project "{projectToDelete?.name}"?
-              <br />
-              <br />
-              This will <strong>not</strong> delete the conversations in this project, but they will be moved to
-              "Unorganized".
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteProject}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Keyboard Shortcuts Dialog */}
-      <KeyboardShortcutsDialog
-        trigger={<div style={{ display: 'none' }} />}
-        open={isKeyboardShortcutsOpen}
-        onOpenChange={setIsKeyboardShortcutsOpen}
-      />
-    </Sidebar>
+    </>
   )
 }

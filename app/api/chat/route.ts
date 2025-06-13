@@ -8,9 +8,13 @@ import { type NextRequest, NextResponse } from "next/server"
 import { supabaseServer } from "@/lib/supabase/server"
 import { v4 as uuidv4 } from "uuid"
 import { CustomResumableStream } from "@/lib/resumable-streams-server"
+import { StreamProtection, StreamCircuitBreaker } from "@/lib/stream-protection"
 
 export const runtime = "nodejs"
 export const maxDuration = 60
+
+// Circuit breaker for stream operations
+const streamCircuitBreaker = new StreamCircuitBreaker(3, 300000) // 3 failures, 5 minute reset
 
 // GET handler for resuming streams
 export async function GET(request: Request) {
@@ -357,96 +361,131 @@ export async function POST(req: NextRequest) {
       }
 
       console.log("🚀 Starting AI generation...")
-      const result = streamText(streamOptions)
+      
+      // Wrap the stream creation in circuit breaker
+      return await streamCircuitBreaker.execute(async () => {
+        const result = streamText(streamOptions)
+        
+        // Initialize stream protection for thinking models
+        const streamProtection = new StreamProtection({
+          maxRepetitions: 4,
+          repetitionWindowSize: 100,
+          maxResponseLength: 40000,
+          timeoutMs: 180000, // 3 minutes for thinking models
+          maxSimilarChunks: 6,
+        })
 
-      // Create a custom readable stream that filters out thinking content
-      const customStream = new ReadableStream({
-        async start(controller) {
-          const reader = result.toDataStream().getReader()
-          let buffer = ""
-          let insideThinking = false
+        // Create a custom readable stream that filters out thinking content AND protects against loops
+        const customStream = new ReadableStream({
+          async start(controller) {
+            const reader = result.toDataStream().getReader()
+            let buffer = ""
+            let insideThinking = false
 
-          try {
-            while (true) {
-              const { done, value } = await reader.read()
-              if (done) break
+            try {
+              while (true) {
+                const { done, value } = await reader.read()
+                if (done) break
 
-              const chunk = new TextDecoder().decode(value)
-              buffer += chunk
+                const chunk = new TextDecoder().decode(value)
+                buffer += chunk
 
-              // Process the buffer to filter out thinking content
-              let processedChunk = ""
-              let i = 0
+                // Process the buffer to filter out thinking content
+                let processedChunk = ""
+                let i = 0
 
-              while (i < buffer.length) {
-                if (!insideThinking) {
-                  // Look for start of thinking
-                  const thinkStart = buffer.indexOf("<think>", i)
-                  if (thinkStart !== -1 && thinkStart < buffer.length) {
-                    // Add content before thinking
-                    processedChunk += buffer.substring(i, thinkStart)
-                    insideThinking = true
-                    i = thinkStart + 10 // Skip "<Thinking>"
+                while (i < buffer.length) {
+                  if (!insideThinking) {
+                    // Look for start of thinking
+                    const thinkStart = buffer.indexOf("<think>", i)
+                    if (thinkStart !== -1 && thinkStart < buffer.length) {
+                      // Add content before thinking
+                      processedChunk += buffer.substring(i, thinkStart)
+                      insideThinking = true
+                      i = thinkStart + 10 // Skip "<Thinking>"
+                    } else {
+                      // No thinking tag found, add rest of buffer
+                      processedChunk += buffer.substring(i)
+                      break
+                    }
                   } else {
-                    // No thinking tag found, add rest of buffer
-                    processedChunk += buffer.substring(i)
-                    break
+                    // Look for end of thinking
+                    const thinkEnd = buffer.indexOf("</think>", i)
+                    if (thinkEnd !== -1) {
+                      // Skip thinking content
+                      insideThinking = false
+                      i = thinkEnd + 11 // Skip "</Thinking>"
+                    } else {
+                      // Still inside thinking, skip rest of buffer
+                      break
+                    }
                   }
+                }
+
+                // Update buffer to keep unprocessed content
+                if (i < buffer.length) {
+                  buffer = buffer.substring(i)
                 } else {
-                  // Look for end of thinking
-                  const thinkEnd = buffer.indexOf("</think>", i)
-                  if (thinkEnd !== -1) {
-                    // Skip thinking content
-                    insideThinking = false
-                    i = thinkEnd + 11 // Skip "</Thinking>"
-                  } else {
-                    // Still inside thinking, skip rest of buffer
-                    break
+                  buffer = ""
+                }
+
+                // Send processed chunk if we have content - but check for protection first
+                if (processedChunk) {
+                  // Check with stream protection
+                  const protectionResult = streamProtection.analyzeChunk(processedChunk)
+                  
+                  if (!protectionResult.allowed) {
+                    console.warn("🛡️ Stream protection triggered:", protectionResult.reason)
+                    console.log("📊 Stream stats:", streamProtection.getStats())
+                    
+                    // Send error message to client
+                    const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
+                    const encodedError = `0:"${errorMsg.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
+                    controller.enqueue(new TextEncoder().encode(encodedError))
+                    
+                    // Terminate the stream
+                    controller.enqueue(new TextEncoder().encode('d:""\n'))
+                    controller.close()
+                    return
                   }
+                  
+                  // Re-encode as proper data stream format
+                  const encodedChunk = `0:"${processedChunk.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
+                  controller.enqueue(new TextEncoder().encode(encodedChunk))
                 }
               }
 
-              // Update buffer to keep unprocessed content
-              if (i < buffer.length) {
-                buffer = buffer.substring(i)
-              } else {
-                buffer = ""
+              // Send any remaining buffer content (outside thinking)
+              if (buffer && !insideThinking) {
+                // Final protection check
+                const protectionResult = streamProtection.analyzeChunk(buffer)
+                if (protectionResult.allowed) {
+                  const encodedChunk = `0:"${buffer.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
+                  controller.enqueue(new TextEncoder().encode(encodedChunk))
+                }
               }
 
-              // Send processed chunk if we have content
-              if (processedChunk) {
-                // Re-encode as proper data stream format
-                const encodedChunk = `0:"${processedChunk.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
-                controller.enqueue(new TextEncoder().encode(encodedChunk))
-              }
+              // Send completion marker
+              controller.enqueue(new TextEncoder().encode('d:""\n'))
+            } catch (error) {
+              console.error("❌ Error in thinking stream processing:", error)
+              controller.error(error)
+            } finally {
+              controller.close()
             }
+          },
+        })
 
-            // Send any remaining buffer content (outside thinking)
-            if (buffer && !insideThinking) {
-              const encodedChunk = `0:"${buffer.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
-              controller.enqueue(new TextEncoder().encode(encodedChunk))
-            }
-
-            // Send completion marker
-            controller.enqueue(new TextEncoder().encode('d:""\n'))
-          } catch (error) {
-            console.error("❌ Error in thinking stream processing:", error)
-            controller.error(error)
-          } finally {
-            controller.close()
-          }
-        },
-      })
-
-      return new Response(customStream, {
-        headers: {
-          "Content-Type": "text/plain; charset=utf-8",
-          "Cache-Control": "no-cache",
-          Connection: "keep-alive",
-        },
+        return new Response(customStream, {
+          headers: {
+            "Content-Type": "text/plain; charset=utf-8",
+            "Cache-Control": "no-cache",
+            Connection: "keep-alive",
+          },
+        })
       })
     } else {
-      // Regular models - use standard processing
+      // Regular models - use standard processing with protection
       const streamOptions = {
         model: aiModel,
         messages: processedMessages,
@@ -458,15 +497,76 @@ export async function POST(req: NextRequest) {
       }
 
       console.log("🚀 Starting AI generation...")
-      const result = streamText(streamOptions)
-      const responseStream = result.toDataStream()
+      
+      // Wrap the stream creation in circuit breaker
+      return await streamCircuitBreaker.execute(async () => {
+        const result = streamText(streamOptions)
+        
+        // Initialize stream protection for regular models
+        const streamProtection = new StreamProtection({
+          maxRepetitions: 5,
+          repetitionWindowSize: 80,
+          maxResponseLength: 50000,
+          timeoutMs: 120000, // 2 minutes for regular models
+          maxSimilarChunks: 8,
+        })
 
-      return new Response(responseStream, {
-        headers: {
-          "Content-Type": "text/plain; charset=utf-8",
-          "Cache-Control": "no-cache",
-          Connection: "keep-alive",
-        },
+        // Create protected stream
+        const protectedStream = new ReadableStream({
+          async start(controller) {
+            const reader = result.toDataStream().getReader()
+
+            try {
+              while (true) {
+                const { done, value } = await reader.read()
+                if (done) break
+
+                const chunk = new TextDecoder().decode(value)
+                
+                // Extract content from data stream format
+                const match = chunk.match(/0:"([^"]*)"/)
+                if (match) {
+                  const content = match[1].replace(/\\"/g, '"').replace(/\\n/g, '\n')
+                  
+                  // Check with stream protection
+                  const protectionResult = streamProtection.analyzeChunk(content)
+                  
+                  if (!protectionResult.allowed) {
+                    console.warn("🛡️ Stream protection triggered:", protectionResult.reason)
+                    console.log("📊 Stream stats:", streamProtection.getStats())
+                    
+                    // Send error message to client
+                    const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
+                    const encodedError = `0:"${errorMsg.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
+                    controller.enqueue(new TextEncoder().encode(encodedError))
+                    
+                    // Terminate the stream
+                    controller.enqueue(new TextEncoder().encode('d:""\n'))
+                    controller.close()
+                    return
+                  }
+                }
+                
+                // Forward the original chunk if protection allows it
+                controller.enqueue(value)
+              }
+              
+              // Stream completed normally
+              controller.close()
+            } catch (error) {
+              console.error("❌ Error in protected stream processing:", error)
+              controller.error(error)
+            }
+          },
+        })
+
+        return new Response(protectedStream, {
+          headers: {
+            "Content-Type": "text/plain; charset=utf-8",
+            "Cache-Control": "no-cache",
+            Connection: "keep-alive",
+          },
+        })
       })
     }
   } catch (error) {
@@ -536,7 +636,12 @@ You can use rich markdown formatting in your responses:
   \`\`\`
 - Lists (bulleted and numbered)
 - Headers (# ## ###)
-- Tables using markdown syntax
+- Tables using markdown syntax (pipe-separated with header row)
+  Example:
+  | Column 1 | Column 2 | Column 3 |
+  |----------|----------|----------|
+  | Row 1    | Data 1   | Value 1  |
+  | Row 2    | Data 2   | Value 2  |
 - Blockquotes using >
 - Links [text](url)
 - Horizontal rules using ---
@@ -674,8 +779,17 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
     // For thinking models, we need special handling
     if (isThinkingModel) {
       console.log("🧠 Using thinking-aware stream processing for Ollama")
+      
+      // Initialize stream protection for Ollama thinking models
+      const streamProtection = new StreamProtection({
+        maxRepetitions: 4,
+        repetitionWindowSize: 100,
+        maxResponseLength: 40000,
+        timeoutMs: 180000, // 3 minutes for thinking models
+        maxSimilarChunks: 6,
+      })
 
-      // Create a readable stream from the Ollama response with thinking handling
+      // Create a readable stream from the Ollama response with thinking handling AND protection
       const stream = new ReadableStream({
         async start(controller) {
           const reader = response.body?.getReader()
@@ -776,8 +890,26 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
                       buffer = ""
                     }
 
-                    // Only send non-thinking content
+                    // Only send non-thinking content - but check protection first
                     if (processedContent) {
+                      // Check with stream protection
+                      const protectionResult = streamProtection.analyzeChunk(processedContent)
+                      
+                      if (!protectionResult.allowed) {
+                        console.warn("🛡️ Ollama stream protection triggered:", protectionResult.reason)
+                        console.log("📊 Ollama stream stats:", streamProtection.getStats())
+                        
+                        // Send error message to client
+                        const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
+                        const encodedError = `0:"${errorMsg.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
+                        safeEnqueue(new TextEncoder().encode(encodedError))
+                        
+                        // Terminate the stream
+                        safeEnqueue(new TextEncoder().encode('d:""\n'))
+                        safeClose()
+                        return
+                      }
+                      
                       // Format as AI SDK compatible stream
                       const streamChunk = `0:"${processedContent.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
                       safeEnqueue(new TextEncoder().encode(streamChunk))
@@ -849,8 +981,17 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
     } else {
       // Regular non-thinking Ollama model
       console.log("🦙 Using standard stream processing for Ollama")
+      
+      // Initialize stream protection for regular Ollama models
+      const streamProtection = new StreamProtection({
+        maxRepetitions: 5,
+        repetitionWindowSize: 80,
+        maxResponseLength: 50000,
+        timeoutMs: 120000, // 2 minutes for regular models
+        maxSimilarChunks: 8,
+      })
 
-      // Create a readable stream from the Ollama response
+      // Create a readable stream from the Ollama response with protection
       const stream = new ReadableStream({
         async start(controller) {
           const reader = response.body?.getReader()
@@ -898,8 +1039,28 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
                 try {
                   const data = JSON.parse(line)
                   if (data.message?.content) {
+                    const content = data.message.content
+                    
+                    // Check with stream protection
+                    const protectionResult = streamProtection.analyzeChunk(content)
+                    
+                    if (!protectionResult.allowed) {
+                      console.warn("🛡️ Ollama stream protection triggered:", protectionResult.reason)
+                      console.log("📊 Ollama stream stats:", streamProtection.getStats())
+                      
+                      // Send error message to client
+                      const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
+                      const encodedError = `0:"${errorMsg.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
+                      safeEnqueue(new TextEncoder().encode(encodedError))
+                      
+                      // Terminate the stream
+                      safeEnqueue(new TextEncoder().encode('d:""\n'))
+                      safeClose()
+                      return
+                    }
+                    
                     // Format as AI SDK compatible stream
-                    const streamChunk = `0:"${data.message.content.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
+                    const streamChunk = `0:"${content.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
                     safeEnqueue(new TextEncoder().encode(streamChunk))
                   }
                   if (data.done) {
