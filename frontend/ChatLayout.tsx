@@ -4,7 +4,7 @@ import type React from "react"
 
 import { SidebarProvider } from "@/frontend/components/ui/sidebar"
 import { ChatSidebar } from "@/frontend/components/ChatSidebar"
-import { Outlet, useParams } from "react-router"
+import { Outlet, useParams, useNavigate } from "react-router"
 import { Button } from "@/frontend/components/ui/button"
 import { Input } from "@/frontend/components/ui/input"
 import {
@@ -42,6 +42,18 @@ import PinnedMessages from "@/frontend/components/PinnedMessages"
 import ShareDialog from "@/frontend/components/ShareDialog"
 import { useState, useRef, useEffect } from "react"
 import { ConversationSummaryDialog } from "@/frontend/components/ConversationSummaryDialog"
+import { deleteThread, toggleThreadArchived } from "@/lib/supabase/queries"
+import { toast } from "sonner"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/frontend/components/ui/dialog"
+import { createThread, getMessagesByThreadId, createMessage, getSharedThreadByThreadId } from "@/lib/supabase/queries"
+import { v4 as uuidv4 } from "uuid"
 
 export default function ChatLayout() {
   const { id } = useParams()
@@ -66,7 +78,10 @@ export default function ChatLayout() {
   const [isEditingTitle, setIsEditingTitle] = useState(false)
   const [editTitle, setEditTitle] = useState("")
   const [shareDialogOpen, setShareDialogOpen] = useState(false)
+  const [existingShare, setExistingShare] = useState<any>(null)
   const titleInputRef = useRef<HTMLInputElement>(null)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const navigate = useNavigate()
 
   useEffect(() => {
     if (isEditingTitle && titleInputRef.current) {
@@ -132,23 +147,83 @@ export default function ChatLayout() {
     }
   }
 
-  const handleDeleteChat = () => {
-    // Implement delete functionality
-    console.log("Delete chat:", id)
+  const handleDeleteChat = async () => {
+    if (!id) return
+
+    setIsDeleteDialogOpen(true)
   }
 
-  const handleDuplicateChat = () => {
-    // Implement duplicate functionality
-    console.log("Duplicate chat:", id)
+  const handleDuplicateChat = async () => {
+    if (!id || !thread) return
+
+    try {
+      // Create a new thread with a similar title
+      const newThreadId = uuidv4()
+      const newTitle = `${thread.title} (Copy)`
+      await createThread(newThreadId)
+
+      // Update the title
+      await updateTitle(newTitle, newThreadId)
+
+      // Get all messages from the current thread
+      const messages = await getMessagesByThreadId(id)
+
+      // Copy all messages to the new thread
+      for (const message of messages) {
+        await createMessage(newThreadId, {
+          id: uuidv4(),
+          role: message.role,
+          content: message.content,
+          parts: message.parts,
+          createdAt: new Date(),
+        })
+      }
+
+      toast.success("Chat duplicated successfully")
+      navigate(`/chat/${newThreadId}`) // Navigate to the new thread
+    } catch (error) {
+      console.error("Error duplicating chat:", error)
+      toast.error("Failed to duplicate chat")
+    }
   }
 
-  const handleShareChat = () => {
+  const handleShareChat = async () => {
+    if (!id) return
+    
+    try {
+      // Check if there's already a share for this thread
+      const share = await getSharedThreadByThreadId(id)
+      setExistingShare(share)
+    } catch (error) {
+      console.error("Failed to check for existing share:", error)
+      setExistingShare(null)
+    }
+    
     setShareDialogOpen(true)
   }
 
-  const handleArchiveChat = () => {
-    // Implement archive functionality
-    console.log("Archive chat:", id)
+  const handleArchiveChat = async () => {
+    if (!id || !thread) return
+
+    try {
+      // Toggle the archived status
+      const isCurrentlyArchived = thread.title.includes("(Archived)")
+
+      // Update the database
+      await toggleThreadArchived(id, !isCurrentlyArchived)
+
+      // Update the title to reflect archived status
+      const newTitle = isCurrentlyArchived ? thread.title.replace(" (Archived)", "") : `${thread.title} (Archived)`
+
+      const success = await updateTitle(newTitle)
+
+      if (success) {
+        toast.success(isCurrentlyArchived ? "Chat unarchived" : "Chat archived")
+      }
+    } catch (error) {
+      console.error("Error archiving chat:", error)
+      toast.error("Failed to update archive status")
+    }
   }
 
   const handleReportBug = () => {
@@ -167,6 +242,20 @@ export default function ChatLayout() {
     const messageId = navigateToResult(index)
     if (messageId) {
       scrollToMessage(messageId)
+    }
+  }
+
+  const confirmDelete = async () => {
+    if (!id) return
+
+    try {
+      await deleteThread(id)
+      toast.success("Chat deleted successfully")
+      setIsDeleteDialogOpen(false)
+      navigate("/") // Navigate to home after deletion
+    } catch (error) {
+      console.error("Error deleting chat:", error)
+      toast.error("Failed to delete chat")
     }
   }
 
@@ -430,8 +519,30 @@ export default function ChatLayout() {
             onOpenChange={setShareDialogOpen}
             threadId={id}
             threadTitle={thread?.title || "Chat"}
+            existingShare={existingShare}
+            onShareCreated={(share) => setExistingShare(share)}
           />
         )}
+
+        {/* Delete Confirmation Dialog */}
+        <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete Chat</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete this chat? This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={confirmDelete}>
+                Delete
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </SidebarProvider>
   )

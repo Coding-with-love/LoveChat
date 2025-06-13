@@ -26,8 +26,31 @@ async function verifyPassword(password: string, hash: string): Promise<boolean> 
   return hashedPassword === hash
 }
 
-export const getThreads = async () => {
-  const { data, error } = await supabase.from("threads").select("*").order("last_message_at", { ascending: false })
+// Add a new function to archive/unarchive a thread
+export const toggleThreadArchived = async (threadId: string, isArchived: boolean) => {
+  const { data, error } = await supabase
+    .from("threads")
+    .update({
+      is_archived: isArchived,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", threadId)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+// Update the getThreads function to filter out archived threads by default
+export const getThreads = async (includeArchived = false) => {
+  let query = supabase.from("threads").select("*").order("last_message_at", { ascending: false })
+
+  if (!includeArchived) {
+    query = query.eq("is_archived", false)
+  }
+
+  const { data, error } = await query
 
   if (error) throw error
   return data || []
@@ -410,6 +433,23 @@ export const getUserSharedThreads = async () => {
 
   if (error) throw error
   return data || []
+}
+
+export const getSharedThreadByThreadId = async (threadId: string) => {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error("User not authenticated")
+
+  const { data, error } = await supabase
+    .from("shared_threads")
+    .select("*")
+    .eq("thread_id", threadId)
+    .eq("user_id", user.id)
+    .single()
+
+  if (error && error.code !== "PGRST116") throw error // PGRST116 is "not found"
+  return data || null
 }
 
 export const updateSharedThread = async (
@@ -967,32 +1007,65 @@ export const updateMessageInDatabase = async (messageId: string, newContent: str
       contentPreview: messageCheck.content.substring(0, 100),
     })
 
-    // Verify the thread belongs to the user (this covers both user and assistant messages)
-    const { data: threadCheck, error: threadError } = await supabase
-      .from("threads")
-      .select("id, user_id")
-      .eq("id", messageCheck.thread_id)
-      .eq("user_id", user.id)
-      .single()
+    // Check if this is a user message or assistant message
+    const isUserMessage = messageCheck.user_id === user.id
+    const isAssistantMessage = messageCheck.role === "assistant"
 
-    if (threadError) {
-      console.error("❌ Thread verification failed:", threadError)
+    console.log("🔍 Message type analysis:", {
+      isUserMessage,
+      isAssistantMessage,
+      messageUserId: messageCheck.user_id,
+      currentUserId: user.id,
+      messageRole: messageCheck.role,
+    })
+
+    let updateResult
+
+    if (isUserMessage) {
+      console.log("👤 Updating user message...")
+      // Update user message
+      updateResult = await supabase
+        .from("messages")
+        .update({
+          content: newContent,
+          updated_at: new Date().toISOString(), // Add updated_at timestamp
+        })
+        .eq("id", messageId)
+        .eq("user_id", user.id)
+        .select()
+    } else if (isAssistantMessage) {
+      console.log("🤖 Updating assistant message...")
+      // For assistant messages, verify the thread belongs to the user
+      const { data: threadCheck, error: threadError } = await supabase
+        .from("threads")
+        .select("id, user_id")
+        .eq("id", messageCheck.thread_id)
+        .eq("user_id", user.id)
+        .single()
+
+      if (threadError) {
+        console.error("❌ Thread verification failed:", threadError)
+        return false
+      }
+
+      console.log("✅ Thread verified, belongs to user:", threadCheck.user_id)
+
+      // Update assistant message in user's thread
+      updateResult = await supabase
+        .from("messages")
+        .update({
+          content: newContent,
+          updated_at: new Date().toISOString(), // Add updated_at timestamp
+        })
+        .eq("id", messageId)
+        .eq("thread_id", messageCheck.thread_id)
+        .select()
+    } else {
+      console.error("❌ Unknown message type or permission denied")
       return false
     }
 
-    console.log("✅ Thread verified, belongs to user:", threadCheck.user_id)
-
-    // Update the message (works for both user and assistant messages)
-    console.log("💾 Updating message content...")
-    const { data: updatedData, error: updateError } = await supabase
-      .from("messages")
-      .update({
-        content: newContent,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", messageId)
-      .eq("thread_id", messageCheck.thread_id)
-      .select()
+    const { data: updatedData, error: updateError } = updateResult
 
     if (updateError) {
       console.error("❌ Failed to update message:", updateError)

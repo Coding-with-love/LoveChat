@@ -242,10 +242,10 @@ export default function SharedConversation() {
           ) : (
             <div className="space-y-8">
               {uiMessages.map((message) => {
-                // Extract file attachments and sources
+                // Extract file attachments and sources using type assertion for custom part types
                 const fileAttachments =
-                  message.parts?.find((part) => part.type === "file_attachments")?.attachments || []
-                const sources = message.parts?.find((part) => part.type === "sources")?.sources || []
+                  (message.parts as any)?.find((part: any) => part.type === "file_attachments")?.attachments || []
+                const sources = (message.parts as any)?.find((part: any) => part.type === "sources")?.sources || []
                 const usedWebSearch = sources.length > 0
 
                 // Filter display parts
@@ -262,12 +262,16 @@ export default function SharedConversation() {
 
                     {displayParts.map((part, index) => {
                       if (part.type === "text") {
+                        // CRITICAL FIX: Use message.content if available (for updated messages), otherwise fall back to part.text
+                        // This ensures that rephrased text saved to the database is displayed correctly
+                        const textContent = message.content || part.text
+                        
                         return message.role === "user" ? (
                           <div
                             key={index}
                             className="px-4 py-3 rounded-xl bg-secondary border border-secondary-foreground/2 max-w-[80%]"
                           >
-                            <p>{part.text}</p>
+                            <p>{textContent}</p>
                           </div>
                         ) : (
                           <div key={index} className="w-full">
@@ -277,7 +281,7 @@ export default function SharedConversation() {
                                 "border-l-4 border-blue-500 pl-4 bg-blue-50/50 dark:bg-blue-950/20 rounded-lg shadow-sm"
                               }`}
                             >
-                              <MarkdownRenderer content={part.text} id={message.id} />
+                              <MarkdownRenderer content={textContent} id={message.id} />
                             </div>
                           </div>
                         )

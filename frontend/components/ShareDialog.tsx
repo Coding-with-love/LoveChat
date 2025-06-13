@@ -31,9 +31,10 @@ interface ShareDialogProps {
     expires_at: string | null
     view_count: number
   }
+  onShareCreated?: (share: any) => void
 }
 
-export default function ShareDialog({ open, onOpenChange, threadId, threadTitle, existingShare }: ShareDialogProps) {
+export default function ShareDialog({ open, onOpenChange, threadId, threadTitle, existingShare, onShareCreated }: ShareDialogProps) {
   const [title, setTitle] = useState(existingShare?.title || threadTitle)
   const [description, setDescription] = useState(existingShare?.description || "")
   const [isPublic, setIsPublic] = useState(existingShare?.is_public ?? true)
@@ -111,6 +112,9 @@ export default function ShareDialog({ open, onOpenChange, threadId, threadTitle,
 
       const newShareUrl = `${window.location.origin}/share/${result.share_token}`
       setShareUrl(newShareUrl)
+      
+      // Call the callback to update parent state
+      onShareCreated?.(result)
     } catch (error) {
       console.error("Failed to share conversation:", error)
       toast.error("Failed to share conversation")

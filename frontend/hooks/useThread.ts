@@ -2,70 +2,74 @@
 
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase/client"
+import { useUser } from "./useUser"
 
 interface Thread {
   id: string
+  created_at: string
   title: string
   user_id: string
-  created_at: string
-  updated_at: string
 }
 
-export function useThread(threadId: string | undefined) {
+export const useThread = (threadId: string | null) => {
   const [thread, setThread] = useState<Thread | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<Error | null>(null)
+  const { user } = useUser()
+  const id = threadId
 
   useEffect(() => {
-    if (!threadId) {
-      setThread(null)
+    if (!id) {
+      setLoading(false)
       return
     }
 
     const fetchThread = async () => {
       setLoading(true)
-      setError(null)
-
       try {
-        const { data, error } = await supabase.from("threads").select("*").eq("id", threadId).single()
+        const { data, error } = await supabase.from("threads").select("*").eq("id", id).single()
 
-        if (error) throw error
-        setThread(data)
-      } catch (err) {
-        console.error("Error fetching thread:", err)
-        setError(err instanceof Error ? err.message : "Failed to fetch thread")
+        if (error) {
+          setError(error)
+        } else {
+          setThread(data)
+        }
+      } catch (err: any) {
+        setError(err)
       } finally {
         setLoading(false)
       }
     }
 
     fetchThread()
-  }, [threadId])
+  }, [id])
 
-  const updateTitle = async (newTitle: string) => {
-    if (!threadId || !newTitle.trim()) return false
+  const updateTitle = async (newTitle: string, threadId?: string): Promise<boolean> => {
+    if (!newTitle.trim()) return false
 
     try {
-      const { error } = await supabase
+      const idToUpdate = threadId || id
+      if (!idToUpdate) return false
+
+      await supabase
         .from("threads")
-        .update({ title: newTitle.trim(), updated_at: new Date().toISOString() })
-        .eq("id", threadId)
+        .update({
+          title: newTitle,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", idToUpdate)
 
-      if (error) throw error
+      // Only update local state if we're updating the current thread
+      if (!threadId || threadId === id) {
+        setThread((prev) => (prev ? { ...prev, title: newTitle } : null))
+      }
 
-      setThread((prev) => (prev ? { ...prev, title: newTitle.trim() } : null))
       return true
-    } catch (err) {
-      console.error("Error updating thread title:", err)
-      setError(err instanceof Error ? err.message : "Failed to update title")
+    } catch (error) {
+      console.error("Error updating thread title:", error)
       return false
     }
   }
 
-  return {
-    thread,
-    loading,
-    error,
-    updateTitle,
-  }
+  return { thread, loading, error, updateTitle }
 }
