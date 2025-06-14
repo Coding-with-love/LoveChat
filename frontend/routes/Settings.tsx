@@ -24,6 +24,7 @@ import {
   History,
   Paperclip,
   Archive,
+  RefreshCw,
 } from "lucide-react"
 import { useAuth } from "@/frontend/components/AuthProvider"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/frontend/components/ui/card"
@@ -44,6 +45,7 @@ function Settings() {
   const [shareDialogOpen, setShareDialogOpen] = useState(false)
   const [editingShare, setEditingShare] = useState<any>(null)
   const [showForceLoadShares, setShowForceLoadShares] = useState(false)
+  const [globalLoading, setGlobalLoading] = useState(true)
   const { user, signOut } = useAuth()
 
   // Add tab visibility management to refresh state when returning to settings
@@ -54,6 +56,25 @@ function Settings() {
     },
     refreshStoresOnVisible: false, // Don't refresh stores here - APIKeyForm handles its own state
   })
+
+  // Global loading timeout to prevent the entire settings page from being stuck
+  useEffect(() => {
+    const globalLoadingTimeout = setTimeout(() => {
+      if (globalLoading) {
+        console.warn("⚠️ Settings page global loading timeout - forcing display")
+        setGlobalLoading(false)
+      }
+    }, 3000) // 3 second timeout for global loading
+
+    return () => clearTimeout(globalLoadingTimeout)
+  }, [globalLoading])
+
+  // Clear global loading when user is available
+  useEffect(() => {
+    if (user) {
+      setGlobalLoading(false)
+    }
+  }, [user])
 
   const loadSharedThreads = async (isRefresh = false) => {
     try {
@@ -116,6 +137,15 @@ function Settings() {
     console.log("🔧 Force clearing sharing loading state")
     setLoadingShares(false)
     setShowForceLoadShares(false)
+  }
+
+  // Add a force clear all loading states function
+  const handleForceUnstickSettings = () => {
+    console.log("🔧 Force clearing all Settings loading states")
+    setGlobalLoading(false)
+    setLoadingShares(false)
+    setShowForceLoadShares(false)
+    toast.success("Settings page refreshed")
   }
 
   const handleDeleteShare = async (shareId: string) => {
@@ -410,9 +440,49 @@ function Settings() {
                 <p className="text-sm text-muted-foreground">Manage your account and preferences</p>
               </div>
             </div>
+            
+            {/* Global loading indicator and force unstick button */}
+            <div className="ml-auto flex items-center gap-2">
+              {globalLoading && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary border-t-transparent"></div>
+                  <span>Loading...</span>
+                </div>
+              )}
+              {(loadingShares || showForceLoadShares) && (
+                <Button
+                  onClick={handleForceUnstickSettings}
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 text-xs"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                  Fix Loading
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </div>
+
+      {/* Global loading overlay */}
+      {globalLoading && (
+        <div className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm flex items-center justify-center">
+          <div className="flex flex-col items-center gap-4 p-8 rounded-lg bg-background border shadow-lg">
+            <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent"></div>
+            <p className="text-sm text-muted-foreground">Loading Settings...</p>
+            <Button
+              onClick={handleForceUnstickSettings}
+              variant="outline"
+              size="sm"
+              className="gap-2"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Force Load
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Content */}
       <div className="container mx-auto px-4 py-8">

@@ -20,6 +20,7 @@ interface AuthContextType {
   loading: boolean
   signOut: () => Promise<void>
   refreshSession: () => Promise<void>
+  refreshProfile: () => Promise<void>
   isAuthenticated: boolean
 }
 
@@ -29,6 +30,7 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   signOut: async () => {},
   refreshSession: async () => {},
+  refreshProfile: async () => {},
   isAuthenticated: false,
 })
 
@@ -48,13 +50,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Get the loadFromDatabase function from user preferences store
   const loadFromDatabase = useUserPreferencesStore((state) => state.loadFromDatabase)
 
-  const loadProfile = useCallback(async (userId: string) => {
+  const loadProfile = useCallback(async (userId: string, forceRefresh = false) => {
     try {
+      console.log("👤 Loading profile for user:", userId, forceRefresh ? "(forced)" : "")
       let profile = await getUserProfile(userId)
+      console.log("📋 Initial profile from database:", profile)
+      
+      // Get current user data to check metadata
+      const { data: { user } } = await supabase.auth.getUser()
+      console.log("🔍 User metadata:", user?.user_metadata)
       
       // If no profile exists or profile is missing data, check if we can populate from user metadata
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user && (!profile || !profile.avatar_url) && user.user_metadata) {
+      // Also force update if forceRefresh is true
+      if (user && (forceRefresh || !profile || !profile.avatar_url) && user.user_metadata) {
+        console.log("🔄 Profile missing or incomplete, checking user metadata...")
+        
         const updates: {
           username?: string
           full_name?: string
@@ -62,31 +72,52 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } = {}
         
         // Populate from Google metadata if available
-        if (!profile?.full_name && user.user_metadata.full_name) {
+        if ((!profile?.full_name || forceRefresh) && user.user_metadata.full_name) {
           updates.full_name = user.user_metadata.full_name
+          console.log("📝 Adding full_name from metadata:", user.user_metadata.full_name)
         }
-        if (!profile?.avatar_url && (user.user_metadata.avatar_url || user.user_metadata.picture)) {
-          updates.avatar_url = user.user_metadata.avatar_url || user.user_metadata.picture
+        
+        // Check multiple possible avatar fields from Google
+        const possibleAvatarUrl = user.user_metadata.avatar_url || 
+                                user.user_metadata.picture || 
+                                user.user_metadata.profile_picture ||
+                                user.user_metadata.photo
+        
+        if ((!profile?.avatar_url || forceRefresh) && possibleAvatarUrl) {
+          updates.avatar_url = possibleAvatarUrl
+          console.log("🖼️ Adding avatar_url from metadata:", possibleAvatarUrl)
         }
         
         // Update profile if we have any updates
         if (Object.keys(updates).length > 0) {
           try {
+            console.log("💾 Updating profile with:", updates)
             const { updateUserProfile } = await import("@/lib/supabase/queries")
             const updatedProfile = await updateUserProfile(updates)
+            console.log("✅ Profile updated successfully:", updatedProfile)
             setProfile(updatedProfile)
             return
           } catch (updateError) {
-            console.error("Error updating profile:", updateError)
+            console.error("❌ Error updating profile:", updateError)
+            // Fall through to set the original profile
           }
         }
       }
       
+      console.log("📋 Final profile being set:", profile)
       setProfile(profile)
     } catch (error) {
-      console.error("Error loading profile:", error)
+      console.error("❌ Error loading profile:", error)
+      setProfile(null)
     }
   }, [])
+
+  const refreshProfile = useCallback(async () => {
+    if (user) {
+      console.log("🔄 Force refreshing profile...")
+      await loadProfile(user.id, true)
+    }
+  }, [user, loadProfile])
 
   const refreshSession = useCallback(async () => {
     try {
@@ -144,5 +175,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await supabase.auth.signOut()
   }
 
-  return <AuthContext.Provider value={{ user, profile, loading, signOut, refreshSession, isAuthenticated: !!user }}>{children}</AuthContext.Provider>
+  return <AuthContext.Provider value={{ 
+    user, 
+    profile, 
+    loading, 
+    signOut, 
+    refreshSession, 
+    refreshProfile, 
+    isAuthenticated: !!user 
+  }}>{children}</AuthContext.Provider>
 }

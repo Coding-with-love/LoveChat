@@ -6,7 +6,7 @@ import { Input } from "@/frontend/components/ui/input"
 import { Label } from "@/frontend/components/ui/label"
 import { useAPIKeyStore } from "@/frontend/stores/APIKeyStore"
 import { toast } from "sonner"
-import { Eye, EyeOff, Check, X } from "lucide-react"
+import { Eye, EyeOff, Check, X, RefreshCw } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export default function APIKeyForm() {
@@ -20,43 +20,40 @@ export default function APIKeyForm() {
   const [showOpenrouterKey, setShowOpenrouterKey] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
+  const [showForceLoad, setShowForceLoad] = useState(false)
 
-  // Load keys on mount
+  // Initialize keys from store
   useEffect(() => {
     const initializeKeys = async () => {
       try {
-        console.log("🔄 APIKeyForm initializing...")
         setIsLoading(true)
         
-        // First check if we already have keys in the store
-        const currentKeys = getAllKeys()
-        if (Object.keys(currentKeys).length > 0) {
-          console.log("✅ Found keys in store, using them")
-          setOpenaiKey(getKey("openai") || "")
-          setGoogleKey(getKey("google") || "")
-          setOpenrouterKey(getKey("openrouter") || "")
-          setIsLoading(false)
-          return
+        // Get keys from current store state first
+        const currentOpenaiKey = getKey("openai") || ""
+        const currentGoogleKey = getKey("google") || ""
+        const currentOpenrouterKey = getKey("openrouter") || ""
+
+        setOpenaiKey(currentOpenaiKey)
+        setGoogleKey(currentGoogleKey)
+        setOpenrouterKey(currentOpenrouterKey)
+
+        // If we don't have keys in store, try to load from database
+        if (!currentOpenaiKey && !currentGoogleKey && !currentOpenrouterKey) {
+          console.log("🔄 No keys in store, loading from database...")
+          try {
+            await loadKeys()
+            
+            // Update local state with loaded keys
+            setOpenaiKey(getKey("openai") || "")
+            setGoogleKey(getKey("google") || "")
+            setOpenrouterKey(getKey("openrouter") || "")
+          } catch (error) {
+            console.error("❌ Error loading API keys:", error)
+            // Continue with empty keys if loading fails
+          }
         }
-        
-        // If no keys in store, try to load from database
-        console.log("🔄 No keys in store, loading from database...")
-        await loadKeys()
-        
-        // Update form state with loaded keys
-        setOpenaiKey(getKey("openai") || "")
-        setGoogleKey(getKey("google") || "")
-        setOpenrouterKey(getKey("openrouter") || "")
-        
-        console.log("✅ API keys loaded successfully")
       } catch (error) {
-        console.error("❌ Error loading API keys:", error)
-        toast.error("Failed to load API keys")
-        
-        // Even on error, show the form so user can still configure keys
-        setOpenaiKey(getKey("openai") || "")
-        setGoogleKey(getKey("google") || "")
-        setOpenrouterKey(getKey("openrouter") || "")
+        console.error("❌ Error initializing API keys:", error)
       } finally {
         setIsLoading(false)
       }
@@ -65,22 +62,47 @@ export default function APIKeyForm() {
     initializeKeys()
   }, [getKey, getAllKeys, loadKeys])
 
-  // Show loading for maximum 5 seconds, then force show the form
+  // Enhanced loading timeout with force load option
   useEffect(() => {
     const loadingTimeout = setTimeout(() => {
       if (isLoading || storeLoading) {
-        console.warn("⚠️ APIKeyForm loading timeout - forcing display")
+        console.warn("⚠️ APIKeyForm loading timeout - showing force load option")
+        setShowForceLoad(true)
+      }
+    }, 3000) // Reduced to 3 seconds
+    
+    const forceTimeout = setTimeout(() => {
+      if (isLoading || storeLoading) {
+        console.warn("⚠️ APIKeyForm force loading timeout - forcing display")
         setIsLoading(false)
+        setShowForceLoad(false)
         
         // Load keys from current store state
         setOpenaiKey(getKey("openai") || "")
         setGoogleKey(getKey("google") || "")
         setOpenrouterKey(getKey("openrouter") || "")
       }
-    }, 5000)
+    }, 7000) // Force display after 7 seconds
     
-    return () => clearTimeout(loadingTimeout)
+    return () => {
+      clearTimeout(loadingTimeout)
+      clearTimeout(forceTimeout)
+    }
   }, [isLoading, storeLoading, getKey])
+
+  // Force load function
+  const handleForceLoad = () => {
+    console.log("🔧 Force loading API keys")
+    setIsLoading(false)
+    setShowForceLoad(false)
+    
+    // Load keys from current store state
+    setOpenaiKey(getKey("openai") || "")
+    setGoogleKey(getKey("google") || "")
+    setOpenrouterKey(getKey("openrouter") || "")
+    
+    toast.success("API keys form loaded")
+  }
 
   const handleSaveKeys = async () => {
     try {
@@ -131,6 +153,12 @@ export default function APIKeyForm() {
       <div className="flex flex-col items-center justify-center p-8 space-y-4">
         <div className="animate-spin rounded-full h-8 w-8 border-2 border-foreground border-t-transparent"></div>
         <p className="text-sm text-muted-foreground">Loading API keys...</p>
+        {showForceLoad && (
+          <Button onClick={handleForceLoad} variant="outline" size="sm" className="gap-2">
+            <RefreshCw className="h-4 w-4" />
+            Force Load
+          </Button>
+        )}
       </div>
     )
   }
@@ -344,6 +372,37 @@ export default function APIKeyForm() {
           </div>
         </div>
       </div>
+
+      {showForceLoad && (
+        <div className="mt-8 p-4 bg-muted rounded-lg">
+          <h3 className="text-sm font-medium mb-2">API Key Status</h3>
+          <div className="space-y-2 text-xs">
+            <div className="flex items-center justify-between">
+              <span>OpenAI:</span>
+              <span className={cn("font-medium", openaiKey ? "text-green-500" : "text-red-500")}>
+                {openaiKey ? "Configured" : "Not Configured"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Google:</span>
+              <span className={cn("font-medium", googleKey ? "text-green-500" : "text-red-500")}>
+                {googleKey ? "Configured" : "Not Configured"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>OpenRouter:</span>
+              <span className={cn("font-medium", openrouterKey ? "text-green-500" : "text-red-500")}>
+                {openrouterKey ? "Configured" : "Not Configured"}
+              </span>
+            </div>
+          </div>
+          <div className="mt-4 space-x-2">
+            <Button onClick={handleForceLoad} variant="outline">
+              Force Load API Keys
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

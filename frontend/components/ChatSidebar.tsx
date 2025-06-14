@@ -19,6 +19,7 @@ import {
   deleteProject,
   getSharedThreadByThreadId,
   toggleThreadArchived,
+  updateUserProfile,
 } from "@/lib/supabase/queries"
 import { supabase } from "@/lib/supabase/client"
 import { useEffect, useState, useCallback } from "react"
@@ -46,6 +47,7 @@ import {
   ChevronRight,
   Archive,
   ArchiveRestore,
+  RefreshCw,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/frontend/components/AuthProvider"
@@ -98,14 +100,99 @@ interface Project {
 }
 
 function ProfileSection() {
-  const { user, profile, signOut } = useAuth()
+  const { user, profile, signOut, refreshProfile } = useAuth()
   const navigate = useNavigate()
+  const [isNavigatingToSettings, setIsNavigatingToSettings] = useState(false)
+  const [imageError, setImageError] = useState(false)
+  const [isRefreshingProfile, setIsRefreshingProfile] = useState(false)
 
   if (!user) return null
 
   const displayName = profile?.full_name || profile?.username || user.email?.split("@")[0] || "User"
-  // Try to get avatar from profile first, then fall back to Google avatar from user metadata
+  
+  // Enhanced avatar URL logic with better fallbacks
   const avatarUrl = profile?.avatar_url || user.user_metadata?.avatar_url || user.user_metadata?.picture
+  
+  // Debug logging for avatar URL
+  useEffect(() => {
+    console.log("🖼️ Profile avatar debug:", {
+      profileAvatarUrl: profile?.avatar_url,
+      userMetadataAvatarUrl: user.user_metadata?.avatar_url,
+      userMetadataPicture: user.user_metadata?.picture,
+      userMetadataProfilePicture: user.user_metadata?.profile_picture,
+      userMetadataPhoto: user.user_metadata?.photo,
+      finalAvatarUrl: avatarUrl,
+      hasProfile: !!profile,
+      userMetadata: user.user_metadata,
+      authProvider: user.app_metadata?.provider
+    })
+  }, [profile, user, avatarUrl])
+
+  const handleRefreshProfile = async () => {
+    setIsRefreshingProfile(true)
+    try {
+      console.log("🔄 Manually refreshing profile...")
+      
+      // Use the AuthProvider's refresh method
+      await refreshProfile()
+      
+      // Reset image error state to retry loading
+      setImageError(false)
+      
+      console.log("✅ Profile refresh completed")
+    } catch (error) {
+      console.error("❌ Error refreshing profile:", error)
+    } finally {
+      setIsRefreshingProfile(false)
+    }
+  }
+
+  const handleSettingsNavigation = () => {
+    setIsNavigatingToSettings(true)
+    console.log("🔄 Navigating to settings...")
+    
+    // Add a timeout to clear the loading state in case navigation gets stuck
+    setTimeout(() => {
+      setIsNavigatingToSettings(false)
+    }, 3000)
+    
+    navigate("/settings")
+  }
+
+  const handleImageError = () => {
+    console.warn("⚠️ Profile image failed to load:", avatarUrl)
+    setImageError(true)
+    
+    // For Google images, try adding a size parameter or removing size restrictions
+    if (avatarUrl?.includes('googleusercontent.com')) {
+      console.log("🔄 Attempting to reload Google image with different parameters")
+      // Force re-render by updating a state that doesn't affect the URL
+      setTimeout(() => {
+        setImageError(false)
+      }, 1000)
+    }
+  }
+
+  const handleImageLoad = () => {
+    console.log("✅ Profile image loaded successfully:", avatarUrl)
+    setImageError(false)
+  }
+
+  // Enhanced avatar URL with better Google handling
+  const getOptimizedAvatarUrl = (url: string) => {
+    if (!url) return url
+    
+    // For Google profile images, ensure we get a good size
+    if (url.includes('googleusercontent.com')) {
+      // Remove existing size parameters and add our own
+      const baseUrl = url.split('=')[0]
+      return `${baseUrl}=s96-c` // 96px square, cropped
+    }
+    
+    return url
+  }
+
+  const optimizedAvatarUrl = avatarUrl ? getOptimizedAvatarUrl(avatarUrl) : null
 
   return (
     <div className="p-4 border-b border-border/50">
@@ -116,14 +203,16 @@ function ProfileSection() {
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" className="w-full justify-start gap-3 h-auto p-2 hover:bg-secondary">
             <div className="relative">
-              {avatarUrl ? (
+              {optimizedAvatarUrl && !imageError ? (
                 <img
-                  src={avatarUrl || "/placeholder.svg"}
+                  src={optimizedAvatarUrl}
                   alt={displayName}
                   className="w-8 h-8 rounded-full object-cover"
+                  onError={handleImageError}
+                  onLoad={handleImageLoad}
                 />
               ) : (
-                <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-foreground">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 border border-primary/20 flex items-center justify-center text-primary font-semibold">
                   {displayName.charAt(0).toUpperCase()}
                 </div>
               )}
@@ -137,10 +226,33 @@ function ProfileSection() {
         <DropdownMenuContent align="start" className="w-56">
           <DropdownMenuLabel>My Account</DropdownMenuLabel>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => navigate("/settings")} className="gap-2">
-            <User className="h-4 w-4" />
-            Settings
+          <DropdownMenuItem onClick={handleSettingsNavigation} className="gap-2" disabled={isNavigatingToSettings}>
+            {isNavigatingToSettings ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary border-t-transparent" />
+                Loading Settings...
+              </>
+            ) : (
+              <>
+                <User className="h-4 w-4" />
+                Settings
+              </>
+            )}
           </DropdownMenuItem>
+          <DropdownMenuItem onClick={handleRefreshProfile} className="gap-2" disabled={isRefreshingProfile}>
+            {isRefreshingProfile ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary border-t-transparent" />
+                Refreshing...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="h-4 w-4" />
+                Refresh Profile
+              </>
+            )}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuItem onClick={signOut} className="gap-2">
             <LogOut className="h-4 w-4" />
             Sign out
@@ -267,11 +379,32 @@ export function ChatSidebar() {
       const timer = setTimeout(() => {
         setShowForceLoad(true)
       }, 5000)
-      return () => clearTimeout(timer)
+      
+      // Auto-recovery after 15 seconds
+      const autoRecoveryTimer = setTimeout(() => {
+        if (loading) {
+          console.warn("⚠️ Auto-clearing stuck ChatSidebar loading state")
+          setLoading(false)
+          setShowForceLoad(false)
+          setError(null)
+          
+          // Keep existing data if we have it
+          if (threads.length === 0 && projects.length === 0) {
+            console.log("📋 No existing data after auto-recovery, setting empty state")
+            setThreads([])
+            setProjects([])
+          }
+        }
+      }, 15000)
+      
+      return () => {
+        clearTimeout(timer)
+        clearTimeout(autoRecoveryTimer)
+      }
     } else {
       setShowForceLoad(false)
     }
-  }, [loading, authLoading, user])
+  }, [loading, authLoading, user, threads.length, projects.length])
 
   const handleForceLoad = () => {
     console.log("🔧 Force loading ChatSidebar data")
@@ -285,6 +418,8 @@ export function ChatSidebar() {
       setThreads([])
       setProjects([])
     }
+    
+    toast.success("Sidebar refreshed")
   }
 
   // Set up real-time subscriptions
