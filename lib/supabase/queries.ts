@@ -117,7 +117,69 @@ export const getMessagesByThreadId = async (threadId: string) => {
     .order("created_at", { ascending: true })
 
   if (error) throw error
-  return data || []
+  
+  // Process messages to include file content for file attachments
+  const messagesWithFileContent = await Promise.all(
+    (data || []).map(async (message) => {
+      // Check if message has file attachments in parts
+      if (message.parts) {
+        const updatedParts = await Promise.all(
+          message.parts.map(async (part: any) => {
+            if (part.type?.toString() === "file_attachments" && part.attachments) {
+              // Fetch content for each attachment that doesn't already have it
+              const attachmentsWithContent = await Promise.all(
+                part.attachments.map(async (attachment: any) => {
+                  // If attachment already has content, return as-is
+                  if (attachment.content || attachment.extractedText) {
+                    return attachment
+                  }
+                  
+                  // If attachment has a fileUrl, try to fetch the content
+                  if (attachment.fileUrl) {
+                    try {
+                      console.log(`📄 Fetching content for file: ${attachment.fileName}`)
+                      const response = await fetch(attachment.fileUrl)
+                      if (response.ok) {
+                        const content = await response.text()
+                        console.log(`✅ Fetched content for ${attachment.fileName}: ${content.length} chars`)
+                        return {
+                          ...attachment,
+                          content: content,
+                          extractedText: content, // For compatibility
+                        }
+                      } else {
+                        console.warn(`⚠️ Failed to fetch content for ${attachment.fileName}: ${response.status}`)
+                      }
+                    } catch (error) {
+                      console.error(`❌ Error fetching content for ${attachment.fileName}:`, error)
+                    }
+                  }
+                  
+                  // Return attachment without content if we can't fetch it
+                  return attachment
+                })
+              )
+              
+              return {
+                ...part,
+                attachments: attachmentsWithContent
+              }
+            }
+            return part
+          })
+        )
+        
+        return {
+          ...message,
+          parts: updatedParts
+        }
+      }
+      
+      return message
+    })
+  )
+  
+  return messagesWithFileContent
 }
 
 export const getFileAttachmentsByMessageId = async (messageId: string) => {

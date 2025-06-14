@@ -530,12 +530,40 @@ export async function POST(req: NextRequest) {
 
     switch (modelConfig.provider) {
       case "google":
-        const google = createGoogleGenerativeAI({ apiKey: apiKey! })
-        if (webSearchEnabled && modelConfig.supportsSearch) {
-          aiModel = google(modelConfig.modelId, { useSearchGrounding: true })
-          modelSupportsSearch = true
-        } else {
-          aiModel = google(modelConfig.modelId)
+        console.log("🟢 Initializing Google model:", modelConfig.modelId)
+        try {
+          // Test the API key first
+          console.log("🔑 Testing Google API key validity...")
+          const google = createGoogleGenerativeAI({ apiKey: apiKey! })
+          
+          if (webSearchEnabled && modelConfig.supportsSearch) {
+            console.log("🔍 Using Google model with search grounding")
+            aiModel = google(modelConfig.modelId, { useSearchGrounding: true })
+            modelSupportsSearch = true
+          } else {
+            console.log("🟢 Using Google model without search grounding")
+            aiModel = google(modelConfig.modelId)
+          }
+          console.log("✅ Google model initialized successfully")
+        } catch (error) {
+          console.error("❌ Error initializing Google model:", error)
+          console.error("❌ Google API error details:", {
+            message: (error as Error)?.message,
+            name: (error as Error)?.name,
+            stack: (error as Error)?.stack
+          })
+          
+          // Re-throw with more specific error message
+          if (error instanceof Error) {
+            if (error.message.includes("API_KEY_INVALID") || error.message.includes("403")) {
+              throw new Error("Invalid Google API key. Please check your API key in Settings.")
+            } else if (error.message.includes("QUOTA_EXCEEDED") || error.message.includes("429")) {
+              throw new Error("Google API quota exceeded. Please try again later.")
+            } else if (error.message.includes("model not found") || error.message.includes("404")) {
+              throw new Error(`Google model '${modelConfig.modelId}' not found or not available.`)
+            }
+          }
+          throw error
         }
         break
 
@@ -733,11 +761,11 @@ export async function POST(req: NextRequest) {
     console.log("📝 Generated system prompt preview:", systemPrompt.substring(0, 200) + "...")
     console.log("📝 Full system prompt:", systemPrompt)
 
-    // Check if this is a thinking model
+    // Check if this model supports thinking and needs special processing
     const isThinkingModel = modelConfig.supportsThinking
-
-    // For thinking models, we need to handle the stream completely differently
-    if (isThinkingModel) {
+    const needsCustomThinkingProcessor = isThinkingModel && modelConfig.provider !== "google"
+    
+    if (needsCustomThinkingProcessor) {
       console.log("🧠 Using thinking model - custom stream handling")
 
       // Create stream options without any transforms
@@ -786,7 +814,15 @@ export async function POST(req: NextRequest) {
 
       // Wrap the stream creation in circuit breaker
       return await streamCircuitBreaker.execute(async () => {
-        const result = streamText(streamOptions)
+        console.log("🔄 Executing streamText with thinking model")
+        let result
+        try {
+          result = streamText(streamOptions)
+          console.log("✅ streamText initialized successfully")
+        } catch (error) {
+          console.error("❌ Error in streamText initialization:", error)
+          throw error
+        }
 
         // Initialize enhanced stream protection for thinking models
         const streamProtection = new StreamProtection({
@@ -804,6 +840,23 @@ export async function POST(req: NextRequest) {
             const reader = result.toDataStream().getReader()
             let buffer = ""
             let insideThinking = false
+            let lastThinkingTag = ""
+
+            const safeEnqueue = (chunk: Uint8Array) => {
+              try {
+                controller.enqueue(chunk)
+              } catch (error) {
+                console.warn("⚠️ Failed to enqueue chunk (controller may be closed):", error)
+              }
+            }
+
+            const safeClose = () => {
+              try {
+                controller.close()
+              } catch (error) {
+                console.warn("⚠️ Failed to close controller (may already be closed):", error)
+              }
+            }
 
             try {
               while (true) {
@@ -813,99 +866,130 @@ export async function POST(req: NextRequest) {
                 const chunk = new TextDecoder().decode(value)
                 buffer += chunk
 
-                // Process the buffer to filter out thinking content
-                let processedChunk = ""
-                let i = 0
-                const thinkingContent = ""
-                let lastThinkingTag = ""
-
-                while (i < buffer.length) {
-                  if (!insideThinking) {
-                    // Look for start of thinking
-                    const thinkStart = buffer.indexOf("<Thinking>", i)
-                    if (thinkStart !== -1 && thinkStart < buffer.length) {
-                      // Add content before thinking
-                      processedChunk += buffer.substring(i, thinkStart)
-                      // Also include the thinking tag in the output for real-time processing
-                      processedChunk += "<Thinking>"
-                      insideThinking = true
-                      i = thinkStart + 10 // Skip "<Thinking>"
-                      lastThinkingTag = "<Thinking>"
+                // For Google models, we don't need to filter thinking tags since they don't use them
+                // Just process the content normally with protection
+                if (modelConfig.provider === "google") {
+                  // Google thinking models don't use <Thinking> tags, so process normally
+                  // But we still need to parse the data stream format properly
+                  const lines = chunk.split('\n').filter(Boolean)
+                  
+                  for (const line of lines) {
+                    if (line.startsWith('0:')) {
+                      // This is a text chunk
+                      try {
+                        const content = JSON.parse(line.substring(2))
+                        if (content) {
+                          const protectionResult = streamProtection.analyzeChunk(content)
+                          
+                          if (!protectionResult.allowed) {
+                            console.warn(`🛡️ Stream protection triggered:`, protectionResult.reason)
+                            const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
+                            const encodedError = `0:"${errorMsg.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
+                            safeEnqueue(new TextEncoder().encode(encodedError))
+                            safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
+                            safeClose()
+                            return
+                          }
+                          
+                          // Forward the properly formatted chunk
+                          safeEnqueue(new TextEncoder().encode(line + '\n'))
+                        }
+                      } catch (e) {
+                        console.warn('Failed to parse data stream chunk:', e)
+                        // Forward as-is if parsing fails
+                        safeEnqueue(new TextEncoder().encode(line + '\n'))
+                      }
                     } else {
-                      // No thinking tag found, add rest of buffer
-                      processedChunk += buffer.substring(i)
-                      break
-                    }
-                  } else {
-                    // Look for end of thinking
-                    const thinkEnd = buffer.indexOf("</Thinking>", i)
-                    if (thinkEnd !== -1) {
-                      // Include thinking content in the output
-                      const thinkingContent = buffer.substring(i, thinkEnd)
-                      processedChunk += thinkingContent
-                      processedChunk += "<Thinking></Thinking>" // Include closing tag
-
-                      insideThinking = false
-                      i = thinkEnd + 11 // Skip "<Thinking></Thinking>"
-                      lastThinkingTag = "</Thinking>"
-                    } else {
-                      // Still inside thinking, include partial thinking content
-                      processedChunk += buffer.substring(i)
-                      break
+                      // Forward other data stream parts (like finish messages) as-is
+                      safeEnqueue(new TextEncoder().encode(line + '\n'))
                     }
                   }
-                }
-
-                // Update buffer to keep unprocessed content
-                if (i < buffer.length) {
-                  buffer = buffer.substring(i)
                 } else {
-                  buffer = ""
-                }
+                  // For non-Google thinking models (OpenAI, etc.), process <Thinking> tags
+                  let processedChunk = ""
+                  let i = 0
 
-                // Send processed chunk if we have content - but check for protection first
-                if (processedChunk) {
-                  // Check with stream protection
-                  const protectionResult = streamProtection.analyzeChunk(processedChunk)
+                  while (i < buffer.length) {
+                    if (!insideThinking) {
+                      // Look for start of thinking
+                      const thinkStart = buffer.indexOf("<Thinking>", i)
+                      if (thinkStart !== -1) {
+                        // Add content before thinking tag
+                        processedChunk += buffer.substring(i, thinkStart)
+                        // Also include the thinking tag in the output for real-time processing
+                        processedChunk += "<Thinking>"
+                        insideThinking = true
+                        i = thinkStart + 10 // Skip "<Thinking>"
+                        lastThinkingTag = "<Thinking>"
+                      } else {
+                        // No thinking tag found, add rest of buffer
+                        processedChunk += buffer.substring(i)
+                        break
+                      }
+                    } else {
+                      // Look for end of thinking
+                      const thinkEnd = buffer.indexOf("</Thinking>", i)
+                      if (thinkEnd !== -1) {
+                        // Include thinking content in the output
+                        const thinkingContent = buffer.substring(i, thinkEnd)
+                        processedChunk += thinkingContent
+                        processedChunk += "<Thinking></Thinking>" // Include closing tag
 
-                  if (!protectionResult.allowed) {
-                    console.warn("🛡️ Stream protection triggered:", protectionResult.reason)
-                    console.log("📊 Stream stats:", streamProtection.getStats())
-
-                    // Send error message to client
-                    const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
-                    const encodedError = `0:"${errorMsg.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
-                    controller.enqueue(new TextEncoder().encode(encodedError))
-
-                    // Terminate the stream
-                    controller.enqueue(new TextEncoder().encode('d:""\n'))
-                    controller.close()
-                    return
+                        insideThinking = false
+                        i = thinkEnd + 11 // Skip "<Thinking></Thinking>"
+                        lastThinkingTag = "</Thinking>"
+                      } else {
+                        // Still inside thinking, include partial thinking content
+                        processedChunk += buffer.substring(i)
+                        break
+                      }
+                    }
                   }
 
-                  // Re-encode as proper data stream format
-                  const encodedChunk = `0:"${processedChunk.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
-                  controller.enqueue(new TextEncoder().encode(encodedChunk))
+                  // Update buffer to keep unprocessed content
+                  if (i < buffer.length) {
+                    buffer = buffer.substring(i)
+                  } else {
+                    buffer = ""
+                  }
+
+                  // Send processed chunk if we have content - but check for protection first
+                  if (processedChunk) {
+                    // Check with stream protection
+                    const protectionResult = streamProtection.analyzeChunk(processedChunk)
+                    
+                    if (!protectionResult.allowed) {
+                      console.warn(`🛡️ Stream protection triggered:`, protectionResult.reason)
+                      const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
+                      const encodedError = `0:"${errorMsg.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
+                      safeEnqueue(new TextEncoder().encode(encodedError))
+                      safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
+                      safeClose()
+                      return
+                    }
+
+                    // Re-encode as proper data stream format
+                    const encodedChunk = `0:"${processedChunk.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
+                    safeEnqueue(new TextEncoder().encode(encodedChunk))
+                  }
                 }
               }
 
-              // Send any remaining buffer content (outside thinking)
-              if (buffer && !insideThinking) {
+              // Send any remaining buffer content (outside thinking) for non-Google models
+              if (buffer && !insideThinking && modelConfig.provider !== "google") {
                 // Final protection check
                 const protectionResult = streamProtection.analyzeChunk(buffer)
                 if (protectionResult.allowed) {
                   const encodedChunk = `0:"${buffer.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
-                  controller.enqueue(new TextEncoder().encode(encodedChunk))
+                  safeEnqueue(new TextEncoder().encode(encodedChunk))
                 }
               }
 
-              // Send completion marker
-              controller.enqueue(new TextEncoder().encode('d:""\n'))
+              // Send properly formatted completion marker with finishReason
+              safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
             } catch (error) {
               console.error("❌ Error in thinking stream processing:", error)
-              controller.error(error)
-            } finally {
-              controller.close()
+              safeClose()
             }
           },
         })
@@ -935,67 +1019,29 @@ export async function POST(req: NextRequest) {
 
       // Wrap the stream creation in circuit breaker
       return await streamCircuitBreaker.execute(async () => {
-        const result = streamText(streamOptions)
-
-        // Initialize stream protection for regular models
-        const streamProtection = new StreamProtection({
-          maxRepetitions: 5,
-          repetitionWindowSize: 80,
-          maxResponseLength: 50000,
-          timeoutMs: 120000, // 2 minutes for regular models
-          maxSimilarChunks: 8,
-        })
-
-        // Create protected stream
-        const protectedStream = new ReadableStream({
-          async start(controller) {
-            const reader = result.toDataStream().getReader()
-
-            try {
-              while (true) {
-                const { done, value } = await reader.read()
-                if (done) break
-
-                const chunk = new TextDecoder().decode(value)
-
-                // Extract content from data stream format
-                const match = chunk.match(/0:"([^"]*)"/)
-                if (match) {
-                  const content = match[1].replace(/\\"/g, '"').replace(/\\n/g, "\n")
-
-                  // Check with stream protection
-                  const protectionResult = streamProtection.analyzeChunk(content)
-
-                  if (!protectionResult.allowed) {
-                    console.warn("🛡️ Stream protection triggered:", protectionResult.reason)
-                    console.log("📊 Stream stats:", streamProtection.getStats())
-
-                    // Send error message to client
-                    const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
-                    const encodedError = `0:"${errorMsg.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
-                    controller.enqueue(new TextEncoder().encode(encodedError))
-
-                    // Terminate the stream
-                    controller.enqueue(new TextEncoder().encode('d:""\n'))
-                    controller.close()
-                    return
-                  }
-                }
-
-                // Forward the original chunk if protection allows it
-                controller.enqueue(value)
-              }
-
-              // Stream completed normally
-              controller.close()
-            } catch (error) {
-              console.error("❌ Error in protected stream processing:", error)
-              controller.error(error)
+        console.log("🔄 Executing streamText with regular model")
+        let result
+        try {
+          result = streamText(streamOptions)
+          console.log("✅ streamText initialized successfully for regular model")
+        } catch (error) {
+          console.error("❌ Error in streamText initialization for regular model:", error)
+          // Check for specific Google API errors
+          if (error instanceof Error) {
+            if (error.message.includes("API_KEY_INVALID") || error.message.includes("403")) {
+              throw new Error("Invalid Google API key. Please check your API key in Settings.")
+            } else if (error.message.includes("QUOTA_EXCEEDED") || error.message.includes("429")) {
+              throw new Error("Google API quota exceeded. Please try again later.")
+            } else if (error.message.includes("model not found") || error.message.includes("404")) {
+              throw new Error(`Model ${modelConfig.modelId} not found or not available.`)
             }
-          },
-        })
+          }
+          throw error
+        }
 
-        return new Response(protectedStream, {
+        // For regular models, use the AI SDK's built-in data stream response
+        // This properly handles the finish message with finishReason
+        return result.toDataStreamResponse({
           headers: {
             "Content-Type": "text/plain; charset=utf-8",
             "Cache-Control": "no-cache",
@@ -1007,6 +1053,34 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error("💥 Unhandled Chat API error:", error)
     console.error("💥 Error stack:", (error as Error)?.stack)
+    console.error("💥 Error details:", {
+      message: (error as Error)?.message,
+      name: (error as Error)?.name,
+      cause: (error as Error)?.cause
+    })
+
+    // Check for specific Google API errors
+    if (error instanceof Error) {
+      if (error.message.includes("API_KEY_INVALID") || error.message.includes("403")) {
+        console.error("🔑 Google API key error detected")
+        return NextResponse.json(
+          { error: "Invalid Google API key. Please check your API key in Settings." },
+          { status: 403 }
+        )
+      } else if (error.message.includes("QUOTA_EXCEEDED") || error.message.includes("429")) {
+        console.error("📊 Google API quota error detected")
+        return NextResponse.json(
+          { error: "Google API quota exceeded. Please try again later." },
+          { status: 429 }
+        )
+      } else if (error.message.includes("model not found") || error.message.includes("404")) {
+        console.error("🤖 Model not found error detected")
+        return NextResponse.json(
+          { error: `Model not found or not available. Please try a different model.` },
+          { status: 404 }
+        )
+      }
+    }
 
     return NextResponse.json(
       {
@@ -1499,7 +1573,7 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
                         safeEnqueue(new TextEncoder().encode(encodedError))
 
                         // Terminate the stream
-                        safeEnqueue(new TextEncoder().encode('d:""\n'))
+                        safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
                         safeClose()
                         return
                       }
@@ -1511,7 +1585,7 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
                   }
 
                   if (data.done) {
-                    safeEnqueue(new TextEncoder().encode('d:""\n'))
+                    safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
 
                     // Save the message with reasoning
                     if (threadId && user) {
@@ -1641,7 +1715,7 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
                       safeEnqueue(new TextEncoder().encode(encodedError))
 
                       // Terminate the stream
-                      safeEnqueue(new TextEncoder().encode('d:""\n'))
+                      safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
                       safeClose()
                       return
                     }
@@ -1651,7 +1725,7 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
                     safeEnqueue(new TextEncoder().encode(streamChunk))
                   }
                   if (data.done) {
-                    safeEnqueue(new TextEncoder().encode('d:""\n'))
+                    safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
                     safeClose()
                     return
                   }

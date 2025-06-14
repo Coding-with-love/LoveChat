@@ -118,34 +118,65 @@ export function useCustomResumableChat({
           ...newBody,
           model: selectedModel,
           webSearchEnabled,
-          apiKey: apiKey, // Include the API key in the body
+          // Only include API key in body if it's valid
+          ...(apiKey && typeof apiKey === 'string' && apiKey.trim().length > 0 && { apiKey }),
           // Preserve any existing data field (which may contain user preferences)
           ...((newBody as any).data && { data: (newBody as any).data }),
         }
 
         // Create new headers and add the API key in multiple formats
-        const headers = new Headers(options?.headers || {})
+        // First, safely create headers from existing options
+        const headers = new Headers()
+        
+        // Safely copy existing headers, filtering out any invalid values
+        if (options?.headers) {
+          const existingHeaders = options.headers instanceof Headers 
+            ? Object.fromEntries(options.headers.entries())
+            : options.headers
+            
+          for (const [key, value] of Object.entries(existingHeaders)) {
+            if (typeof key === 'string' && typeof value === 'string' && key.trim() && value.trim()) {
+              try {
+                headers.set(key, value)
+              } catch (error) {
+                console.warn(`⚠️ Skipping invalid header: ${key}`, error)
+              }
+            }
+          }
+        }
 
-        // Only set headers if we have an API key
-        if (apiKey) {
+        // Only set headers if we have a valid API key (not undefined, null, or empty)
+        if (apiKey && typeof apiKey === 'string' && apiKey.trim().length > 0) {
           // Set the API key in multiple header formats to ensure it's received
-          if (modelConfig.headerKey) {
-            headers.set(modelConfig.headerKey, apiKey)
+          if (modelConfig.headerKey && typeof modelConfig.headerKey === 'string') {
+            try {
+              headers.set(modelConfig.headerKey, apiKey)
+            } catch (error) {
+              console.warn(`⚠️ Failed to set header ${modelConfig.headerKey}:`, error)
+            }
           }
 
-          // Add provider-specific headers
+          // Add provider-specific headers with error handling
+          const setHeaderSafely = (name: string, value: string) => {
+            try {
+              headers.set(name, value)
+            } catch (error) {
+              console.warn(`⚠️ Failed to set header ${name}:`, error)
+            }
+          }
+
           if (modelConfig.provider === "google") {
-            headers.set("x-google-api-key", apiKey)
-            headers.set("google-api-key", apiKey)
-            headers.set("x-api-key", apiKey)
+            setHeaderSafely("x-google-api-key", apiKey)
+            setHeaderSafely("google-api-key", apiKey)
+            setHeaderSafely("x-api-key", apiKey)
           } else if (modelConfig.provider === "openai") {
-            headers.set("x-openai-api-key", apiKey)
-            headers.set("openai-api-key", apiKey)
-            headers.set("x-api-key", apiKey)
+            setHeaderSafely("x-openai-api-key", apiKey)
+            setHeaderSafely("openai-api-key", apiKey)
+            setHeaderSafely("x-api-key", apiKey)
           } else if (modelConfig.provider === "openrouter") {
-            headers.set("x-openrouter-api-key", apiKey)
-            headers.set("openrouter-api-key", apiKey)
-            headers.set("x-api-key", apiKey)
+            setHeaderSafely("x-openrouter-api-key", apiKey)
+            setHeaderSafely("openrouter-api-key", apiKey)
+            setHeaderSafely("x-api-key", apiKey)
           }
         }
 
@@ -182,7 +213,23 @@ export function useCustomResumableChat({
     api: `/api/chat?threadId=${threadId}`,
     onError: (error) => {
       console.error("Chat error:", error)
-      toast.error("Something went wrong with the chat")
+      console.error("Chat error details:", {
+        message: error.message,
+        stack: error.stack,
+        name: error.name,
+        cause: error.cause
+      })
+      
+      // Check for specific error types
+      if (error.message.includes("API_KEY_INVALID") || error.message.includes("403")) {
+        toast.error("Invalid Google API key. Please check your API key in Settings.")
+      } else if (error.message.includes("QUOTA_EXCEEDED") || error.message.includes("429")) {
+        toast.error("API quota exceeded. Please try again later.")
+      } else if (error.message.includes("network error")) {
+        toast.error("Network error. Please check your connection and try again.")
+      } else {
+        toast.error("Something went wrong with the chat")
+      }
     },
   })
 

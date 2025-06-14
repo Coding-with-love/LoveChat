@@ -31,7 +31,7 @@ import { useMessageSummary } from "../hooks/useMessageSummary"
 import { useAuth } from "@/frontend/components/AuthProvider"
 import FileUpload, { FilePreviewList } from "./FileUpload"
 import type { FileUploadResult } from "@/lib/supabase/file-upload"
-import { ChevronDown, Check, ArrowUpIcon, Search, Info, Bot, Settings, Sparkles, Zap, Brain, Globe, Archive, X, Code, FileText, Copy, Plus } from 'lucide-react'
+import { ChevronDown, Check, ArrowUpIcon, Search, Info, Bot, Settings, Sparkles, Zap, Brain, Globe, Archive, X, Code, FileText, Copy, Plus, Loader2 } from 'lucide-react'
 import { useKeyboardShortcuts } from "@/frontend/hooks/useKeyboardShortcuts"
 import PersonaTemplateSelector from "./PersonaTemplateSelector"
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover"
@@ -116,6 +116,7 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
   const getKey = useAPIKeyStore((state) => state.getKey)
   const { selectedModel, setModel, getEnabledModels, ensureValidSelectedModel } = useModelStore()
   const [uploadedFiles, setUploadedFiles] = useState<FileUploadResult[]>([])
+  const [isUploading, setIsUploading] = useState(false)
   const { enabled: webSearchEnabled, toggle: toggleWebSearch } = useWebSearchStore()
   const [createPersonaOpen, setCreatePersonaOpen] = useState(false)
   const [createTemplateOpen, setCreateTemplateOpen] = useState(false)
@@ -209,8 +210,9 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
         uploadedFiles.length === 0 &&
         artifactReferences.length === 0) ||
       status === "streaming" ||
-      status === "submitted",
-    [input, status, uploadedFiles.length, artifactReferences.length],
+      status === "submitted" ||
+      isUploading,
+    [input, status, uploadedFiles.length, artifactReferences.length, isUploading],
   )
 
   const { complete, isAuthenticated } = useMessageSummary()
@@ -737,15 +739,17 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
                 id="chat-input"
                 value={input}
                 placeholder={
-                  currentPersona
-                    ? `Ask ${currentPersona.name} anything...`
-                    : uploadedFiles.length > 0 || artifactReferences.length > 0
-                      ? "Ask me anything about your files or artifacts, or send them without additional text..."
-                      : webSearchEnabled && currentModelSupportsSearch
-                        ? "Ask anything - I'll search the web for current info..."
-                        : webSearchEnabled && !currentModelSupportsSearch
-                          ? "Web search enabled but current model doesn't support it..."
-                          : "What can I do for you?"
+                  isUploading
+                    ? "Uploading files..."
+                    : currentPersona
+                      ? `Ask ${currentPersona.name} anything...`
+                      : uploadedFiles.length > 0 || artifactReferences.length > 0
+                        ? "Ask me anything about your files or artifacts, or send them without additional text..."
+                        : webSearchEnabled && currentModelSupportsSearch
+                          ? "Ask anything - I'll search the web for current info..."
+                          : webSearchEnabled && !currentModelSupportsSearch
+                            ? "Web search enabled but current model doesn't support it..."
+                            : "What can I do for you?"
                 }
                 className={cn(
                   "w-full px-4 py-4 border-none shadow-none bg-transparent",
@@ -814,6 +818,7 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
                       onFileUpload={handleFileUpload}
                       uploadedFiles={uploadedFiles}
                       onRemoveFile={handleRemoveFile}
+                      onUploadingChange={setIsUploading}
                       disabled={status === "streaming" || status === "submitted"}
                     />
 
@@ -915,14 +920,14 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
                       variant="default"
                       size="icon"
                       disabled={isDisabled}
-                      aria-label="Send message"
+                      aria-label={isUploading ? "Uploading files..." : "Send message"}
                       className={cn(
                         "h-10 w-10 rounded-xl transition-all duration-200 shadow-md",
                         !isDisabled && "hover:scale-105 hover:shadow-lg",
                         isDisabled && "opacity-50 cursor-not-allowed",
                       )}
                     >
-                      <ArrowUpIcon size={18} />
+                      {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUpIcon size={18} />}
                     </Button>
                   )}
                 </div>

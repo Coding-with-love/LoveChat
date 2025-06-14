@@ -16,6 +16,7 @@ interface FileUploadProps {
   disabled?: boolean
   uploadedFiles: FileUploadResult[]
   onRemoveFile: (index: number) => void
+  onUploadingChange?: (uploading: boolean) => void
 }
 
 export default function FileUpload({
@@ -24,6 +25,7 @@ export default function FileUpload({
   disabled = false,
   uploadedFiles,
   onRemoveFile,
+  onUploadingChange,
 }: FileUploadProps) {
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -33,6 +35,7 @@ export default function FileUpload({
 
     const files = Array.from(e.target.files)
     setUploading(true)
+    onUploadingChange?.(true)
 
     try {
       const uploadPromises = files.map((file) => uploadFile(supabase, file, threadId))
@@ -45,6 +48,7 @@ export default function FileUpload({
       toast.error(error instanceof Error ? error.message : "Failed to upload file")
     } finally {
       setUploading(false)
+      onUploadingChange?.(false)
       // Reset the file input
       if (fileInputRef.current) {
         fileInputRef.current.value = ""
