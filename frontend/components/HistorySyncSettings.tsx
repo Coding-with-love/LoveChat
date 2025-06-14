@@ -1,11 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useCallback, useRef } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
 import { Label } from "./ui/label"
-import { Download, Upload, Trash2, FileText, AlertTriangle, CheckCircle, Loader2, Database, History } from 'lucide-react'
+import { Download, Upload, Trash2, FileText, AlertTriangle, CheckCircle, Loader2, Database, History, CloudUpload } from 'lucide-react'
 import { toast } from "sonner"
 import { 
   getThreads, 
@@ -64,10 +64,12 @@ export default function HistorySyncSettings() {
   const [isExporting, setIsExporting] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [isDragOver, setIsDragOver] = useState(false)
   const [importStats, setImportStats] = useState<{
     threadsCount: number
     messagesCount: number
   } | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleExportHistory = async () => {
     try {
@@ -122,63 +124,120 @@ export default function HistorySyncSettings() {
     }
   }
 
-  const handleImportHistory = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
+  const processImportFile = async (file: File) => {
+    console.log("🚀 processImportFile started with file:", file.name)
 
     try {
       setIsImporting(true)
       toast.info("Importing chat history...")
 
+      console.log("📖 Reading file content...")
       const text = await file.text()
-      const importData: ExportData = JSON.parse(text)
+      console.log("📄 File content length:", text.length)
+      console.log("📄 File content preview:", text.substring(0, 200))
+      
+      console.log("🔍 Parsing JSON...")
+      const importData = JSON.parse(text)
+      console.log("✅ JSON parsed successfully:", Object.keys(importData))
 
-      // Validate the import data structure
-      if (!importData.version || !importData.threads || !Array.isArray(importData.threads)) {
-        throw new Error("Invalid file format")
+      // Detect and handle different JSON formats
+      let threads: any[] = []
+      
+      if (importData.version && importData.threads && Array.isArray(importData.threads)) {
+        // LoveChat format
+        threads = importData.threads
+        console.log("📥 Detected LoveChat export format")
+      } else if (Array.isArray(importData)) {
+        // ChatGPT format (array of conversations)
+        threads = importData.map((conversation: any) => ({
+          id: conversation.id || uuidv4(),
+          title: conversation.title || "Imported Chat",
+          created_at: conversation.create_time ? new Date(conversation.create_time * 1000).toISOString() : new Date().toISOString(),
+          last_message_at: conversation.update_time ? new Date(conversation.update_time * 1000).toISOString() : new Date().toISOString(),
+          messages: conversation.mapping ? Object.values(conversation.mapping)
+            .filter((node: any) => node.message && node.message.content && node.message.content.parts)
+            .map((node: any) => ({
+              id: node.id || uuidv4(),
+              content: Array.isArray(node.message.content.parts) ? node.message.content.parts.join('\n') : '',
+              role: node.message.author?.role || 'user',
+              created_at: node.message.create_time ? new Date(node.message.create_time * 1000).toISOString() : new Date().toISOString(),
+              user_id: 'imported'
+            })) : []
+        }))
+        console.log("📥 Detected ChatGPT export format")
+      } else if (importData.conversations && Array.isArray(importData.conversations)) {
+        // Another common format
+        threads = importData.conversations.map((conversation: any) => ({
+          id: conversation.id || uuidv4(),
+          title: conversation.title || conversation.name || "Imported Chat",
+          created_at: conversation.created_at || conversation.createdAt || new Date().toISOString(),
+          last_message_at: conversation.updated_at || conversation.updatedAt || new Date().toISOString(),
+          messages: conversation.messages || []
+        }))
+        console.log("📥 Detected generic conversation format")
+      } else {
+        throw new Error("Unsupported file format. Please ensure your JSON file contains conversations in a supported format.")
+      }
+
+      if (threads.length === 0) {
+        throw new Error("No conversations found in the JSON file")
       }
 
       let importedThreads = 0
       let importedMessages = 0
+      let skippedThreads = 0
 
       // Import each thread
-      for (const threadData of importData.threads) {
+      for (const threadData of threads) {
         try {
           // Generate new IDs to avoid conflicts
           const newThreadId = uuidv4()
           
+          console.log(`📥 Importing thread: ${threadData.title} (${threadData.messages?.length || 0} messages)`)
+          
           // Create the thread
           await createThread(newThreadId, threadData.project_id)
           
-          // Update thread title if it's not "New Chat"
-          if (threadData.title && threadData.title !== "New Chat") {
-            // We'll update the title through the first message creation
-          }
+          // Import messages if they exist
+          if (threadData.messages && Array.isArray(threadData.messages)) {
+            for (const messageData of threadData.messages) {
+              try {
+                const newMessageId = uuidv4()
+                
+                const uiMessage: UIMessage = {
+                  id: newMessageId,
+                  content: messageData.content || "",
+                  role: messageData.role as "user" | "assistant" | "system",
+                  parts: messageData.parts || [{ type: "text", text: messageData.content || "" }],
+                  createdAt: messageData.created_at ? new Date(messageData.created_at) : new Date()
+                }
 
-          // Import messages
-          for (const messageData of threadData.messages) {
-            const newMessageId = uuidv4()
-            
-            const uiMessage: UIMessage = {
-              id: newMessageId,
-              content: messageData.content,
-              role: messageData.role as "user" | "assistant" | "system",
-              parts: messageData.parts,
-              createdAt: new Date(messageData.created_at)
+                await createMessage(newThreadId, uiMessage)
+                importedMessages++
+              } catch (messageError) {
+                console.error(`Failed to import message in thread ${threadData.title}:`, messageError)
+                // Continue with other messages
+              }
             }
-
-            await createMessage(newThreadId, uiMessage)
-            importedMessages++
           }
 
-          // Update thread title after importing messages
+          // Update thread title after importing messages (if it's not "New Chat")
           if (threadData.title && threadData.title !== "New Chat") {
-            // The title will be updated when messages are created
+            try {
+              const { updateThread } = await import("@/lib/supabase/queries")
+              await updateThread(newThreadId, threadData.title)
+              console.log(`✅ Updated thread title to: ${threadData.title}`)
+            } catch (titleError) {
+              console.error(`Failed to update thread title for ${threadData.title}:`, titleError)
+              // Continue - title update failure is not critical
+            }
           }
 
           importedThreads++
+          console.log(`✅ Successfully imported thread: ${threadData.title}`)
         } catch (error) {
-          console.error(`Failed to import thread ${threadData.title}:`, error)
+          console.error(`❌ Failed to import thread ${threadData.title}:`, error)
+          skippedThreads++
           // Continue with other threads
         }
       }
@@ -188,15 +247,38 @@ export default function HistorySyncSettings() {
         messagesCount: importedMessages
       })
 
-      toast.success(`Successfully imported ${importedThreads} conversations with ${importedMessages} messages`)
+      const successMessage = `Successfully imported ${importedThreads} conversations with ${importedMessages} messages`
+      const warningMessage = skippedThreads > 0 ? ` (${skippedThreads} threads were skipped due to errors)` : ""
+      
+      toast.success(successMessage + warningMessage)
+      
+      if (skippedThreads > 0) {
+        toast.warning(`${skippedThreads} threads were skipped due to import errors. Check the console for details.`)
+      }
     } catch (error) {
       console.error("Import failed:", error)
-      toast.error("Failed to import chat history. Please check the file format.")
+      if (error instanceof SyntaxError) {
+        toast.error("Invalid JSON file format. Please check that your file is valid JSON.")
+      } else {
+        toast.error(`Failed to import chat history: ${error instanceof Error ? error.message : "Unknown error"}`)
+      }
     } finally {
       setIsImporting(false)
-      // Reset the file input
-      event.target.value = ""
     }
+  }
+
+  const handleImportHistory = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    console.log("🔍 handleImportHistory triggered")
+    const file = event.target.files?.[0]
+    if (!file) {
+      console.log("❌ No file selected")
+      return
+    }
+    
+    console.log("📁 File selected:", file.name, file.size, file.type)
+    await processImportFile(file)
+    // Reset the file input
+    event.target.value = ""
   }
 
   const handleDeleteAllHistory = async () => {
@@ -214,6 +296,40 @@ export default function HistorySyncSettings() {
     } finally {
       setIsDeleting(false)
     }
+  }
+
+  // Drag and drop handlers
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(true)
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(false)
+  }, [])
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    console.log("📂 File dropped")
+    e.preventDefault()
+    setIsDragOver(false)
+    
+    const files = Array.from(e.dataTransfer.files)
+    console.log("📁 Dropped files:", files.map(f => ({ name: f.name, type: f.type, size: f.size })))
+    const jsonFile = files.find(file => file.type === 'application/json' || file.name.endsWith('.json'))
+    
+    if (jsonFile) {
+      console.log("✅ Valid JSON file found:", jsonFile.name)
+      processImportFile(jsonFile)
+    } else {
+      console.log("❌ No valid JSON file found")
+      toast.error("Please drop a valid JSON file")
+    }
+  }, [])
+
+  const handleFileButtonClick = () => {
+    console.log("🖱️ Browse Files button clicked")
+    fileInputRef.current?.click()
   }
 
   return (
@@ -272,26 +388,72 @@ export default function HistorySyncSettings() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-start gap-3 p-4 rounded-lg bg-amber-500/10 border border-amber-500/20">
-            <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5" />
-            <div className="flex-1">
-              <p className="text-sm font-medium text-amber-800 dark:text-amber-200">Important Note</p>
-              <p className="text-xs text-amber-700 dark:text-amber-300">
-                Importing will NOT delete your existing messages. New conversations will be added alongside your current ones.
-              </p>
+          <div className="space-y-4">
+            <div className="flex items-start gap-3 p-4 rounded-lg bg-amber-500/10 border border-amber-500/20">
+              <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-amber-800 dark:text-amber-200">Important Note</p>
+                <p className="text-xs text-amber-700 dark:text-amber-300">
+                  Importing will NOT delete your existing messages. New conversations will be added alongside your current ones.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-500/10 border border-blue-500/20">
+              <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-blue-800 dark:text-blue-200">Supported Formats</p>
+                <ul className="text-xs text-blue-700 dark:text-blue-300 mt-1 space-y-1">
+                  <li>• LoveChat exports (.json)</li>
+                  <li>• ChatGPT conversation exports</li>
+                  <li>• Generic conversation JSON files</li>
+                </ul>
+              </div>
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="import-file">Select JSON File</Label>
-            <Input
-              id="import-file"
-              type="file"
-              accept=".json"
-              onChange={handleImportHistory}
-              disabled={isImporting}
-              className="cursor-pointer"
-            />
+          <div className="space-y-4">
+            <Label htmlFor="import-file">Import JSON File</Label>
+            
+            {/* Drag and Drop Zone */}
+            <div
+              className={`relative border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+                isDragOver
+                  ? 'border-green-500 bg-green-500/10'
+                  : 'border-muted-foreground/25 hover:border-green-500/50'
+              } ${isImporting ? 'opacity-50 pointer-events-none' : ''}`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
+              <CloudUpload className={`mx-auto h-12 w-12 mb-4 ${isDragOver ? 'text-green-500' : 'text-muted-foreground'}`} />
+              <div className="space-y-2">
+                <p className="text-sm font-medium">
+                  {isDragOver ? 'Drop your JSON file here' : 'Drag and drop your JSON file here'}
+                </p>
+                <p className="text-xs text-muted-foreground">or</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleFileButtonClick}
+                  disabled={isImporting}
+                  className="mt-2"
+                >
+                  Browse Files
+                </Button>
+              </div>
+              
+              {/* Hidden file input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json"
+                onChange={handleImportHistory}
+                disabled={isImporting}
+                className="hidden"
+              />
+            </div>
           </div>
 
           {importStats && (

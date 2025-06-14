@@ -18,6 +18,7 @@ export interface Artifact {
   is_pinned: boolean
   is_archived: boolean
   version: number
+  project_name?: string
   created_at: string
   updated_at: string
 }
@@ -71,6 +72,9 @@ interface ArtifactStore {
 
   // Enhanced search that works better for cross-chat references
   searchArtifactsByTitle: (title: string) => Artifact[]
+  
+  // Check if specific code content has an associated artifact
+  getArtifactByContent: (content: string, messageId?: string) => Artifact | undefined
 }
 
 export interface ArtifactFilters {
@@ -94,6 +98,7 @@ export interface CreateArtifactData {
   metadata?: Record<string, any>
   thread_id?: string
   message_id?: string
+  project_name?: string
 }
 
 const API_BASE = "/api/artifacts"
@@ -439,6 +444,54 @@ export const useArtifactStore = create<ArtifactStore>()(
             // Then by creation date (newest first)
             return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
           })
+      },
+
+      // Check if specific code content has an associated artifact
+      getArtifactByContent: (content: string, messageId?: string) => {
+        const trimmedContent = content.trim()
+        const artifacts = get().artifacts.filter(a => !a.is_archived)
+        
+        console.log('🔍 Checking for artifact with content:', {
+          contentLength: trimmedContent.length,
+          messageId,
+          availableArtifacts: artifacts.filter(a => a.message_id === messageId).length,
+          totalArtifacts: artifacts.length
+        })
+        
+        // First try to find exact content match in the same message
+        if (messageId) {
+          const messageArtifact = artifacts.find(a => 
+            a.message_id === messageId && 
+            a.content.trim() === trimmedContent
+          )
+          if (messageArtifact) {
+            console.log('✅ Found exact match in same message:', messageArtifact.title)
+            return messageArtifact
+          }
+        }
+        
+        // Then try to find exact content match anywhere
+        const exactMatch = artifacts.find(a => 
+          a.content.trim() === trimmedContent
+        )
+        if (exactMatch) {
+          console.log('✅ Found exact content match:', exactMatch.title)
+          return exactMatch
+        }
+        
+        // Finally try to find if the code is contained within an artifact (for partial matches)
+        const partialMatch = artifacts.find(a => 
+          a.content_type === 'code' && 
+          (a.content.includes(trimmedContent) || trimmedContent.includes(a.content.trim()))
+        )
+        
+        if (partialMatch) {
+          console.log('✅ Found partial match:', partialMatch.title)
+        } else {
+          console.log('❌ No artifact found for content')
+        }
+        
+        return partialMatch
       },
 
       getArtifactById: (id) => {

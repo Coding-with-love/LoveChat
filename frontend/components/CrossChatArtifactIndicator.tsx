@@ -116,7 +116,6 @@ export function CrossChatArtifactIndicator({ currentThreadId, className }: Cross
                 <ul className="space-y-1">
                   <li>• Click the <Archive className="h-3 w-3 inline" /> button to browse artifacts</li>
                   <li>• "Reference" adds a link to the artifact</li>
-                  <li>• "Insert" copies the full content</li>
                   <li>• Cross-chat artifacts show an <Archive className="h-3 w-3 inline text-primary" /> icon</li>
                 </ul>
               </div>

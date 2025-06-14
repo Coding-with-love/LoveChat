@@ -15,8 +15,15 @@ import CodeConverter from "@/frontend/components/CodeConverter"
 import { createContext } from "react"
 import type { ComponentProps } from "react"
 import type { ExtraProps, Components } from "react-markdown"
-import { Code2, Sparkles, Download, Pin, PinOff } from 'lucide-react'
+import { Code2, Sparkles, Download, Pin, PinOff, Package, Star, Check, Copy } from 'lucide-react'
 import { ArrowLeft, Loader2 } from 'lucide-react'
+import { useArtifactStore } from "@/frontend/stores/ArtifactStore"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/frontend/components/ui/tooltip"
 
 // Import KaTeX CSS
 import "katex/dist/katex.min.css"
@@ -76,6 +83,7 @@ type ExtendedComponents = Components & {
 
 function CodeBlock({ children, className, ...props }: CodeComponentProps) {
   const { size, onCodeConvert, threadId, messageId, isArtifactMessage } = useContext(MarkdownContext)
+  const { getArtifactByContent, artifacts } = useArtifactStore()
   const [copied, setCopied] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
   const [convertedCode, setConvertedCode] = useState<{ code: string; language: string } | null>(null)
@@ -95,6 +103,12 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
     return languageMatch?.[1] || null
   }, [languageMatch])
 
+  // Check if this code block has an associated artifact
+  const associatedArtifact = useMemo(() => {
+    if (!codeString || !language) return null
+    return getArtifactByContent(codeString, messageId)
+  }, [codeString, language, messageId, getArtifactByContent, artifacts])
+
   // Check if this code block is substantial enough to be an artifact
   const isArtifactCandidate = useMemo(() => {
     if (!language || !isArtifactMessage) return false
@@ -105,6 +119,10 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
     // Consider it an artifact if it's substantial code (3+ lines or 100+ chars)
     return lines > 3 || chars > 100
   }, [language, codeString, isArtifactMessage])
+
+  // Determine if this code block should show artifact styling
+  const hasArtifact = Boolean(associatedArtifact)
+  const showArtifactStyling = hasArtifact || isArtifactCandidate
 
   const copyToClipboard = async (text: string) => {
     try {
@@ -173,39 +191,24 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
       <div
         className={cn(
           "rounded-md relative mb-4 overflow-visible shadow-sm transition-all duration-200",
-          isArtifactCandidate 
-            ? "border-2 border-primary/30 bg-gradient-to-br from-primary/5 to-primary/10 shadow-lg" 
-            : "border border-border"
+          "border border-border"
         )}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
         data-code-block="true"
-        data-artifact={isArtifactCandidate}
+        data-artifact={showArtifactStyling}
+        data-has-artifact={hasArtifact}
       >
         <div
           className={cn(
-            "flex justify-between items-center px-4 py-2 text-foreground",
-            isArtifactCandidate 
-              ? "bg-gradient-to-r from-primary/10 to-primary/15 border-b border-primary/20" 
-              : "bg-secondary"
+            "flex justify-between items-center px-4 py-2 text-foreground bg-secondary"
           )}
           data-code-block-header="true"
         >
           <div className="flex items-center space-x-2">
-            {isArtifactCandidate && (
-              <Sparkles className="w-4 h-4 text-primary animate-pulse" />
-            )}
-            <span className={cn(
-              "text-sm font-mono",
-              isArtifactCandidate && "text-primary font-semibold"
-            )}>
+            <span className="text-sm font-mono">
               {displayLang}
             </span>
-            {isArtifactCandidate && (
-              <span className="text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary font-medium">
-                Artifact
-              </span>
-            )}
             {convertedCode && (
               <button
                 onClick={toggleView}
@@ -231,7 +234,24 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
             )}
           </div>
           <div className="flex items-center space-x-2">
-            {isArtifactCandidate && isHovered && (
+            {hasArtifact && associatedArtifact && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="flex items-center">
+                      <Package className="w-4 h-4 text-primary hover:text-primary/80 transition-colors cursor-help" />
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <div className="text-center">
+                      <p className="font-medium">Saved as Artifact</p>
+                      <p className="text-xs font-medium text-foreground">"{associatedArtifact.title}"</p>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+            {showArtifactStyling && isHovered && (
               <>
                 <button
                   onClick={handlePin}
@@ -270,24 +290,18 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
             )}
             <button
               onClick={() => copyToClipboard(displayCode)}
-              className={cn(
-                "text-sm cursor-pointer transition-colors p-1 rounded-md",
-                isArtifactCandidate 
-                  ? "hover:text-primary hover:bg-primary/10" 
-                  : "hover:text-primary hover:bg-muted"
-              )}
+              className="text-sm cursor-pointer hover:text-primary transition-colors p-1 rounded-md hover:bg-primary/10"
               aria-label="Copy code"
               title="Copy code"
             >
-              {copied ? <Code2 className="w-4 h-4" /> : <Code2 className="w-4 h-4" />}
+              {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
             </button>
           </div>
         </div>
         <div
           className={cn(
             "transition-all duration-300",
-            showConverted ? "bg-blue-50/20 dark:bg-blue-950/20 border-t border-blue-200 dark:border-blue-800" : "",
-            isArtifactCandidate && "bg-gradient-to-br from-primary/5 to-transparent"
+            showConverted ? "bg-blue-50/20 dark:bg-blue-950/20 border-t border-blue-200 dark:border-blue-800" : ""
           )}
           data-code-block-content="true"
         >
@@ -300,11 +314,6 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
             >
               {displayCode}
             </ShikiHighlighter>
-            {isArtifactCandidate && (
-              <div className="absolute top-2 right-2 opacity-20">
-                <Sparkles className="w-6 h-6 text-primary" />
-              </div>
-            )}
           </div>
         </div>
       </div>

@@ -144,7 +144,6 @@ function PureMessageContentRenderer({
             <ArtifactReference
               key={`artifact-${part.artifactId}-${index}`}
               artifactId={part.artifactId}
-              onViewInGallery={(artifact) => handleViewInGallery(artifact.id)}
             />
           )
         }
@@ -154,10 +153,10 @@ function PureMessageContentRenderer({
             <MarkdownRenderer
               key={`text-${index}`}
               content={part.content}
-              messageId={messageId}
+              id={messageId}
               threadId={threadId}
               onCodeConvert={onCodeConvert}
-              onRevertRephrase={onRevertRephrase}
+              isArtifactMessage={true}
             />
           ) : (
             <div key={`text-${index}`} className="whitespace-pre-wrap">

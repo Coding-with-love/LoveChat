@@ -136,56 +136,142 @@ function getFileExtension(language: string): string {
 function generateCodeTitle(code: string, language: string): string {
   // Try to extract a meaningful title from the code
   const lines = code.split("\n").filter((line) => line.trim())
+  const codeText = code.toLowerCase()
 
-  // Look for function/class definitions
-  const functionMatch = lines.find(
-    (line) =>
-      line.includes("function ") ||
-      line.includes("def ") ||
-      line.includes("class ") ||
-      line.includes("const ") ||
-      line.includes("let ") ||
-      line.includes("var "),
-  )
-
-  if (functionMatch) {
-    const match = functionMatch.match(/(?:function|def|class|const|let|var)\s+([a-zA-Z_][a-zA-Z0-9_]*)/)
-    if (match) {
-      return `${match[1]} (${language})`
-    }
-  }
-
-  // Look for comments that might indicate purpose
-  const commentMatch = lines.find(
-    (line) => line.trim().startsWith("//") || line.trim().startsWith("#") || line.trim().startsWith("/*"),
-  )
-
-  if (commentMatch) {
-    const comment = commentMatch
+  // Look for meaningful comments that describe the purpose (prioritize these)
+  const meaningfulComments = lines.filter(line => {
+    const trimmed = line.trim()
+    if (!trimmed.startsWith("//") && !trimmed.startsWith("#") && !trimmed.startsWith("/*")) return false
+    
+    const comment = trimmed
       .replace(/^[\s/*#]+/, "")
       .replace(/\*\/$/, "")
       .trim()
-    if (comment.length > 0 && comment.length < 50) {
-      return comment
+      .toLowerCase()
+    
+    // Skip generic comments
+    if (comment.length < 5 || 
+        comment.includes("include") || 
+        comment.includes("import") ||
+        comment.includes("todo") ||
+        comment.includes("fixme") ||
+        comment.startsWith("@") ||
+        comment.match(/^[a-z]+\.(h|hpp|js|ts|py)$/)) {
+      return false
+    }
+    
+    return comment.length > 0 && comment.length < 60
+  })
+
+  if (meaningfulComments.length > 0) {
+    const comment = meaningfulComments[0]
+      .replace(/^[\s/*#]+/, "")
+      .replace(/\*\/$/, "")
+      .trim()
+    return comment.charAt(0).toUpperCase() + comment.slice(1)
+  }
+
+  // Look for main function or entry points
+  if (codeText.includes("int main") || codeText.includes("def main") || codeText.includes("function main")) {
+    // Try to infer purpose from context
+    if (codeText.includes("currency") || codeText.includes("exchange")) {
+      return "Currency Exchange Program"
+    }
+    if (codeText.includes("calculator")) {
+      return "Calculator Program"
+    }
+    if (codeText.includes("game") || codeText.includes("player")) {
+      return "Game Program"
+    }
+    if (codeText.includes("sort") || codeText.includes("search")) {
+      return "Algorithm Implementation"
+    }
+    return "Main Program"
+  }
+
+  // Look for class definitions with meaningful names
+  const classMatch = lines.find(line => 
+    line.match(/class\s+([A-Z][a-zA-Z0-9_]*)/i) && 
+    !line.toLowerCase().includes("test") &&
+    !line.toLowerCase().includes("example")
+  )
+  if (classMatch) {
+    const match = classMatch.match(/class\s+([A-Z][a-zA-Z0-9_]*)/i)
+    if (match) {
+      return `${match[1]} Class`
     }
   }
 
-  // Default titles based on language
-  const defaultTitles: Record<string, string> = {
+  // Look for function definitions with meaningful names
+  const functionPatterns = [
+    /function\s+([a-zA-Z_][a-zA-Z0-9_]*)/,
+    /def\s+([a-zA-Z_][a-zA-Z0-9_]*)/,
+    /const\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=/,
+    /let\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=/,
+    /var\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=/,
+    /[a-zA-Z_][a-zA-Z0-9_]*\s*\([^)]*\)\s*{/, // C++ style functions
+  ]
+
+  for (const line of lines) {
+    for (const pattern of functionPatterns) {
+      const match = line.match(pattern)
+      if (match && match[1]) {
+        const funcName = match[1]
+        // Skip generic or test function names
+        if (!funcName.toLowerCase().includes("test") && 
+            !funcName.toLowerCase().includes("example") &&
+            funcName.length > 2) {
+          return `${funcName} Function`
+        }
+      }
+    }
+  }
+
+  // Try to infer purpose from code content
+  if (codeText.includes("currency") && codeText.includes("exchange")) {
+    return "Currency Exchange Program"
+  }
+  if (codeText.includes("calculator") || (codeText.includes("add") && codeText.includes("subtract"))) {
+    return "Calculator Program"
+  }
+  if (codeText.includes("database") || codeText.includes("sql")) {
+    return "Database Code"
+  }
+  if (codeText.includes("api") || codeText.includes("endpoint")) {
+    return "API Code"
+  }
+  if (codeText.includes("component") && (language === "javascript" || language === "typescript")) {
+    return "React Component"
+  }
+  if (codeText.includes("algorithm") || codeText.includes("sort") || codeText.includes("search")) {
+    return "Algorithm Implementation"
+  }
+  if (codeText.includes("server") || codeText.includes("express")) {
+    return "Server Code"
+  }
+  if (codeText.includes("test") || codeText.includes("spec")) {
+    return "Test Code"
+  }
+
+  // Language-specific intelligent defaults
+  const smartDefaults: Record<string, string> = {
     javascript: "JavaScript Code",
-    typescript: "TypeScript Code",
+    typescript: "TypeScript Code", 
     python: "Python Script",
-    java: "Java Code",
-    cpp: "C++ Code",
-    c: "C Code",
+    java: "Java Program",
+    cpp: "C++ Program",
+    c: "C Program",
     html: "HTML Document",
     css: "CSS Styles",
     sql: "SQL Query",
     bash: "Shell Script",
-    dockerfile: "Dockerfile",
+    dockerfile: "Docker Configuration",
+    json: "JSON Data",
+    yaml: "YAML Configuration",
+    xml: "XML Document",
   }
 
-  return defaultTitles[language.toLowerCase()] || `${language} Code`
+  return smartDefaults[language.toLowerCase()] || `${language.charAt(0).toUpperCase() + language.slice(1)} Code`
 }
 
 function extractDocumentTitle(content: string): string {

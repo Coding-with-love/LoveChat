@@ -158,15 +158,6 @@ export function ArtifactPicker({ threadId, onSelectArtifact, trigger, className 
           variant="ghost"
           size="sm"
           className="h-7 px-2"
-          onClick={() => handleArtifactAction(artifact, 'insert')}
-        >
-          <Copy className="h-3 w-3 mr-1" />
-          Insert
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2"
           onClick={() => handleArtifactAction(artifact, 'view')}
         >
           <Eye className="h-3 w-3" />
@@ -251,12 +242,9 @@ export function ArtifactPicker({ threadId, onSelectArtifact, trigger, className 
         </div>
 
         <div className="border-t pt-4 text-xs text-muted-foreground">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-center">
             <span>
               <strong>Reference:</strong> Add artifact link to message
-            </span>
-            <span>
-              <strong>Insert:</strong> Copy content to input
             </span>
           </div>
         </div>

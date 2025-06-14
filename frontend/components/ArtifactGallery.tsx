@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { CreateArtifactDialog } from "./CreateArtifactDialog"
 import { ArtifactViewer } from "./ArtifactViewer"
+import { useThread } from "@/frontend/hooks/useThread"
 
 interface ArtifactGalleryProps {
   threadId?: string
@@ -47,6 +48,8 @@ export function ArtifactGallery({ threadId, className }: ArtifactGalleryProps) {
     selectArtifact,
     selectedArtifact
   } = useArtifactStore()
+
+  const { thread } = useThread(threadId || null)
 
   const [searchQuery, setSearchQuery] = useState("")
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
@@ -422,6 +425,7 @@ export function ArtifactGallery({ threadId, className }: ArtifactGalleryProps) {
         open={showCreateDialog}
         onOpenChange={setShowCreateDialog}
         threadId={threadId}
+        threadTitle={thread?.title}
       />
 
       {selectedArtifact && (

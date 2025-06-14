@@ -5,7 +5,7 @@ import { Button } from "./ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog"
 import { Textarea } from "./ui/textarea"
 import { cn } from "@/lib/utils"
-import { Check, Copy, RefreshCcw, SquarePen, Star, Archive } from 'lucide-react'
+import { Check, Copy, RefreshCcw, SquarePen, Star, Archive } from "lucide-react"
 import type { UIMessage } from "ai"
 import type { UseChatHelpers } from "@ai-sdk/react"
 import { deleteTrailingMessages, getFileAttachmentsByMessageId } from "@/lib/supabase/queries"
@@ -307,9 +307,7 @@ export default function MessageControls({
 
   return (
     <div
-      className={cn("opacity-0 group-hover:opacity-100 transition-opacity duration-100 flex gap-1", {
-        "absolute mt-5 right-2": message.role === "user",
-      })}
+      className="opacity-60 group-hover:opacity-100 transition-opacity duration-100 flex gap-1"
     >
       <Button variant="ghost" size="icon" onClick={handleCopy}>
         {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}

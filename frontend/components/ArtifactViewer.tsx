@@ -361,6 +361,14 @@ export function ArtifactViewer({ open, onOpenChange, artifact }: ArtifactViewerP
                         <span className="text-muted-foreground">Version:</span>
                         <p className="font-medium">v{artifact.version}</p>
                       </div>
+                      {artifact.project_name && (
+                        <div className="sm:col-span-2">
+                          <span className="text-muted-foreground">Project:</span>
+                          <p className="font-medium flex items-center gap-1">
+                            📁 {artifact.project_name}
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
 

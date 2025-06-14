@@ -24,6 +24,7 @@ import { ArtifactCard } from "./ArtifactCard"
 import { useArtifactStore } from "@/frontend/stores/ArtifactStore"
 import { Badge } from "@/frontend/components/ui/badge"
 import { Code, FileText, Copy, Plus } from "lucide-react"
+import { ArtifactIndicator, MessageArtifactSummary } from "./ArtifactIndicator"
 
 // Helper function to check equality (you might want to import this from a utility library)
 function equal(a: any, b: any): boolean {
@@ -69,13 +70,25 @@ function PureMessage({
   const [isCurrentlyThinking, setIsCurrentlyThinking] = useState(false)
 
   // Artifact detection and display
-  const { getArtifactsByMessageId } = useArtifactStore()
+  const { getArtifactsByMessageId, fetchArtifacts } = useArtifactStore()
   const [messageArtifacts, setMessageArtifacts] = useState<any[]>([])
 
   useEffect(() => {
     const artifacts = getArtifactsByMessageId(message.id)
     setMessageArtifacts(artifacts)
   }, [message.id, getArtifactsByMessageId])
+
+  // Refresh artifacts when streaming stops to catch auto-generated artifacts
+  useEffect(() => {
+    if (!isStreaming && message.role === "assistant") {
+      // Delay to allow backend artifact creation to complete
+      const timeoutId = setTimeout(() => {
+        fetchArtifacts({ messageId: message.id })
+      }, 1000)
+      
+      return () => clearTimeout(timeoutId)
+    }
+  }, [isStreaming, message.role, message.id, fetchArtifacts])
 
   const messageRef = useRef<HTMLDivElement>(null)
 
@@ -371,17 +384,25 @@ const handleViewInGallery = useCallback((artifact: any) => {
                   </div>
 
                   {!isStreaming && (
-                    <MessageControls
-                      threadId={threadId}
-                      content={cleanText}
-                      message={message}
-                      setMessages={setMessages}
-                      reload={reload}
-                      stop={stop}
-                      onCopy={handleCopy}
-                      onEdit={handleEdit}
-                      onPin={handlePin}
-                    />
+                    <div className="flex items-center justify-between">
+                      <ArtifactIndicator 
+                        messageId={message.id}
+                        threadId={threadId}
+                        variant="icon"
+                        className="opacity-60 group-hover:opacity-100 transition-opacity"
+                      />
+                      <MessageControls
+                        threadId={threadId}
+                        content={cleanText}
+                        message={message}
+                        setMessages={setMessages}
+                        reload={reload}
+                        stop={stop}
+                        onCopy={handleCopy}
+                        onEdit={handleEdit}
+                        onPin={handlePin}
+                      />
+                    </div>
                   )}
                 </div>
               )
@@ -409,48 +430,58 @@ const handleViewInGallery = useCallback((artifact: any) => {
             }
 
             return message.role === "user" ? (
-              <div
-                key={key}
-                className="relative group px-4 py-3 rounded-xl bg-secondary border border-secondary-foreground/2 max-w-[80%]"
-                data-message-content-part="true"
-              >
-                {mode === "edit" && (
-                  <MessageEditor
-                    threadId={threadId}
-                    message={message}
-                    content={cleanText}
-                    setMessages={setMessages}
-                    reload={reload}
-                    setMode={setMode}
-                    stop={stop}
-                  />
-                )}
-                {mode === "view" && (
-                  <div className="space-y-3">
-                    <MessageContentRenderer
-                      content={cleanText}
-                      messageId={message.id}
-                      threadId={threadId}
-                      onRevertRephrase={onRevertToOriginal}
-                      isMarkdown={false}
-                    />
+              <div key={key} className="w-full flex justify-end" data-message-content-part="true">
+                <div className="group flex flex-col gap-2 max-w-[80%]">
+                  <div
+                    className="relative px-4 py-3 rounded-xl bg-secondary border border-secondary-foreground/2"
+                  >
+                    {mode === "edit" && (
+                      <MessageEditor
+                        threadId={threadId}
+                        message={message}
+                        content={cleanText}
+                        setMessages={setMessages}
+                        reload={reload}
+                        setMode={setMode}
+                        stop={stop}
+                      />
+                    )}
+                    {mode === "view" && (
+                      <div className="space-y-3">
+                        <MessageContentRenderer
+                          content={cleanText}
+                          messageId={message.id}
+                          threadId={threadId}
+                          onRevertRephrase={onRevertToOriginal}
+                          isMarkdown={false}
+                        />
+                      </div>
+                    )}
                   </div>
-                )}
 
-                {mode === "view" && (
-                  <MessageControls
-                    threadId={threadId}
-                    content={cleanText}
-                    message={message}
-                    setMode={setMode}
-                    setMessages={setMessages}
-                    reload={reload}
-                    stop={stop}
-                    onCopy={handleCopy}
-                    onEdit={handleEdit}
-                    onPin={handlePin}
-                  />
-                )}
+                  {mode === "view" && (
+                    <div className="flex items-center justify-between">
+                      <ArtifactIndicator 
+                        messageId={message.id}
+                        threadId={threadId}
+                        variant="icon"
+                        className="opacity-60 group-hover:opacity-100 transition-opacity"
+                      />
+                      <MessageControls
+                        threadId={threadId}
+                        content={cleanText}
+                        message={message}
+                        setMode={setMode}
+                        setMessages={setMessages}
+                        reload={reload}
+                        stop={stop}
+                        onCopy={handleCopy}
+                        onEdit={handleEdit}
+                        onPin={handlePin}
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
             ) : (
               <div key={key} className="group flex flex-col gap-2 w-full relative" data-message-content-part="true">
@@ -496,17 +527,25 @@ const handleViewInGallery = useCallback((artifact: any) => {
                 </div>
 
                 {!isStreaming && (
-                  <MessageControls
-                    threadId={threadId}
-                    content={cleanText}
-                    message={message}
-                    setMessages={setMessages}
-                    reload={reload}
-                    stop={stop}
-                    onCopy={handleCopy}
-                    onEdit={handleEdit}
-                    onPin={handlePin}
-                  />
+                  <div className="flex items-center justify-between">
+                    <ArtifactIndicator 
+                      messageId={message.id}
+                      threadId={threadId}
+                      variant="minimal"
+                      className="opacity-0 group-hover:opacity-100 transition-opacity"
+                    />
+                    <MessageControls
+                      threadId={threadId}
+                      content={cleanText}
+                      message={message}
+                      setMessages={setMessages}
+                      reload={reload}
+                      stop={stop}
+                      onCopy={handleCopy}
+                      onEdit={handleEdit}
+                      onPin={handlePin}
+                    />
+                  </div>
                 )}
               </div>
             )
@@ -549,19 +588,7 @@ const handleViewInGallery = useCallback((artifact: any) => {
         </div>
       )}
 
-      {/* Display artifacts created by this message */}
-      {messageArtifacts.length > 0 && (
-        <div className={cn("mt-4 space-y-3", message.role === "user" ? "self-end max-w-[80%]" : "self-start w-full")}>
-          {messageArtifacts.map((artifact) => (
-            <ArtifactCard
-              key={artifact.id}
-              artifact={artifact}
-              onViewInGallery={handleViewInGallery}
-              compact={message.role === "user"}
-            />
-          ))}
-        </div>
-      )}
+
 
       {/* AI Context Menu - Only show if selection is within this message */}
       {selection && isSelectionInThisMessage() && (

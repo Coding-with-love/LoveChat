@@ -18,6 +18,7 @@ import {
   ChevronUp,
   Package,
   Calendar,
+  Check,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
@@ -46,6 +47,7 @@ export function ArtifactCard({
   const { downloadArtifact, pinArtifact, deleteArtifact } = useArtifactStore()
   const [isExpanded, setIsExpanded] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   const getArtifactIcon = () => {
     switch (artifact.content_type) {
@@ -124,6 +126,10 @@ export function ArtifactCard({
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(artifact.content)
+      setCopied(true)
+      setTimeout(() => {
+        setCopied(false)
+      }, 2000)
       toast.success("Artifact content copied to clipboard!")
     } catch (error) {
       toast.error("Failed to copy content")
@@ -260,6 +266,11 @@ export function ArtifactCard({
                     {artifact.language}
                   </Badge>
                 )}
+                {artifact.project_name && (
+                  <Badge variant="outline" className="text-xs border-blue-200 bg-blue-50 text-blue-700">
+                    📁 {artifact.project_name}
+                  </Badge>
+                )}
               </div>
 
               {artifact.description && <p className="text-xs text-muted-foreground mb-2">{artifact.description}</p>}
@@ -314,7 +325,7 @@ export function ArtifactCard({
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="sm" onClick={handleCopy} className="h-7 px-2">
-                  <Copy className="h-3 w-3" />
+                  {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Copy to clipboard</TooltipContent>

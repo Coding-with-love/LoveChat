@@ -29,6 +29,7 @@ interface CreateArtifactDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   threadId?: string
+  threadTitle?: string
   initialData?: Partial<CreateArtifactData>
 }
 
@@ -56,6 +57,7 @@ export function CreateArtifactDialog({
   open, 
   onOpenChange, 
   threadId,
+  threadTitle,
   initialData 
 }: CreateArtifactDialogProps) {
   const { createArtifact, isLoading } = useArtifactStore()
@@ -70,7 +72,8 @@ export function CreateArtifactDialog({
     tags: initialData?.tags || [],
     metadata: initialData?.metadata || {},
     thread_id: threadId,
-    message_id: initialData?.message_id
+    message_id: initialData?.message_id,
+    project_name: threadTitle || ""
   })
 
   const [newTag, setNewTag] = useState("")
@@ -108,10 +111,10 @@ export function CreateArtifactDialog({
 
   const addTag = (tag: string) => {
     const trimmedTag = tag.trim().toLowerCase()
-    if (trimmedTag && !formData.tags.includes(trimmedTag)) {
+    if (trimmedTag && !(formData.tags || []).includes(trimmedTag)) {
       setFormData(prev => ({
         ...prev,
-        tags: [...prev.tags, trimmedTag]
+        tags: [...(prev.tags || []), trimmedTag]
       }))
     }
     setNewTag("")
@@ -120,7 +123,7 @@ export function CreateArtifactDialog({
   const removeTag = (tagToRemove: string) => {
     setFormData(prev => ({
       ...prev,
-      tags: prev.tags.filter(tag => tag !== tagToRemove)
+      tags: (prev.tags || []).filter(tag => tag !== tagToRemove)
     }))
   }
 
@@ -163,6 +166,20 @@ export function CreateArtifactDialog({
               onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
               placeholder="Brief description of the artifact..."
             />
+          </div>
+
+          {/* Project Name */}
+          <div className="space-y-2">
+            <Label htmlFor="project_name">Project Name</Label>
+            <Input
+              id="project_name"
+              value={formData.project_name || ""}
+              onChange={(e) => setFormData(prev => ({ ...prev, project_name: e.target.value }))}
+              placeholder={threadTitle ? `Current: ${threadTitle}` : "Enter project name..."}
+            />
+            <p className="text-xs text-muted-foreground">
+              Group artifacts by project for better organization
+            </p>
           </div>
 
           {/* Content Type and Language */}
@@ -215,9 +232,9 @@ export function CreateArtifactDialog({
             <Label>Tags</Label>
             <div className="space-y-2">
               {/* Current tags */}
-              {formData.tags.length > 0 && (
+              {(formData.tags || []).length > 0 && (
                 <div className="flex flex-wrap gap-1">
-                  {formData.tags.map((tag) => (
+                  {(formData.tags || []).map((tag) => (
                     <Badge key={tag} variant="secondary" className="gap-1">
                       {tag}
                       <Button
@@ -255,7 +272,7 @@ export function CreateArtifactDialog({
 
               {/* Common tags */}
               <div className="flex flex-wrap gap-1">
-                {COMMON_TAGS.filter(tag => !formData.tags.includes(tag)).slice(0, 6).map((tag) => (
+                {COMMON_TAGS.filter(tag => !(formData.tags || []).includes(tag)).slice(0, 6).map((tag) => (
                   <Button
                     key={tag}
                     type="button"
