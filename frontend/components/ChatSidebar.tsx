@@ -1102,29 +1102,33 @@ export function ChatSidebar() {
           </SidebarContent>
 
           {/* Archived Chats Section - Always visible at bottom */}
-          {archivedThreads.length > 0 && (
-            <div className="border-t border-border/50">
-              <Collapsible open={showArchivedChats} onOpenChange={setShowArchivedChats}>
-                <div className="p-2">
-                  <CollapsibleTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      className="w-full justify-start gap-2 h-8 text-muted-foreground hover:text-foreground"
-                    >
-                      <Archive className="h-4 w-4" />
-                      <span className="text-sm flex-1 text-left">Archived Chats</span>
-                      <span className="text-xs bg-secondary px-1.5 py-0.5 rounded-md">{archivedThreads.length}</span>
-                    </Button>
-                  </CollapsibleTrigger>
-                </div>
-                <CollapsibleContent>
-                  <div className="px-2 pb-2 max-h-48 overflow-y-auto">
+          <div className="border-t border-border/50">
+            <Collapsible open={showArchivedChats} onOpenChange={setShowArchivedChats}>
+              <div className="p-2">
+                <CollapsibleTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start gap-2 h-8 text-muted-foreground hover:text-foreground"
+                  >
+                    <Archive className="h-4 w-4" />
+                    <span className="text-sm flex-1 text-left">Archived Chats</span>
+                    <span className="text-xs bg-secondary px-1.5 py-0.5 rounded-md">{archivedThreads.length}</span>
+                  </Button>
+                </CollapsibleTrigger>
+              </div>
+              <CollapsibleContent>
+                <div className="px-2 pb-2 max-h-48 overflow-y-auto">
+                  {archivedThreads.length > 0 ? (
                     <div className="space-y-1">{archivedThreads.map(renderArchivedThread)}</div>
-                  </div>
-                </CollapsibleContent>
-              </Collapsible>
-            </div>
-          )}
+                  ) : (
+                    <div className="p-4 text-center">
+                      <p className="text-sm text-muted-foreground">No archived chats</p>
+                    </div>
+                  )}
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+          </div>
 
           <SidebarFooter className="p-4 mt-auto border-t border-border/50">
             <div className="flex items-center justify-between w-full">

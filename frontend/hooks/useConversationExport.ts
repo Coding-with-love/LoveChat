@@ -1,24 +1,47 @@
 "use client"
 
 import { useState } from "react"
+import { supabase } from "@/lib/supabase/client"
+import { useTheme } from "next-themes"
+import { useThemeStore } from "@/frontend/stores/ThemeStore"
 
 export type ExportFormat = "markdown" | "pdf" | "txt"
 
 export function useConversationExport() {
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { theme: darkMode } = useTheme()
+  const { theme: colorTheme, customHue } = useThemeStore()
 
   const exportConversation = async (threadId: string, format: ExportFormat) => {
     setExporting(true)
     setError(null)
 
     try {
+      // Get the current session for authentication
+      const { data: session } = await supabase.auth.getSession()
+      if (!session.session?.access_token) {
+        throw new Error("Authentication required")
+      }
+
+      // Prepare theme information for PDF styling
+      const themeInfo = {
+        isDark: darkMode === "dark",
+        colorTheme,
+        customHue: colorTheme === "custom" ? customHue : null,
+      }
+
       const response = await fetch("/api/export-conversation", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.session.access_token}`,
         },
-        body: JSON.stringify({ threadId, format }),
+        body: JSON.stringify({ 
+          threadId, 
+          format,
+          ...(format === "pdf" && { theme: themeInfo })
+        }),
       })
 
       if (!response.ok) {

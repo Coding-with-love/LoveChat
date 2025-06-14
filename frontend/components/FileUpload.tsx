@@ -75,7 +75,7 @@ export default function FileUpload({
         size="icon"
         onClick={handleButtonClick}
         disabled={disabled || uploading}
-        className="h-8 w-8"
+        className="h-9 w-9 transition-all duration-200 rounded-lg hover:bg-muted border border-border/50"
         aria-label="Attach file"
       >
         {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}

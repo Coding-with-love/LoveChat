@@ -114,19 +114,34 @@ export function KeyboardShortcutsDialog({ trigger, open, onOpenChange }: Keyboar
   // Helper function to format shortcut key display
   const formatShortcutKey = (shortcut: ShortcutHandler) => {
     const parts: string[] = []
-    if (shortcut.modifiers?.meta) parts.push("⌘")
-    if (shortcut.modifiers?.shift) parts.push("⇧")
-    if (shortcut.modifiers?.ctrl) parts.push("⌃")
-    if (shortcut.modifiers?.alt) parts.push("⌥")
+    const isMac = typeof navigator !== 'undefined' && navigator.platform.toUpperCase().indexOf('MAC') >= 0
+    
+    if (shortcut.modifiers?.meta) {
+      parts.push(isMac ? "⌘" : "Win")
+    }
+    if (shortcut.modifiers?.shift) {
+      parts.push(isMac ? "⇧" : "Shift")
+    }
+    if (shortcut.modifiers?.ctrl) {
+      parts.push(isMac ? "⌃" : "Ctrl")
+    }
+    if (shortcut.modifiers?.alt) {
+      parts.push(isMac ? "⌥" : "Alt")
+    }
     
     let key = shortcut.key
-    if (key === "Enter") key = "↵"
-    else if (key === "Backspace") key = "⌫"
-    else if (key === "Escape") key = "Esc"
-    else key = key.toUpperCase()
+    if (key === "Enter") {
+      key = isMac ? "↵" : "Enter"
+    } else if (key === "Backspace") {
+      key = isMac ? "⌫" : "Backspace"
+    } else if (key === "Escape") {
+      key = "Esc"
+    } else {
+      key = key.toUpperCase()
+    }
     
     parts.push(key)
-    return parts.join(" ")
+    return parts.join(isMac ? " " : " + ")
   }
 
   return (

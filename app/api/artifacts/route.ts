@@ -90,6 +90,16 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
+    console.log("📥 Received artifact creation request:", {
+      title: body.title,
+      content_type: body.content_type,
+      contentLength: body.content?.length,
+      hasDescription: !!body.description,
+      tagsCount: body.tags?.length,
+      thread_id: body.thread_id,
+      message_id: body.message_id
+    })
+    
     const {
       title,
       description,
@@ -104,30 +114,54 @@ export async function POST(request: NextRequest) {
     } = body
 
     if (!title || !content) {
+      console.error("❌ Missing required fields:", { hasTitle: !!title, hasContent: !!content })
       return NextResponse.json({ error: "Title and content are required" }, { status: 400 })
     }
 
+    const insertData = {
+      user_id: user.id,
+      title,
+      description,
+      content,
+      content_type: content_type || "text",
+      language,
+      file_extension,
+      tags: tags || [],
+      metadata: metadata || {},
+      thread_id,
+      message_id
+    }
+    
+    console.log("📤 Inserting artifact with data:", {
+      user_id: insertData.user_id,
+      title: insertData.title,
+      content_type: insertData.content_type,
+      contentLength: insertData.content?.length,
+      tagsType: typeof insertData.tags,
+      tagsValue: insertData.tags,
+      metadataType: typeof insertData.metadata,
+      thread_id: insertData.thread_id,
+      message_id: insertData.message_id
+    })
+
     const { data: artifact, error } = await supabaseServer
       .from("artifacts")
-      .insert({
-        user_id: user.id,
-        title,
-        description,
-        content,
-        content_type: content_type || "text",
-        language,
-        file_extension,
-        tags: tags || [],
-        metadata: metadata || {},
-        thread_id,
-        message_id
-      })
+      .insert(insertData)
       .select()
       .single()
 
     if (error) {
-      console.error("Error creating artifact:", error)
-      return NextResponse.json({ error: "Failed to create artifact" }, { status: 500 })
+      console.error("❌ Supabase error creating artifact:", {
+        error,
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint
+      })
+      return NextResponse.json({ 
+        error: "Failed to create artifact", 
+        details: error.message 
+      }, { status: 500 })
     }
 
     return NextResponse.json({ artifact })

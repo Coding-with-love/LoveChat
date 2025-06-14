@@ -26,7 +26,6 @@ import {
   Copy,
   Share,
   Archive,
-  Bug,
   X,
   ChevronUp,
   ChevronDown,
@@ -58,7 +57,7 @@ import { v4 as uuidv4 } from "uuid"
 export default function ChatLayout() {
   const { id } = useParams()
   const { isNavigatorVisible, handleToggleNavigator, closeNavigator, registerRef, scrollToMessage } = useChatNavigator()
-  const { thread, updateTitle } = useThread(id)
+  const { thread, updateTitle } = useThread(id || null)
   const { exportConversation, exporting } = useConversationExport()
   const {
     searchQuery,
@@ -226,10 +225,7 @@ export default function ChatLayout() {
     }
   }
 
-  const handleReportBug = () => {
-    // Implement bug report functionality
-    console.log("Report bug")
-  }
+
 
   const handleSearchNavigation = (direction: "next" | "previous") => {
     const messageId = direction === "next" ? nextResult() : previousResult()
@@ -333,8 +329,8 @@ export default function ChatLayout() {
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => handleExport("markdown")}>Export as Markdown</DropdownMenuItem>
                       <DropdownMenuItem onClick={() => handleExport("txt")}>Export as Text</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleExport("pdf")} disabled>
-                        Export as PDF (Coming Soon)
+                      <DropdownMenuItem onClick={() => handleExport("pdf")}>
+                        Export as PDF
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -396,11 +392,6 @@ export default function ChatLayout() {
                       <DropdownMenuItem onClick={handleArchiveChat}>
                         <Archive className="h-4 w-4 mr-2" />
                         Archive Chat
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={handleReportBug}>
-                        <Bug className="h-4 w-4 mr-2" />
-                        Report Bug
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={handleDeleteChat} className="text-destructive">
