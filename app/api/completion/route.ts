@@ -213,7 +213,34 @@ export async function POST(req: Request) {
 
       if (genError instanceof Error) {
         if (genError.message.includes("API_KEY_INVALID")) {
-          return NextResponse.json({ error: "Invalid Google API key" }, { status: 400 })
+          // For Ollama users, provide fallback instead of error
+          console.log("🦙 Google API key invalid, providing Ollama fallback")
+          const fallbackTitle = prompt.length > 50 ? prompt.substring(0, 47) + "..." : prompt
+          
+          if (isTitle) {
+            // Update thread title with fallback
+            const { error: updateError } = await supabaseServer
+              .from("threads")
+              .update({
+                title: fallbackTitle,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", threadId)
+              .eq("user_id", user.id)
+
+            if (updateError) {
+              console.error("❌ Failed to update thread title:", updateError)
+              return NextResponse.json({ error: "Failed to update thread title" }, { status: 500 })
+            }
+          }
+          
+          return NextResponse.json({ 
+            title: fallbackTitle, 
+            isTitle, 
+            messageId, 
+            threadId,
+            note: "Using fallback title generation" 
+          })
         } else if (genError.message.includes("QUOTA_EXCEEDED")) {
           return NextResponse.json({ error: "Google API quota exceeded" }, { status: 429 })
         } else {
