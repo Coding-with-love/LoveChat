@@ -22,6 +22,23 @@ export default function APIKeyForm() {
   const [isLoading, setIsLoading] = useState(true)
   const [showForceLoad, setShowForceLoad] = useState(false)
 
+  // Sync form state with store state whenever store updates
+  useEffect(() => {
+    const currentOpenaiKey = getKey("openai") || ""
+    const currentGoogleKey = getKey("google") || ""
+    const currentOpenrouterKey = getKey("openrouter") || ""
+    
+    setOpenaiKey(currentOpenaiKey)
+    setGoogleKey(currentGoogleKey)
+    setOpenrouterKey(currentOpenrouterKey)
+    
+    console.log("🔄 Syncing form with store state:", {
+      openai: !!currentOpenaiKey,
+      google: !!currentGoogleKey,
+      openrouter: !!currentOpenrouterKey
+    })
+  }, [getKey])
+
   // Initialize keys from store
   useEffect(() => {
     const initializeKeys = async () => {
@@ -43,7 +60,7 @@ export default function APIKeyForm() {
           try {
             await loadKeys()
             
-            // Update local state with loaded keys
+            // Update local state with loaded keys after database load
             setOpenaiKey(getKey("openai") || "")
             setGoogleKey(getKey("google") || "")
             setOpenrouterKey(getKey("openrouter") || "")
@@ -107,17 +124,46 @@ export default function APIKeyForm() {
   const handleSaveKeys = async () => {
     try {
       setIsSaving(true)
+      console.log("💾 Saving API keys...")
 
       const updates = []
-      if (openaiKey.trim()) updates.push(setKey("openai", openaiKey.trim()))
-      if (googleKey.trim()) updates.push(setKey("google", googleKey.trim()))
-      if (openrouterKey.trim()) updates.push(setKey("openrouter", openrouterKey.trim()))
+      if (openaiKey.trim()) {
+        console.log("💾 Saving OpenAI key...")
+        updates.push(setKey("openai", openaiKey.trim()))
+      }
+      if (googleKey.trim()) {
+        console.log("💾 Saving Google key...")
+        updates.push(setKey("google", googleKey.trim()))
+      }
+      if (openrouterKey.trim()) {
+        console.log("💾 Saving OpenRouter key...")
+        updates.push(setKey("openrouter", openrouterKey.trim()))
+      }
+
+      if (updates.length === 0) {
+        toast.error("No API keys to save")
+        return
+      }
 
       await Promise.all(updates)
+      
+      // After successful save, sync form state with store state
+      setTimeout(() => {
+        setOpenaiKey(getKey("openai") || "")
+        setGoogleKey(getKey("google") || "")
+        setOpenrouterKey(getKey("openrouter") || "")
+        console.log("✅ Form state synced after save")
+      }, 100) // Small delay to ensure store is updated
+      
       toast.success("API keys saved successfully")
     } catch (error) {
-      console.error("Error saving API keys:", error)
+      console.error("❌ Error saving API keys:", error)
       toast.error("Failed to save API keys")
+      
+      // On error, revert form to store state
+      setOpenaiKey(getKey("openai") || "")
+      setGoogleKey(getKey("google") || "")
+      setOpenrouterKey(getKey("openrouter") || "")
     } finally {
       setIsSaving(false)
     }
@@ -127,7 +173,7 @@ export default function APIKeyForm() {
     try {
       await removeKey(provider)
 
-      // Update local state
+      // Update local state immediately
       switch (provider) {
         case "openai":
           setOpenaiKey("")
@@ -144,6 +190,11 @@ export default function APIKeyForm() {
     } catch (error) {
       console.error(`Error removing ${provider} API key:`, error)
       toast.error(`Failed to remove ${provider} API key`)
+      
+      // On error, revert to store state
+      setOpenaiKey(getKey("openai") || "")
+      setGoogleKey(getKey("google") || "")
+      setOpenrouterKey(getKey("openrouter") || "")
     }
   }
 

@@ -38,6 +38,12 @@ export const useAPIKeyStore = create<APIKeyStore>()(
         try {
           set({ isLoading: true, error: null })
           
+          // Update local state immediately for better UX
+          set((state) => ({
+            keys: { ...state.keys, [normalizedProvider]: key }
+          }))
+          console.log("🔄 Local state updated immediately")
+          
           // Get current user
           const { data: { user } } = await supabase.auth.getUser()
           if (!user) throw new Error("User not authenticated")
@@ -61,6 +67,7 @@ export const useAPIKeyStore = create<APIKeyStore>()(
               .eq("id", existingKey.id)
 
             if (error) throw error
+            console.log("✅ Updated existing API key in database")
           } else {
             // Insert new key
             const { error } = await supabase
@@ -74,16 +81,20 @@ export const useAPIKeyStore = create<APIKeyStore>()(
               })
 
             if (error) throw error
+            console.log("✅ Inserted new API key in database")
           }
 
-          // Update local state
-          set((state) => ({
-            keys: { ...state.keys, [normalizedProvider]: key }
-          }))
-
-          console.log("✅ API key saved to database")
+          console.log("✅ API key saved to database successfully")
         } catch (error) {
           console.error("❌ Error saving API key:", error)
+          
+          // Revert local state on error
+          const state = get()
+          const revertedKeys = { ...state.keys }
+          delete revertedKeys[normalizedProvider]
+          set({ keys: revertedKeys })
+          console.log("🔄 Reverted local state due to error")
+          
           set({ error: error instanceof Error ? error.message : "Failed to save API key" })
           throw error
         } finally {

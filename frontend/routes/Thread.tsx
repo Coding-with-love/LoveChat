@@ -99,13 +99,45 @@ export default function Thread() {
   }, [initializeThread])
 
   const convertToUIMessages = (messages: DBMessage[]): UIMessage[] => {
-    const converted = messages.map((message) => ({
-      id: message.id,
-      role: message.role,
-      parts: message.parts as UIMessage["parts"],
-      content: message.content || "",
-      createdAt: new Date(message.created_at),
-    }))
+    const converted = messages.map((message) => {
+      // Extract image attachments for experimental_attachments
+      let experimentalAttachments: { name: string; contentType: string; url: string }[] | undefined
+
+      if (message.parts) {
+        const fileAttachmentPart = message.parts.find((part: any) => part.type === "file_attachments")
+        if (fileAttachmentPart?.attachments) {
+          const imageAttachments = fileAttachmentPart.attachments
+            .filter((file: any) => file.fileType && file.fileType.startsWith("image/") && file.fileUrl)
+            .map((file: any) => ({
+              name: file.fileName,
+              contentType: file.fileType,
+              url: file.fileUrl,
+            }))
+
+          if (imageAttachments.length > 0) {
+            experimentalAttachments = imageAttachments
+            console.log("🖼️ Found image attachments in loaded message:", {
+              messageId: message.id,
+              imageCount: imageAttachments.length,
+                             images: imageAttachments.map((img: any) => ({
+                 name: img.name,
+                 contentType: img.contentType,
+                 hasUrl: !!img.url
+               }))
+            })
+          }
+        }
+      }
+
+      return {
+        id: message.id,
+        role: message.role,
+        parts: message.parts as UIMessage["parts"],
+        content: message.content || "",
+        createdAt: new Date(message.created_at),
+        experimental_attachments: experimentalAttachments,
+      }
+    })
     
     // Debug: Log the content being passed to Chat component
     console.log("🔄 Converting DB messages to UI messages:", {
@@ -114,7 +146,8 @@ export default function Thread() {
         id: m.id,
         role: m.role,
         contentLength: m.content.length,
-        contentPreview: m.content.substring(0, 100)
+        contentPreview: m.content.substring(0, 100),
+        hasExperimentalAttachments: !!m.experimental_attachments?.length
       }))
     })
     

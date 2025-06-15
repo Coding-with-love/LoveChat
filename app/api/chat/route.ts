@@ -407,17 +407,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 })
     }
 
-    const { messages, model, webSearchEnabled, apiKey: bodyApiKey, data } = json
+    const { messages, model, webSearchEnabled, apiKey: bodyApiKey, data, experimental_attachments } = json
     const headersList = await headers()
 
     console.log("📨 Received messages:", messages?.length || 0)
     console.log("🤖 Using model:", model)
+    console.log("🖼️ Image attachments received:", experimental_attachments?.length || 0)
     console.log("🚨 FULL REQUEST JSON:", JSON.stringify(json, null, 2))
     console.log("📦 Request data received:", data ? "present" : "not present")
     if (data) {
       console.log("📦 Data content:", {
         hasUserPreferences: !!data.userPreferences,
         userPreferences: data.userPreferences,
+      })
+    }
+    if (experimental_attachments) {
+      console.log("🖼️ Experimental attachments:", {
+        count: experimental_attachments.length,
+        images: experimental_attachments.map((att: any) => ({
+          name: att.name,
+          contentType: att.contentType,
+          hasUrl: !!att.url
+        }))
       })
     }
 
@@ -773,6 +784,7 @@ export async function POST(req: NextRequest) {
         model: aiModel,
         messages: processedMessages,
         system: systemPrompt,
+        experimental_attachments: experimental_attachments || undefined,
         onFinish: async ({ text, finishReason, usage, sources, providerMetadata }: any) => {
           console.log("🏁 AI generation finished")
 
@@ -1008,6 +1020,7 @@ export async function POST(req: NextRequest) {
         model: aiModel,
         messages: processedMessages,
         system: systemPrompt,
+        experimental_attachments: experimental_attachments || undefined,
         onFinish: async ({ text, finishReason, usage, sources, providerMetadata }: any) => {
           console.log("🏁 AI generation finished")
           await handleMessageSave(threadId, aiMessageId, user.id, text, sources, providerMetadata, modelConfig, apiKey!)
