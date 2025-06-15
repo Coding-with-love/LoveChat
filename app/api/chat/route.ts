@@ -1,5 +1,5 @@
 import { createGoogleGenerativeAI } from "@ai-sdk/google"
-import { openai } from "@ai-sdk/openai"
+import { openai, createOpenAI } from "@ai-sdk/openai"
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import { streamText } from "ai"
 import { headers } from "next/headers"
@@ -579,7 +579,31 @@ export async function POST(req: NextRequest) {
         break
 
       case "openai":
-        aiModel = openai(modelConfig.modelId)
+        console.log("🔵 Initializing OpenAI model:", modelConfig.modelId)
+        try {
+          const openaiClient = createOpenAI({ apiKey: apiKey! })
+          aiModel = openaiClient(modelConfig.modelId)
+          console.log("✅ OpenAI model initialized successfully")
+        } catch (error) {
+          console.error("❌ Error initializing OpenAI model:", error)
+          console.error("❌ OpenAI API error details:", {
+            message: (error as Error)?.message,
+            name: (error as Error)?.name,
+            stack: (error as Error)?.stack
+          })
+          
+          // Re-throw with more specific error message
+          if (error instanceof Error) {
+            if (error.message.includes("API_KEY_INVALID") || error.message.includes("401")) {
+              throw new Error("Invalid OpenAI API key. Please check your API key in Settings.")
+            } else if (error.message.includes("QUOTA_EXCEEDED") || error.message.includes("429")) {
+              throw new Error("OpenAI API quota exceeded. Please try again later.")
+            } else if (error.message.includes("model not found") || error.message.includes("404")) {
+              throw new Error(`OpenAI model '${modelConfig.modelId}' not found or not available.`)
+            }
+          }
+          throw error
+        }
         break
 
       case "openrouter":
