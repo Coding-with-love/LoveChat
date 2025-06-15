@@ -16,7 +16,6 @@ export async function POST(req: Request) {
         "Content-Type": "application/json",
       },
     })
-    console.log(response)
 
     if (!response.ok) {
       console.error(`Failed to fetch models: ${response.statusText}`)
@@ -27,7 +26,6 @@ export async function POST(req: Request) {
     }
 
     const data = await response.json()
-    console.log(data)
     return NextResponse.json({ models: data.models || [] })
   } catch (error) {
     console.error("Error fetching Ollama models:", error)
