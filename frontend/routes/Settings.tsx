@@ -81,10 +81,10 @@ function Settings() {
       console.log("🔄 Loading shared threads", isRefresh ? "(refresh)" : "(initial)")
       setLoadingShares(true)
 
-      // Add timeout to prevent infinite loading
+      // Add timeout to prevent infinite loading (increased to 30 seconds)
       const loadPromise = getUserSharedThreads()
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Load shared threads timeout")), 10000),
+        setTimeout(() => reject(new Error("Load shared threads timeout")), 30000),
       )
 
       const shares = (await Promise.race([loadPromise, timeoutPromise])) as any[]

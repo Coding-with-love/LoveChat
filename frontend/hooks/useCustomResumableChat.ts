@@ -76,6 +76,16 @@ export function useCustomResumableChat({
           console.log("✅ Ollama assistant message saved to DB (onFinish)")
         } catch (e) {
           console.error("❌ Failed to save Ollama assistant message to DB (onFinish):", e)
+          // Log more details about the error
+          if (e && typeof e === 'object') {
+            console.error("❌ Error details:", {
+              message: (e as any).message,
+              code: (e as any).code,
+              details: (e as any).details,
+              hint: (e as any).hint,
+              stack: (e as any).stack
+            })
+          }
         }
       }
       onFinish?.(message)

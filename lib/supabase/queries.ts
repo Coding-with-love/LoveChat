@@ -222,9 +222,9 @@ export const createMessage = async (threadId: string, message: UIMessage, fileAt
   const updatedParts = [...(message.parts || [])]
 
   if (fileAttachments && fileAttachments.length > 0) {
-    // Add file attachments to message parts
+    // Add file attachments to message parts (using type assertion for custom type)
     updatedParts.push({
-      type: "file_attachments",
+      type: "file_attachments" as any,
       attachments: fileAttachments.map((attachment) => ({
         id: attachment.id,
         fileName: attachment.fileName,
@@ -235,11 +235,22 @@ export const createMessage = async (threadId: string, message: UIMessage, fileAt
         content: attachment.content, // Include content in message parts
         extractedText: attachment.extractedText,
       })),
-    })
+    } as any)
   }
 
+  // Ensure we have a valid UUID for the message ID
+  const messageId = message.id && message.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i) 
+    ? message.id 
+    : uuidv4()
+
+  console.log("🔍 Message ID validation:", {
+    originalId: message.id,
+    isValidUUID: message.id && message.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
+    finalId: messageId
+  })
+
   const { error: messageError } = await supabase.from("messages").insert({
-    id: message.id,
+    id: messageId,
     thread_id: threadId,
     user_id: user.id,
     parts: updatedParts,
@@ -250,6 +261,15 @@ export const createMessage = async (threadId: string, message: UIMessage, fileAt
 
   if (messageError) {
     console.error("❌ Failed to create message:", messageError)
+    // Log more details about the error
+    if (messageError && typeof messageError === 'object') {
+      console.error("❌ Message creation error details:", {
+        message: messageError.message,
+        code: messageError.code,
+        details: messageError.details,
+        hint: messageError.hint
+      })
+    }
     throw messageError
   }
 
@@ -285,7 +305,7 @@ export const createMessage = async (threadId: string, message: UIMessage, fileAt
           // Use the correct property names based on the FileUploadResult interface
           return {
             id: attachmentId,
-            message_id: message.id,
+            message_id: messageId,
             thread_id: threadId,
             user_id: user.id,
             file_name: attachment.fileName,
@@ -482,19 +502,40 @@ export const getSharedThreadMessages = async (shareToken: string) => {
 }
 
 export const getUserSharedThreads = async () => {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) throw new Error("User not authenticated")
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user) throw new Error("User not authenticated")
 
-  const { data, error } = await supabase
-    .from("shared_threads")
-    .select("*, threads(title)")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false })
+    console.log("🔍 Loading shared threads for user:", user.id)
 
-  if (error) throw error
-  return data || []
+    const { data, error } = await supabase
+      .from("shared_threads")
+      .select("*, threads(title)")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+
+    if (error) {
+      console.error("❌ Shared threads query error:", error)
+      // Log more details about the error
+      if (error && typeof error === 'object') {
+        console.error("❌ Shared threads error details:", {
+          message: error.message,
+          code: error.code,
+          details: error.details,
+          hint: error.hint
+        })
+      }
+      throw error
+    }
+
+    console.log("✅ Shared threads loaded successfully:", data?.length || 0)
+    return data || []
+  } catch (error) {
+    console.error("❌ Failed to get user shared threads:", error)
+    throw error
+  }
 }
 
 export const updateSharedThread = async (

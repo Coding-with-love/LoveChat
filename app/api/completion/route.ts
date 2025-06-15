@@ -33,6 +33,23 @@ export async function POST(req: Request) {
 
     console.log("✅ User authenticated:", user.id)
 
+    // Get the request body early since we might need it for fallback
+    const { prompt, isTitle, messageId, threadId } = await req.json()
+    console.log("📝 Request body:", {
+      promptLength: prompt?.length || 0,
+      isTitle,
+      messageId,
+      threadId,
+    })
+
+    if (!threadId) {
+      return NextResponse.json({ error: "Thread ID is required" }, { status: 400 })
+    }
+
+    if (!prompt) {
+      return NextResponse.json({ error: "Prompt is required" }, { status: 400 })
+    }
+
     // Check all headers for debugging
     console.log("📋 Available headers:", Object.fromEntries(headersList.entries()))
 
@@ -68,31 +85,47 @@ export async function POST(req: Request) {
       }
     }
 
-    if (!googleApiKey) {
-      return NextResponse.json(
-        {
-          error: "Google API key is required to enable chat title generation.",
-        },
-        { status: 400 },
-      )
+          if (!googleApiKey) {
+        // Check if the user is using Ollama - if so, provide a fallback title
+      
+      if (isTitle && prompt) {
+        // Generate a simple fallback title for Ollama users
+        const fallbackTitle = prompt.length > 50 
+          ? prompt.substring(0, 47) + "..." 
+          : prompt
+        
+        console.log("📝 Using fallback title for Ollama user:", fallbackTitle)
+        
+        // Update thread title with fallback
+        const { error: updateError } = await supabaseServer
+          .from("threads")
+          .update({
+            title: fallbackTitle,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", threadId)
+          .eq("user_id", user.id)
+
+        if (updateError) {
+          console.error("❌ Failed to update thread title:", updateError)
+          return NextResponse.json({ error: "Failed to update thread title" }, { status: 500 })
+        }
+
+        console.log("✅ Thread title updated with fallback")
+        return NextResponse.json({ title: fallbackTitle, isTitle, messageId, threadId })
+      }
+      
+      // For non-title requests, just return success without doing anything
+      return NextResponse.json({ 
+        title: "Chat", 
+        isTitle: false, 
+        messageId, 
+        threadId,
+        note: "Title generation requires Google API key. Using fallback." 
+      })
     }
 
-    // Get the request body
-    const { prompt, isTitle, messageId, threadId } = await req.json()
-    console.log("📝 Request body:", {
-      promptLength: prompt?.length || 0,
-      isTitle,
-      messageId,
-      threadId,
-    })
-
-    if (!threadId) {
-      return NextResponse.json({ error: "Thread ID is required" }, { status: 400 })
-    }
-
-    if (!prompt) {
-      return NextResponse.json({ error: "Prompt is required" }, { status: 400 })
-    }
+    // Request body already parsed above
 
     // Verify user owns the thread
     const { data: thread, error: threadError } = await supabaseServer
