@@ -194,37 +194,72 @@ export function OllamaSettings() {
           </div>
         )}
       </CardContent>
-      <CardFooter className="text-xs text-muted-foreground space-y-2">
-        <div>
-          <p>
-            <strong>⚠️ Production Limitation:</strong> Browsers block HTTPS sites from accessing localhost HTTP endpoints for security.
-            To use Ollama from production, you need to expose your local instance publicly.
-          </p>
+      <CardFooter className="text-xs text-muted-foreground space-y-3">
+        <div className="border-t pt-3">
+          <h4 className="font-semibold text-sm mb-2 text-foreground">📖 Complete Setup Guide</h4>
         </div>
+        
         <div>
-          <p>
-            <strong>Recommended Solution:</strong> Use ngrok to expose your local Ollama:
-            <br />
-            <code className="bg-muted px-1 py-0.5 rounded text-xs">brew install ngrok && ngrok http 11434</code>
-            <br />
-            Then use the ngrok HTTPS URL in the settings above.
-          </p>
+          <p className="font-medium text-foreground mb-1">1. Install & Setup Ollama</p>
+          <p>Download Ollama from{" "}
+            <a href="https://ollama.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-primary">
+              ollama.com
+            </a>, then:</p>
+          <div className="mt-1 space-y-1">
+            <code className="block bg-muted px-2 py-1 rounded text-xs">ollama pull gemma2</code>
+            <code className="block bg-muted px-2 py-1 rounded text-xs">ollama serve</code>
+          </div>
+          <p className="mt-1">Ollama will run on <code className="bg-muted px-1 rounded">http://localhost:11434</code></p>
         </div>
+
         <div>
-          <p>
-            <strong>Local Development:</strong> Works fine with localhost when testing locally.
-          </p>
+          <p className="font-medium text-foreground mb-1">2. Setup ngrok (for Production Access)</p>
+          <p>Sign up at{" "}
+            <a href="https://dashboard.ngrok.com/signup" target="_blank" rel="noopener noreferrer" className="underline hover:text-primary">
+              ngrok.com
+            </a>{" "}and get your auth token from{" "}
+            <a href="https://dashboard.ngrok.com/get-started/your-authtoken" target="_blank" rel="noopener noreferrer" className="underline hover:text-primary">
+              your dashboard
+            </a>:</p>
+          <div className="mt-1 space-y-1">
+            <code className="block bg-muted px-2 py-1 rounded text-xs">brew install ngrok</code>
+            <code className="block bg-muted px-2 py-1 rounded text-xs">ngrok config add-authtoken YOUR_TOKEN</code>
+            <code className="block bg-muted px-2 py-1 rounded text-xs">ngrok http 11434 --host-header=localhost</code>
+          </div>
         </div>
+
         <div>
+          <p className="font-medium text-foreground mb-1">3. Configure This App</p>
+          <p>Copy the ngrok HTTPS URL (e.g., <code className="bg-muted px-1 rounded">https://abc123.ngrok.app</code>) into the URL field above and click "Connect".</p>
+        </div>
+
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded p-2">
+          <p className="font-medium text-yellow-800 dark:text-yellow-200 mb-1">🔒 Security Note</p>
+          <p className="text-yellow-700 dark:text-yellow-300">Your ngrok URL is public! Consider adding authentication:</p>
+          <code className="block bg-yellow-100 dark:bg-yellow-900 px-2 py-1 rounded text-xs mt-1 text-yellow-800 dark:text-yellow-200">
+            ngrok http 11434 --basic-auth "user:password" --host-header=localhost
+          </code>
+        </div>
+
+        <div>
+          <p className="font-medium text-foreground mb-1">📋 Usage Modes</p>
+          <div className="space-y-1">
+            <p><strong>Local Development:</strong> Use <code className="bg-muted px-1 rounded">http://localhost:11434</code></p>
+            <p><strong>Production/Remote:</strong> Use your ngrok HTTPS URL</p>
+            <p><strong>Team Sharing:</strong> Share your ngrok URL with team members</p>
+          </div>
+        </div>
+
+        <div className="text-center pt-2 border-t">
           <p>
-            Ollama must be running locally with the models you want to use.{" "}
+            Need help? Check the{" "}
             <a
-              href="https://ollama.com"
+              href="https://ngrok.com/docs/integrations/ollama/"
               target="_blank"
               rel="noopener noreferrer"
               className="underline hover:text-primary"
             >
-              Learn more about Ollama
+              official ngrok + Ollama guide
             </a>
           </p>
         </div>

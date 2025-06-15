@@ -191,10 +191,11 @@ export function useCustomResumableChat({
 
         // For Ollama, add the base URL header
         if (modelConfig.provider === "ollama") {
-          // Import the Ollama store synchronously since we're in a function
+          // Get the Ollama store state directly
           try {
-            const { useOllamaStore } = require("@/frontend/stores/OllamaStore")
-            const ollamaStore = useOllamaStore.getState()
+            // Use dynamic import to get the store
+            const ollamaStoreModule = await import("@/frontend/stores/OllamaStore")
+            const ollamaStore = ollamaStoreModule.useOllamaStore.getState()
             const ollamaBaseUrl = ollamaStore.baseUrl || "http://localhost:11434"
             setHeaderSafely("x-ollama-base-url", ollamaBaseUrl)
             console.log("🦙 [FETCH] Set Ollama base URL header:", ollamaBaseUrl)

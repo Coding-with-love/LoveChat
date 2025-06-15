@@ -73,12 +73,14 @@ export function useAuthenticatedChat({
           headers.set(modelConfig.headerKey, apiKey)
         }
 
-        // For Ollama, add the base URL header
+        // For Ollama, add the base URL header (use window global to avoid import issues)
         if (modelConfig.provider === "ollama") {
           try {
-            const { useOllamaStore } = require("@/frontend/stores/OllamaStore")
-            const ollamaStore = useOllamaStore.getState()
-            const ollamaBaseUrl = ollamaStore.baseUrl || "http://localhost:11434"
+            // Access the store from window global if available
+            const storedSettings = window.localStorage?.getItem('ollama-settings')
+            const ollamaBaseUrl = storedSettings 
+              ? JSON.parse(storedSettings).state?.baseUrl || "http://localhost:11434"
+              : "http://localhost:11434"
             headers.set("x-ollama-base-url", ollamaBaseUrl)
             console.log("🦙 Set Ollama base URL header:", ollamaBaseUrl)
           } catch (error) {

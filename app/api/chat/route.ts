@@ -1775,6 +1775,11 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
                       process.env.OLLAMA_URL || 
                       "http://localhost:11434"
     console.log("🦙 Ollama URL:", ollamaUrl)
+    console.log("🦙 Available headers:", {
+      'x-ollama-base-url': headersList.get('x-ollama-base-url'),
+      'X-Ollama-Base-URL': headersList.get('X-Ollama-Base-URL'),
+      'authorization': headersList.get('authorization') ? '***' : 'missing'
+    })
 
     // Get model config to check if this is a thinking model
     const modelConfig = getModelConfig(model as AIModel)
