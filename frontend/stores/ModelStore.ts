@@ -126,11 +126,12 @@ export const useModelStore = create<ModelState>()(
           try {
             const modelConfig = getModelConfig(model)
             if (modelConfig.provider === "ollama") {
-              // Only include Ollama models if Ollama is connected
+              // For production, be more lenient with Ollama models
+              // Allow them even if connection test failed, as the user might have a working ngrok setup
               if (!isOllamaConnected) {
-                console.log("🦙 Filtering out Ollama model due to disconnection:", model)
+                console.log("🦙 Ollama connection test failed, but allowing model for production use:", model)
               }
-              return isOllamaConnected
+              return true // Always allow Ollama models - let the chat endpoint handle connection issues
             }
             
             // Always check if the key actually exists
@@ -180,10 +181,8 @@ export const useModelStore = create<ModelState>()(
           try {
             const modelConfig = getModelConfig(model)
             if (modelConfig.provider === "ollama") {
-              // Only consider Ollama models if connected
-              if (isOllamaConnected) {
-                return model
-              }
+              // Always consider Ollama models available - let the chat endpoint handle connection
+              return model
             } else if (getKey(modelConfig.provider)) {
               return model
             }
@@ -207,10 +206,10 @@ export const useModelStore = create<ModelState>()(
         // Check if current selected model is available
         const isCurrentModelAvailable = enabledModels.includes(state.selectedModel)
         
-        // Special check for Ollama models
+        // Special check for Ollama models - be more lenient in production
         const isCurrentModelOllama = state.selectedModel.startsWith("ollama:")
         if (isCurrentModelOllama && !isOllamaConnected) {
-          console.log("🦙 Current model is Ollama but Ollama is disconnected, switching models")
+          console.log("🦙 Current model is Ollama and connection test failed, but keeping model for production")
         }
         
         // If the model is not available and we're not currently loading API keys,
