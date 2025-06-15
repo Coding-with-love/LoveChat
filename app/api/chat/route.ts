@@ -1,5 +1,5 @@
 import { createGoogleGenerativeAI } from "@ai-sdk/google"
-import { openai } from "@ai-sdk/openai"
+import { openai, createOpenAI } from "@ai-sdk/openai"
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import { streamText } from "ai"
 import { headers } from "next/headers"
@@ -407,17 +407,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 })
     }
 
-    const { messages, model, webSearchEnabled, apiKey: bodyApiKey, data } = json
+    const { messages, model, webSearchEnabled, apiKey: bodyApiKey, data, experimental_attachments } = json
     const headersList = await headers()
 
     console.log("📨 Received messages:", messages?.length || 0)
     console.log("🤖 Using model:", model)
+    console.log("🖼️ Image attachments received:", experimental_attachments?.length || 0)
     console.log("🚨 FULL REQUEST JSON:", JSON.stringify(json, null, 2))
     console.log("📦 Request data received:", data ? "present" : "not present")
     if (data) {
       console.log("📦 Data content:", {
         hasUserPreferences: !!data.userPreferences,
         userPreferences: data.userPreferences,
+      })
+    }
+    if (experimental_attachments) {
+      console.log("🖼️ Experimental attachments:", {
+        count: experimental_attachments.length,
+        images: experimental_attachments.map((att: any) => ({
+          name: att.name,
+          contentType: att.contentType,
+          hasUrl: !!att.url
+        }))
       })
     }
 
@@ -568,7 +579,31 @@ export async function POST(req: NextRequest) {
         break
 
       case "openai":
-        aiModel = openai(modelConfig.modelId)
+        console.log("🔵 Initializing OpenAI model:", modelConfig.modelId)
+        try {
+          const openaiClient = createOpenAI({ apiKey: apiKey! })
+          aiModel = openaiClient(modelConfig.modelId)
+          console.log("✅ OpenAI model initialized successfully")
+        } catch (error) {
+          console.error("❌ Error initializing OpenAI model:", error)
+          console.error("❌ OpenAI API error details:", {
+            message: (error as Error)?.message,
+            name: (error as Error)?.name,
+            stack: (error as Error)?.stack
+          })
+          
+          // Re-throw with more specific error message
+          if (error instanceof Error) {
+            if (error.message.includes("API_KEY_INVALID") || error.message.includes("401")) {
+              throw new Error("Invalid OpenAI API key. Please check your API key in Settings.")
+            } else if (error.message.includes("QUOTA_EXCEEDED") || error.message.includes("429")) {
+              throw new Error("OpenAI API quota exceeded. Please try again later.")
+            } else if (error.message.includes("model not found") || error.message.includes("404")) {
+              throw new Error(`OpenAI model '${modelConfig.modelId}' not found or not available.`)
+            }
+          }
+          throw error
+        }
         break
 
       case "openrouter":
@@ -740,7 +775,9 @@ export async function POST(req: NextRequest) {
 
     // Extract user preferences from request data
     const userPreferences = data?.userPreferences || null
+    const reasoningEffort = data?.reasoningEffort || "medium" // Default to medium if not specified
     console.log("👤 User preferences:", userPreferences ? "present" : "not found")
+    console.log("🧠 Reasoning effort:", reasoningEffort)
     if (userPreferences) {
       console.log("👤 User preferences details:", {
         preferredName: userPreferences.preferredName,
@@ -763,9 +800,262 @@ export async function POST(req: NextRequest) {
 
     // Check if this model supports thinking and needs special processing
     const isThinkingModel = modelConfig.supportsThinking
-    const needsCustomThinkingProcessor = isThinkingModel && modelConfig.provider !== "google"
     
-    if (needsCustomThinkingProcessor) {
+    // Special handling for OpenAI reasoning models - they use the new Responses API
+    const isOpenAIReasoningModel = modelConfig.provider === "openai" && modelConfig.supportsThinking
+    
+    // Custom thinking processor only for non-Google, non-OpenAI thinking models (like Ollama with thinking tags)
+    const needsCustomThinkingProcessor = isThinkingModel && !isOpenAIReasoningModel && modelConfig.provider !== "google"
+    
+    if (isOpenAIReasoningModel) {
+      console.log("🧠 Using OpenAI reasoning model with Responses API:", modelConfig.modelId)
+
+      try {
+        // Prepare input messages for the Responses API
+        const inputMessages = [...processedMessages]
+        
+        // Add system prompt as the first user message if present
+        if (systemPrompt && systemPrompt.trim()) {
+          inputMessages.unshift({
+            role: "user",
+            content: `System instructions: ${systemPrompt}\n\nPlease follow these instructions for all responses.`
+          })
+        }
+
+        console.log("🚀 Starting OpenAI reasoning model generation...")
+        console.log("🧠 Input messages count:", inputMessages.length)
+        console.log("🔑 API Key present:", apiKey ? `${apiKey.substring(0, 10)}...` : "MISSING")
+        console.log("🎯 Model ID:", modelConfig.modelId)
+
+        const requestBody = {
+          model: modelConfig.modelId,
+          reasoning: { 
+            effort: reasoningEffort, // Use user-selected reasoning effort
+            summary: "auto" // Use "auto" as recommended for summaries
+          },
+          input: inputMessages,
+          max_output_tokens: 25000, // Reserve space for reasoning as recommended
+        }
+
+        console.log("📤 Request body:", JSON.stringify(requestBody, null, 2))
+
+        // Use the OpenAI Responses API directly
+        const openaiResponse = await fetch("https://api.openai.com/v1/responses", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify(requestBody),
+        })
+
+        console.log("📡 OpenAI API Response Status:", openaiResponse.status)
+        console.log("📡 OpenAI API Response Headers:", Object.fromEntries(openaiResponse.headers.entries()))
+
+        if (!openaiResponse.ok) {
+          const errorText = await openaiResponse.text()
+          console.error("❌ OpenAI Responses API error:", openaiResponse.status, errorText)
+          
+          // Check for specific error types
+          if (openaiResponse.status === 404) {
+            throw new Error(`OpenAI reasoning model '${modelConfig.modelId}' not found. This model may require organization verification or may not be available yet. Please check your OpenAI account access.`)
+          } else if (openaiResponse.status === 401) {
+            throw new Error("Invalid OpenAI API key. Please check your API key in Settings.")
+          } else if (openaiResponse.status === 429) {
+            throw new Error("OpenAI API rate limit exceeded. Please try again later.")
+          } else if (openaiResponse.status === 403) {
+            throw new Error(`Access denied to OpenAI reasoning model '${modelConfig.modelId}'. You may need organization verification to access this model.`)
+          }
+          
+          throw new Error(`OpenAI Responses API error: ${openaiResponse.status} ${errorText}`)
+        }
+
+        const responseData = await openaiResponse.json()
+        
+        console.log("✅ OpenAI reasoning model generation completed")
+        console.log("🧠 Full response data:", JSON.stringify(responseData, null, 2))
+        console.log("🧠 Response status:", responseData.status)
+        console.log("🧠 Token usage:", responseData.usage)
+        console.log("🧠 Output text:", responseData.output_text)
+        console.log("🧠 Output array:", responseData.output)
+        
+        // Extract the response text and reasoning summary
+        let responseText = responseData.output_text || ""
+        let reasoningSummary = null
+        
+        // If output_text is empty, try to extract from output array
+        if (!responseText && responseData.output && Array.isArray(responseData.output)) {
+          console.log("🔍 output_text is empty, checking output array...")
+          
+          // Look for message content in the output array
+          const messageItem = responseData.output.find((item: any) => 
+            item.type === "message" && item.content
+          )
+          
+          if (messageItem && Array.isArray(messageItem.content)) {
+            console.log("🔍 Message item content structure:", JSON.stringify(messageItem.content, null, 2))
+            
+            // Extract text from content array
+            const textContent = messageItem.content
+              .filter((content: any) => content.type === "text")
+              .map((content: any) => content.text)
+              .join("")
+            
+            if (textContent) {
+              responseText = textContent
+              console.log("🔍 Found text in message content:", typeof responseText === 'string' ? responseText.substring(0, 100) + "..." : responseText)
+            } else {
+              // Try alternative extraction methods
+              console.log("🔍 No text found with standard method, trying alternatives...")
+              
+              // Try to get any text content regardless of type
+              const alternativeText = messageItem.content
+                .map((content: any) => content.text || content.content || content)
+                .filter((text: any) => typeof text === 'string' && text.trim())
+                .join("")
+              
+              if (alternativeText) {
+                responseText = alternativeText
+                console.log("🔍 Found text with alternative method:", responseText.substring(0, 100) + "...")
+              }
+            }
+          }
+          
+          // Fallback: look for any item with text content
+          if (!responseText) {
+            const textItem = responseData.output.find((item: any) => 
+              item.type === "text" || item.text
+            )
+            
+            if (textItem) {
+              responseText = textItem.text || textItem.content || ""
+              console.log("🔍 Found text in fallback search:", typeof responseText === 'string' ? responseText.substring(0, 100) + "..." : responseText)
+            }
+          }
+        }
+        
+        // Look for reasoning summary in the output
+        if (responseData.output && Array.isArray(responseData.output)) {
+          const reasoningItem = responseData.output.find((item: any) => item.type === "reasoning")
+          if (reasoningItem) {
+            console.log("🧠 Full reasoning item structure:", JSON.stringify(reasoningItem, null, 2))
+            
+            if (reasoningItem.summary && Array.isArray(reasoningItem.summary) && reasoningItem.summary.length > 0) {
+              reasoningSummary = reasoningItem.summary.map((s: any) => s.content || s.text || s).join('\n\n')
+              console.log("🧠 Found reasoning summary:", reasoningSummary ? reasoningSummary.substring(0, 100) + "..." : "Empty summary")
+            } else {
+              console.log("🧠 Reasoning item found but summary is empty or missing")
+              
+              // Try to extract reasoning from other possible fields
+              if (reasoningItem.content) {
+                reasoningSummary = typeof reasoningItem.content === 'string' ? reasoningItem.content : JSON.stringify(reasoningItem.content)
+                console.log("🧠 Found reasoning in content field:", reasoningSummary.substring(0, 100) + "...")
+              } else if (reasoningItem.text) {
+                reasoningSummary = reasoningItem.text
+                console.log("🧠 Found reasoning in text field:", reasoningSummary.substring(0, 100) + "...")
+              }
+            }
+          } else {
+            console.log("🧠 No reasoning item found in output array")
+          }
+        }
+        
+        console.log("🔍 Final extracted responseText:", responseText ? (typeof responseText === 'string' ? responseText.substring(0, 100) + "..." : JSON.stringify(responseText).substring(0, 100) + "...") : "EMPTY!")
+        
+        // If we still don't have response text, this is an error
+        if (!responseText) {
+          console.error("❌ No response text found in OpenAI response!")
+          console.error("❌ Full response structure:", JSON.stringify(responseData, null, 2))
+          throw new Error("No response text received from OpenAI reasoning model")
+        }
+        
+        // Create a comprehensive reasoning explanation
+        const usage = responseData.usage || {}
+        const reasoningTokens = usage.output_tokens_details?.reasoning_tokens || 0
+        
+        let reasoningExplanation = `🧠 **OpenAI Reasoning Model: ${modelConfig.modelId}**
+
+This response was generated using OpenAI's reasoning model, which performs internal reasoning before providing the final answer.`
+
+        // Add reasoning summary if available
+        if (reasoningSummary) {
+          reasoningExplanation += `\n\n**Reasoning Summary:**\n${reasoningSummary}`
+        } else {
+          reasoningExplanation += `\n\n**🧠 Internal Reasoning Process:**
+The model performed ${reasoningTokens} tokens worth of internal reasoning to generate this response.
+
+**Why the reasoning summary is empty:**
+• We're using the correct **Responses API** (\`/v1/responses\`) with proper parameters
+• However, **reasoning summaries require special access** from OpenAI
+• You need to request the **"Reasoning Summary" feature flag** in your OpenAI Dashboard
+• Without this access, the summary field remains \`null\` (this is expected behavior)
+
+**What's happening behind the scenes:**
+• The model IS performing internal reasoning (${reasoningTokens} reasoning tokens used)
+• OpenAI intentionally keeps the full reasoning steps private for security/IP reasons
+• Only accounts with the feature flag can receive limited reasoning summaries
+• Even with access, summaries only appear when sufficient reasoning material is generated
+
+**To get reasoning summaries:**
+1. **Request access**: Go to OpenAI Dashboard → Limited-access features → "Reasoning Summary"
+2. **Wait for approval**: Usually takes 1-2 days
+3. **Summaries will then appear**: When the model generates enough reasoning content
+
+**Reasoning Control:**
+You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). Currently set to: **${reasoningEffort}**
+
+**Current Status:** ✅ API configured correctly, ⏳ waiting for OpenAI feature access`
+        }
+        
+        // Handle incomplete responses
+        if (responseData.status === "incomplete") {
+          const reason = responseData.incomplete_details?.reason || "unknown"
+          reasoningExplanation += `\n\n⚠️ **Note:** This response was incomplete due to: ${reason}`
+          
+          if (reason === "max_output_tokens") {
+            reasoningExplanation += `\nThe model reached the token limit during generation. Consider increasing max_output_tokens for longer responses.`
+          }
+        }
+        
+        // Save the message to database with reasoning explanation
+        await handleMessageSave(
+          threadId,
+          aiMessageId,
+          user.id,
+          responseText,
+          null, // no sources for reasoning models
+          { usage: responseData.usage }, // include usage metadata
+          modelConfig,
+          apiKey!,
+          reasoningExplanation,
+        )
+
+        // Return the result in the expected data stream format for the AI SDK
+        const dataStreamResponse = `0:${JSON.stringify(responseText)}\nd:{"finishReason":"stop"}\n`
+        
+        return new Response(dataStreamResponse, {
+          headers: {
+            "Content-Type": "text/plain; charset=utf-8",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+          },
+        })
+      } catch (error) {
+        console.error("❌ Error with OpenAI reasoning model:", error)
+        
+        // Provide more specific error messages
+        if (error instanceof Error) {
+          if (error.message.includes("401")) {
+            throw new Error("Invalid OpenAI API key. Please check your API key in Settings.")
+          } else if (error.message.includes("429")) {
+            throw new Error("OpenAI API rate limit exceeded. Please try again later.")
+          } else if (error.message.includes("404")) {
+            throw new Error(`OpenAI reasoning model '${modelConfig.modelId}' not found. You may need organization verification to access this model.`)
+          }
+        }
+        throw error
+      }
+    } else if (needsCustomThinkingProcessor) {
       console.log("🧠 Using thinking model - custom stream handling")
 
       // Create stream options without any transforms
@@ -773,6 +1063,7 @@ export async function POST(req: NextRequest) {
         model: aiModel,
         messages: processedMessages,
         system: systemPrompt,
+        experimental_attachments: experimental_attachments || undefined,
         onFinish: async ({ text, finishReason, usage, sources, providerMetadata }: any) => {
           console.log("🏁 AI generation finished")
 
@@ -783,8 +1074,8 @@ export async function POST(req: NextRequest) {
           if (text.includes("<Thinking>") && text.includes("</Thinking>")) {
             console.log("🧠 Detected thinking content in response")
 
-            // Extract thinking content (note: using <Thinking> not <Thinking>)
-            const thinkMatch = text.match(/<Thinking>([\s\S]*?)<\/think>/)
+            // Extract thinking content
+            const thinkMatch = text.match(/<Thinking>([\s\S]*?)<\/Thinking>/)
             if (thinkMatch) {
               reasoning = thinkMatch[1].trim()
               console.log("🧠 Extracted reasoning:", reasoning.substring(0, 100) + "...")
@@ -884,7 +1175,7 @@ export async function POST(req: NextRequest) {
                           if (!protectionResult.allowed) {
                             console.warn(`🛡️ Stream protection triggered:`, protectionResult.reason)
                             const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
-                            const encodedError = `0:"${errorMsg.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
+                            const encodedError = `0:${JSON.stringify(errorMsg)}\n`
                             safeEnqueue(new TextEncoder().encode(encodedError))
                             safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
                             safeClose()
@@ -961,15 +1252,15 @@ export async function POST(req: NextRequest) {
                     if (!protectionResult.allowed) {
                       console.warn(`🛡️ Stream protection triggered:`, protectionResult.reason)
                       const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
-                      const encodedError = `0:"${errorMsg.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
+                      const encodedError = `0:${JSON.stringify(errorMsg)}\n`
                       safeEnqueue(new TextEncoder().encode(encodedError))
                       safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
                       safeClose()
                       return
                     }
 
-                    // Re-encode as proper data stream format
-                    const encodedChunk = `0:"${processedChunk.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
+                    // Re-encode as proper data stream format with proper JSON escaping
+                    const encodedChunk = `0:${JSON.stringify(processedChunk)}\n`
                     safeEnqueue(new TextEncoder().encode(encodedChunk))
                   }
                 }
@@ -980,7 +1271,7 @@ export async function POST(req: NextRequest) {
                 // Final protection check
                 const protectionResult = streamProtection.analyzeChunk(buffer)
                 if (protectionResult.allowed) {
-                  const encodedChunk = `0:"${buffer.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
+                  const encodedChunk = `0:${JSON.stringify(buffer)}\n`
                   safeEnqueue(new TextEncoder().encode(encodedChunk))
                 }
               }
@@ -1002,15 +1293,128 @@ export async function POST(req: NextRequest) {
           },
         })
       })
-    } else {
-      // Regular models - use standard processing with protection
+    } else if (isThinkingModel && modelConfig.provider === "google") {
+      // Google thinking models - use proper thinking configuration based on official docs
+      console.log("🧠 Using Google thinking model processing for:", modelConfig.modelId)
+      console.log("🤖 Model provider:", modelConfig.provider)
+      console.log("🤖 Is thinking model:", isThinkingModel)
+      
       const streamOptions = {
         model: aiModel,
         messages: processedMessages,
         system: systemPrompt,
+        experimental_attachments: experimental_attachments || undefined,
+        // Proper Google thinking configuration based on official docs
+        experimental_providerOptions: {
+          google: {
+            thinkingConfig: {
+              includeThoughts: true, // Enable thought summaries
+            },
+          },
+        },
         onFinish: async ({ text, finishReason, usage, sources, providerMetadata }: any) => {
           console.log("🏁 AI generation finished")
+          console.log("🔍 Provider metadata:", JSON.stringify(providerMetadata, null, 2))
+          
+          // Extract reasoning from Google thinking model response
+          let cleanedText = text
+          let reasoning = null
+          
+          // Check if the response contains thinking parts based on official docs
+          if (providerMetadata?.parts) {
+            console.log("🔍 Found parts in provider metadata:", providerMetadata.parts.length)
+            const thoughtParts = providerMetadata.parts.filter((part: any) => part.thought)
+            console.log("🔍 Found thought parts:", thoughtParts.length)
+            if (thoughtParts.length > 0) {
+              reasoning = thoughtParts.map((part: any) => part.thought).join('\n\n')
+              console.log("🧠 Extracted Google thinking reasoning:", reasoning.substring(0, 100) + "...")
+            }
+          } else {
+            console.log("🔍 No parts found in provider metadata")
+          }
+          
+          try {
+            await handleMessageSave(threadId, aiMessageId, user.id, cleanedText, sources, providerMetadata, modelConfig, apiKey!, reasoning)
+            console.log("✅ Message saved successfully")
+          } catch (saveError) {
+            console.error("❌ Error saving message:", saveError)
+          }
+        },
+      }
+
+      console.log("🚀 Starting Google thinking model generation...")
+      console.log("🤖 Final system prompt being sent to AI (Google thinking):", systemPrompt)
+      console.log("🔧 Google thinking config:", JSON.stringify(streamOptions.experimental_providerOptions, null, 2))
+
+      // Wrap the stream creation in circuit breaker
+      return await streamCircuitBreaker.execute(async () => {
+        console.log("🔄 Executing streamText with Google thinking model")
+        let result
+        try {
+          result = streamText(streamOptions)
+          console.log("✅ streamText initialized successfully for Google thinking model")
+        } catch (error) {
+          console.error("❌ Error in streamText initialization for Google thinking model:", error)
+          // Check for specific Google API errors
+          if (error instanceof Error) {
+            if (error.message.includes("API_KEY_INVALID") || error.message.includes("403")) {
+              throw new Error("Invalid Google API key. Please check your API key in Settings.")
+            } else if (error.message.includes("QUOTA_EXCEEDED") || error.message.includes("429")) {
+              throw new Error("Google API quota exceeded. Please try again later.")
+            } else if (error.message.includes("model not found") || error.message.includes("404")) {
+              throw new Error(`Model ${modelConfig.modelId} not found or not available.`)
+            }
+          }
+          throw error
+        }
+
+        // Use the AI SDK's built-in data stream response with error handling
+        return result.toDataStreamResponse({
+          headers: {
+            "Content-Type": "text/plain; charset=utf-8",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+          },
+          getErrorMessage: (error: unknown) => {
+            console.error("🚨 Google thinking model stream error:", error)
+            if (error == null) {
+              return 'Unknown error occurred'
+            }
+            if (typeof error === 'string') {
+              return error
+            }
+            if (error instanceof Error) {
+              console.error("🚨 Error details:", {
+                name: error.name,
+                message: error.message,
+                stack: error.stack,
+                cause: error.cause
+              })
+              return error.message
+            }
+            return JSON.stringify(error)
+          },
+        })
+      })
+    } else {
+      // Regular models - use standard processing with protection
+      console.log("🤖 Using standard model processing for:", modelConfig.modelId)
+      console.log("🤖 Model provider:", modelConfig.provider)
+      console.log("🤖 Is thinking model:", isThinkingModel)
+      
+      const streamOptions = {
+        model: aiModel,
+        messages: processedMessages,
+        system: systemPrompt,
+        experimental_attachments: experimental_attachments || undefined,
+        onFinish: async ({ text, finishReason, usage, sources, providerMetadata }: any) => {
+          console.log("🏁 AI generation finished")
+          try {
           await handleMessageSave(threadId, aiMessageId, user.id, text, sources, providerMetadata, modelConfig, apiKey!)
+            console.log("✅ Message saved successfully")
+          } catch (saveError) {
+            console.error("❌ Error saving message:", saveError)
+          }
         },
       }
 
@@ -1046,6 +1450,25 @@ export async function POST(req: NextRequest) {
             "Content-Type": "text/plain; charset=utf-8",
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
+          },
+          getErrorMessage: (error: unknown) => {
+            console.error("🚨 Regular model stream error:", error)
+            if (error == null) {
+              return 'Unknown error occurred'
+            }
+            if (typeof error === 'string') {
+              return error
+            }
+            if (error instanceof Error) {
+              console.error("🚨 Error details:", {
+                name: error.name,
+                message: error.message,
+                stack: error.stack,
+                cause: error.cause
+              })
+              return error.message
+            }
+            return JSON.stringify(error)
           },
         })
       })
@@ -1395,7 +1818,9 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
 
     // Extract user preferences from request data
     const userPreferences = data?.userPreferences || null
+    const reasoningEffort = data?.reasoningEffort || "medium" // Default to medium if not specified
     console.log("👤 Ollama user preferences:", userPreferences ? "present" : "not found")
+    console.log("🧠 Reasoning effort:", reasoningEffort)
     if (userPreferences) {
       console.log("👤 Ollama user preferences details:", {
         preferredName: userPreferences.preferredName,
@@ -1600,7 +2025,7 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
                         null, // sources
                         null, // providerMetadata
                         modelConfig,
-                        "", // apiKey
+                        "", // Ollama doesn't use API keys
                         reasoning,
                       )
                     }

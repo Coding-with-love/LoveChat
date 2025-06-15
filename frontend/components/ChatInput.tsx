@@ -485,15 +485,17 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
         apiMessageContent = `Shared ${uploadedFiles.length} file(s)`
       }
 
-      // Add file attachments to the display message if present
+      // Create API message with technical tags for the AI - this will include file attachments for UI display
+      const apiMessage = createUserMessage(messageId + "_api", apiMessageContent)
+      
+      // Add file attachments to the API message for immediate UI display
       if (hasFiles) {
         console.log("📎 Adding file attachments to message:", uploadedFiles.length)
-
-        // Add file attachments to message parts
-        if (!displayMessage.parts) {
-          displayMessage.parts = []
+        
+        if (!apiMessage.parts) {
+          apiMessage.parts = []
         }
-        ;(displayMessage.parts as any).push({
+        ;(apiMessage.parts as any).push({
           type: "file_attachments",
           attachments: uploadedFiles.map((file) => ({
             id: file.id,
@@ -508,8 +510,10 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
           })),
         })
 
+        // Create database message with file attachments
         await createMessage(threadId, displayMessage, uploadedFiles)
       } else {
+        // Create database message without file attachments
         await createMessage(threadId, displayMessage)
       }
 
@@ -521,10 +525,26 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
         customInstructions: userPreferences.customInstructions,
       }
 
-      // Create API message with technical tags for the AI
-      const apiMessage = createUserMessage(messageId + "_api", apiMessageContent)
+      // Convert image files to experimental_attachments for vision models
+      const experimentalAttachments = uploadedFiles
+        .filter((file) => file.fileType.startsWith("image/") && (file.fileUrl || file.url))
+        .map((file) => ({
+          name: file.fileName,
+          contentType: file.fileType,
+          url: file.fileUrl || file.url!, // Use the file URL for images
+        }))
+
+      console.log("🖼️ Image attachments for AI vision:", {
+        imageCount: experimentalAttachments.length,
+        images: experimentalAttachments.map(img => ({
+          name: img.name,
+          contentType: img.contentType,
+          hasUrl: !!img.url
+        }))
+      })
 
       const result = await append(apiMessage, {
+        experimental_attachments: experimentalAttachments.length > 0 ? experimentalAttachments : undefined,
         data: {
           userPreferences: userPrefsToSend,
         },
@@ -532,7 +552,7 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
 
       console.log("📤 append() returned:", result)
 
-      // Clear input, files, and artifact references after successful send
+      // Only clear input, files, and artifact references after successful send AND append
       setInput("")
       setUploadedFiles([])
       setArtifactReferences([])

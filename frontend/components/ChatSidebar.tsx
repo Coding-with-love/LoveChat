@@ -47,7 +47,6 @@ import {
   ChevronRight,
   Archive,
   ArchiveRestore,
-  RefreshCw,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/frontend/components/AuthProvider"
@@ -100,11 +99,10 @@ interface Project {
 }
 
 function ProfileSection() {
-  const { user, profile, signOut, refreshProfile } = useAuth()
+  const { user, profile, signOut } = useAuth()
   const navigate = useNavigate()
   const [isNavigatingToSettings, setIsNavigatingToSettings] = useState(false)
   const [imageError, setImageError] = useState(false)
-  const [isRefreshingProfile, setIsRefreshingProfile] = useState(false)
 
   if (!user) return null
 
@@ -128,24 +126,7 @@ function ProfileSection() {
     })
   }, [profile, user, avatarUrl])
 
-  const handleRefreshProfile = async () => {
-    setIsRefreshingProfile(true)
-    try {
-      console.log("🔄 Manually refreshing profile...")
-      
-      // Use the AuthProvider's refresh method
-      await refreshProfile()
-      
-      // Reset image error state to retry loading
-      setImageError(false)
-      
-      console.log("✅ Profile refresh completed")
-    } catch (error) {
-      console.error("❌ Error refreshing profile:", error)
-    } finally {
-      setIsRefreshingProfile(false)
-    }
-  }
+
 
   const handleSettingsNavigation = () => {
     setIsNavigatingToSettings(true)
@@ -239,19 +220,7 @@ function ProfileSection() {
               </>
             )}
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={handleRefreshProfile} className="gap-2" disabled={isRefreshingProfile}>
-            {isRefreshingProfile ? (
-              <>
-                <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary border-t-transparent" />
-                Refreshing...
-              </>
-            ) : (
-              <>
-                <RefreshCw className="h-4 w-4" />
-                Refresh Profile
-              </>
-            )}
-          </DropdownMenuItem>
+
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={signOut} className="gap-2">
             <LogOut className="h-4 w-4" />

@@ -1219,6 +1219,8 @@ export const saveUserPreferences = async (preferences: {
   ui_font?: string
   code_font?: string
   font_size?: "small" | "medium" | "large"
+  selected_model?: string
+  enabled_models?: string[]
 }) => {
   const {
     data: { user },

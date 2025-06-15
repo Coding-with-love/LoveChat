@@ -6,13 +6,19 @@ export const AI_MODELS = [
   "gemini-1.5-pro",
   "gemini-1.5-flash",
   "gemini-2.0-flash-thinking-exp",
+  "gemini-2.5-pro-preview-06-05",
+  "gemini-2.5-flash-preview-05-20",
   "claude-3-5-sonnet-20241022",
   "claude-3-5-haiku-20241022",
   "llama-3.1-405b-instruct",
   "llama-3.1-70b-instruct",
   "llama-3.1-8b-instruct",
+  "qwen/qwen3-8b:free",
   "o1-preview",
   "o1-mini",
+  "o3",
+  "o3-mini",
+  "o4-mini",
   // Ollama models will be added dynamically
 ] as const
 
@@ -121,6 +127,33 @@ export function getModelConfig(model: AIModel): ModelConfig {
         supportsSearch: false,
         supportsThinking: true,
       }
+    case "o3":
+      return {
+        provider: "openai",
+        modelId: "o3",
+        name: "o3",
+        headerKey: "X-OpenAI-API-Key",
+        supportsSearch: false,
+        supportsThinking: true,
+      }
+    case "o3-mini":
+      return {
+        provider: "openai",
+        modelId: "o3-mini",
+        name: "o3-mini",
+        headerKey: "X-OpenAI-API-Key",
+        supportsSearch: false,
+        supportsThinking: true,
+      }
+    case "o4-mini":
+      return {
+        provider: "openai",
+        modelId: "o4-mini",
+        name: "o4-mini",
+        headerKey: "X-OpenAI-API-Key",
+        supportsSearch: false,
+        supportsThinking: true,
+      }
     case "gemini-2.0-flash-exp":
       return {
         provider: "google",
@@ -156,7 +189,25 @@ export function getModelConfig(model: AIModel): ModelConfig {
         headerKey: "X-Google-API-Key",
         // Thinking models support search too
         supportsSearch: true,
-        supportsThinking: true,
+        supportsThinking: true, // Re-enabled with proper implementation
+      }
+    case "gemini-2.5-pro-preview-06-05":
+      return {
+        provider: "google",
+        modelId: "gemini-2.5-pro-preview-06-05",
+        name: "gemini-2.5-pro-preview-06-05",
+        headerKey: "X-Google-API-Key",
+        supportsSearch: true,
+        supportsThinking: true, // Re-enabled with proper implementation
+      }
+    case "gemini-2.5-flash-preview-05-20":
+      return {
+        provider: "google",
+        modelId: "gemini-2.5-flash-preview-05-20",
+        name: "gemini-2.5-flash-preview-05-20",
+        headerKey: "X-Google-API-Key",
+        supportsSearch: true,
+        supportsThinking: true, // Re-enabled with proper implementation
       }
     case "claude-3-5-sonnet-20241022":
       return {
@@ -199,6 +250,15 @@ export function getModelConfig(model: AIModel): ModelConfig {
         provider: "openrouter",
         modelId: "meta-llama/llama-3.1-8b-instruct",
         name: "llama-3.1-8b-instruct",
+        headerKey: "X-OpenRouter-API-Key",
+        supportsSearch: false,
+        supportsThinking: false,
+      }
+    case "qwen/qwen3-8b:free":
+      return {
+        provider: "openrouter",
+        modelId: "qwen/qwen3-8b:free",
+        name: "qwen/qwen3-8b:free",
         headerKey: "X-OpenRouter-API-Key",
         supportsSearch: false,
         supportsThinking: false,

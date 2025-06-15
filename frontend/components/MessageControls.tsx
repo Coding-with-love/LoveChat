@@ -105,7 +105,7 @@ export default function MessageControls({
       stop()
 
       // Extract file attachments from message parts
-      let fileAttachments = message.parts?.find((part) => part.type === "file_attachments")?.attachments || []
+      let fileAttachments = (message.parts as any)?.find((part: any) => part.type === "file_attachments")?.attachments || []
       console.log("🔍 Found file attachments for regeneration:", fileAttachments)
 
       // If we have file attachments, try to fetch their content
@@ -119,7 +119,7 @@ export default function MessageControls({
 
           // Merge the file content from database with existing attachments
           fileAttachments = await Promise.all(
-            fileAttachments.map(async (attachment) => {
+            fileAttachments.map(async (attachment: any) => {
               const dbAttachment = dbAttachments.find((db) => db.file_name === attachment.fileName)
 
               if (dbAttachment?.file_url) {
@@ -165,14 +165,14 @@ export default function MessageControls({
 
             // Update file attachments with content
             if (fileAttachments.length > 0) {
-              const attachmentPartIndex = updatedMessage.parts.findIndex((p) => p.type === "file_attachments")
+              const attachmentPartIndex = (updatedMessage.parts as any).findIndex((p: any) => p.type === "file_attachments")
               if (attachmentPartIndex >= 0) {
-                updatedMessage.parts[attachmentPartIndex] = {
+                (updatedMessage.parts as any)[attachmentPartIndex] = {
                   type: "file_attachments",
                   attachments: fileAttachments,
                 }
               } else {
-                updatedMessage.parts.push({
+                (updatedMessage.parts as any).push({
                   type: "file_attachments",
                   attachments: fileAttachments,
                 })
@@ -199,12 +199,29 @@ export default function MessageControls({
       }
 
       setTimeout(() => {
+        // Convert image files to experimental_attachments for vision models
+        const experimentalAttachments = fileAttachments
+          .filter((file: any) => file.fileType && file.fileType.startsWith("image/") && file.fileUrl)
+          .map((file: any) => ({
+            name: file.fileName,
+            contentType: file.fileType,
+            url: file.fileUrl,
+          }))
+
+        console.log("🖼️ Regenerating with image attachments:", {
+          imageCount: experimentalAttachments.length,
+          images: experimentalAttachments.map((img: any) => ({
+            name: img.name,
+            contentType: img.contentType,
+            hasUrl: !!img.url
+          }))
+        })
+
         // Pass file attachments with content to the reload function
         reload({
-          options: {
-            data: {
-              fileAttachments: fileAttachments.length > 0 ? fileAttachments : undefined,
-            },
+          experimental_attachments: experimentalAttachments.length > 0 ? experimentalAttachments : undefined,
+          data: {
+            fileAttachments: fileAttachments.length > 0 ? fileAttachments : undefined,
           },
         })
       }, 0)
