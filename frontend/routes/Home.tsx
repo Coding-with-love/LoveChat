@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from "uuid"
 import { useAPIKeyStore } from "../stores/APIKeyStore"
 import { useModelStore } from "../stores/ModelStore"
 import { useAuth } from "@/frontend/components/AuthProvider"
+import { useModelHydration } from "@/frontend/hooks/useModelHydration"
 import { useMemo, useEffect, useState } from "react"
 
 export default function Home() {
@@ -16,6 +17,9 @@ export default function Home() {
   const loadKeys = useAPIKeyStore((state) => state.loadKeys)
   const isLoading = useAPIKeyStore((state) => state.isLoading)
   const getAllKeys = useAPIKeyStore((state) => state.getAllKeys)
+
+  // Initialize model preferences from database
+  useModelHydration()
 
   // Local loading state to prevent conflicts with global hydration
   const [localLoading, setLocalLoading] = useState(true)
