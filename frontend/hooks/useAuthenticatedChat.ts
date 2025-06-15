@@ -69,7 +69,23 @@ export function useAuthenticatedChat({
         }
 
         const headers = new Headers(options?.headers || {})
-        headers.set(modelConfig.headerKey, apiKey)
+        if (apiKey) {
+          headers.set(modelConfig.headerKey, apiKey)
+        }
+
+        // For Ollama, add the base URL header
+        if (modelConfig.provider === "ollama") {
+          try {
+            const { useOllamaStore } = require("@/frontend/stores/OllamaStore")
+            const ollamaStore = useOllamaStore.getState()
+            const ollamaBaseUrl = ollamaStore.baseUrl || "http://localhost:11434"
+            headers.set("x-ollama-base-url", ollamaBaseUrl)
+            console.log("🦙 Set Ollama base URL header:", ollamaBaseUrl)
+          } catch (error) {
+            console.warn("⚠️ Failed to access Ollama store:", error)
+            headers.set("x-ollama-base-url", "http://localhost:11434")
+          }
+        }
 
         // Parse the existing body to add web search flag and preserve all data
         const existingBody = options?.body ? JSON.parse(options.body as string) : {}

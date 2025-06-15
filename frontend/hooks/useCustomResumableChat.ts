@@ -180,6 +180,31 @@ export function useCustomResumableChat({
           }
         }
 
+        // Helper function to set headers safely (make it available outside the apiKey check)
+        const setHeaderSafely = (name: string, value: string) => {
+          try {
+            headers.set(name, value)
+          } catch (error) {
+            console.warn(`⚠️ Failed to set header ${name}:`, error)
+          }
+        }
+
+        // For Ollama, add the base URL header
+        if (modelConfig.provider === "ollama") {
+          // Import the Ollama store synchronously since we're in a function
+          try {
+            const { useOllamaStore } = require("@/frontend/stores/OllamaStore")
+            const ollamaStore = useOllamaStore.getState()
+            const ollamaBaseUrl = ollamaStore.baseUrl || "http://localhost:11434"
+            setHeaderSafely("x-ollama-base-url", ollamaBaseUrl)
+            console.log("🦙 [FETCH] Set Ollama base URL header:", ollamaBaseUrl)
+          } catch (error) {
+            console.warn("⚠️ Failed to access Ollama store:", error)
+            // Fallback to localhost
+            setHeaderSafely("x-ollama-base-url", "http://localhost:11434")
+          }
+        }
+
         // Log headers for debugging (but mask API keys)
         const headerEntries = Object.fromEntries(headers.entries())
         const maskedHeaders = Object.keys(headerEntries).reduce((acc, key) => {

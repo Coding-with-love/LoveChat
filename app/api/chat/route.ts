@@ -1769,7 +1769,11 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
     const ollamaModel = model.replace("ollama:", "")
     console.log("🦙 Using Ollama model:", ollamaModel)
 
-    const ollamaUrl = process.env.OLLAMA_URL || "http://localhost:11434"
+    // Get the Ollama base URL from headers (sent by frontend) or fallback to environment/default
+    const ollamaUrl = headersList.get('x-ollama-base-url') || 
+                      headersList.get('X-Ollama-Base-URL') || 
+                      process.env.OLLAMA_URL || 
+                      "http://localhost:11434"
     console.log("🦙 Ollama URL:", ollamaUrl)
 
     // Get model config to check if this is a thinking model
