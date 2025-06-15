@@ -21,7 +21,7 @@ export const useOllamaStore = create<OllamaState>()(
       baseUrl: "http://localhost:11434",
       setBaseUrl: (url: string) => set({ baseUrl: url }),
       isConnected: false,
-      useDirectConnection: true, // Default to direct connection
+      useDirectConnection: false, // Direct connection blocked by CORS in production
       setUseDirectConnection: (direct: boolean) => set({ useDirectConnection: direct }),
       setIsConnected: (connected: boolean) => {
         const currentState = get()

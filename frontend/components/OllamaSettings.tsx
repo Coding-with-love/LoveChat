@@ -111,12 +111,13 @@ export function OllamaSettings() {
             <div className="space-y-1">
               <div className="text-sm font-medium">Direct Browser Connection</div>
               <div className="text-xs text-muted-foreground">
-                Connect directly from your browser to localhost (recommended for production)
+                ⚠️ Blocked by browser CORS policy from HTTPS sites. Use server proxy instead.
               </div>
             </div>
             <Switch 
               checked={useDirectConnection} 
               onCheckedChange={setUseDirectConnection}
+              disabled={true}
             />
           </div>
         </div>
@@ -196,14 +197,22 @@ export function OllamaSettings() {
       <CardFooter className="text-xs text-muted-foreground space-y-2">
         <div>
           <p>
-            <strong>Direct Browser Connection (Recommended):</strong> Your browser connects directly to your local Ollama, 
-            bypassing server limitations. This works from production without ngrok!
+            <strong>⚠️ Production Limitation:</strong> Browsers block HTTPS sites from accessing localhost HTTP endpoints for security.
+            To use Ollama from production, you need to expose your local instance publicly.
           </p>
         </div>
         <div>
           <p>
-            <strong>Server Proxy Mode:</strong> Routes requests through the Vercel server. 
-            Requires ngrok or public exposure for production use.
+            <strong>Recommended Solution:</strong> Use ngrok to expose your local Ollama:
+            <br />
+            <code className="bg-muted px-1 py-0.5 rounded text-xs">brew install ngrok && ngrok http 11434</code>
+            <br />
+            Then use the ngrok HTTPS URL in the settings above.
+          </p>
+        </div>
+        <div>
+          <p>
+            <strong>Local Development:</strong> Works fine with localhost when testing locally.
           </p>
         </div>
         <div>
