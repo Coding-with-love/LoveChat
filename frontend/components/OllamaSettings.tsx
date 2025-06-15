@@ -9,9 +9,10 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Badge } from "@/frontend/components/ui/badge"
 import { Loader2, CheckCircle, XCircle, RefreshCw, Trash } from "lucide-react"
 import { toast } from "sonner"
+import { Switch } from "@/frontend/components/ui/switch"
 
 export function OllamaSettings() {
-  const { baseUrl, setBaseUrl, isConnected, availableModels, testConnection } = useOllamaStore()
+  const { baseUrl, setBaseUrl, isConnected, availableModels, testConnection, useDirectConnection, setUseDirectConnection } = useOllamaStore()
   const { addCustomModel, removeCustomModel, customModels, selectedModel, setModel } = useModelStore()
 
   const [url, setUrl] = useState(baseUrl)
@@ -92,17 +93,32 @@ export function OllamaSettings() {
         <CardDescription>Connect to your local Ollama instance to use your own models</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex items-center space-x-2">
-          <Input
-            placeholder="Ollama URL (e.g., http://localhost:11434)"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            className="flex-1"
-          />
-          <Button onClick={handleConnect} disabled={isLoading}>
-            {isLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-            Connect
-          </Button>
+        <div className="space-y-3">
+          <div className="flex items-center space-x-2">
+            <Input
+              placeholder="Ollama URL (e.g., http://localhost:11434)"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              className="flex-1"
+            />
+            <Button onClick={handleConnect} disabled={isLoading}>
+              {isLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Connect
+            </Button>
+          </div>
+          
+          <div className="flex items-center justify-between p-3 bg-muted/50 rounded-md">
+            <div className="space-y-1">
+              <div className="text-sm font-medium">Direct Browser Connection</div>
+              <div className="text-xs text-muted-foreground">
+                Connect directly from your browser to localhost (recommended for production)
+              </div>
+            </div>
+            <Switch 
+              checked={useDirectConnection} 
+              onCheckedChange={setUseDirectConnection}
+            />
+          </div>
         </div>
 
         <div className="flex items-center space-x-2">
@@ -177,18 +193,32 @@ export function OllamaSettings() {
           </div>
         )}
       </CardContent>
-      <CardFooter className="text-xs text-muted-foreground">
-        <p>
-          Ollama must be running locally with the models you want to use.{" "}
-          <a
-            href="https://ollama.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline hover:text-primary"
-          >
-            Learn more about Ollama
-          </a>
-        </p>
+      <CardFooter className="text-xs text-muted-foreground space-y-2">
+        <div>
+          <p>
+            <strong>Direct Browser Connection (Recommended):</strong> Your browser connects directly to your local Ollama, 
+            bypassing server limitations. This works from production without ngrok!
+          </p>
+        </div>
+        <div>
+          <p>
+            <strong>Server Proxy Mode:</strong> Routes requests through the Vercel server. 
+            Requires ngrok or public exposure for production use.
+          </p>
+        </div>
+        <div>
+          <p>
+            Ollama must be running locally with the models you want to use.{" "}
+            <a
+              href="https://ollama.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-primary"
+            >
+              Learn more about Ollama
+            </a>
+          </p>
+        </div>
       </CardFooter>
     </Card>
   )
