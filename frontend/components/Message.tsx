@@ -16,8 +16,6 @@ import { useTextSelection } from "@/frontend/hooks/useTextSelection"
 import { useAIActions } from "@/frontend/hooks/useAIActions"
 import AIContextMenu from "./AIContextMenu"
 import AIActionResultDialog from "./AIActionResultDialog"
-import { ThinkingToggle } from "./ThinkingToggle"
-import ThinkingContent from "./ThinkingContent"
 import { ThinkingIndicator } from "./ThinkingIndicator"
 import MessageContentRenderer from "./MessageContentRenderer"
 import { ArtifactCard } from "./ArtifactCard"
@@ -144,7 +142,7 @@ function PureMessage({
     (message.parts?.find((part) => (part as any).type === "artifact_references") as any)?.artifacts || []
 
   // Extract sources if available
-  const sources: any[] = []
+  const sources: any[] = (message.parts as any)?.find((part: any) => part.type === "sources")?.sources || []
 
   // Check if this message used web search
   const usedWebSearch = sources.length > 0
@@ -340,22 +338,6 @@ const handleViewInGallery = useCallback((artifact: any) => {
 
               return (
                 <div key={key} className="group flex flex-col gap-2 w-full relative" data-message-content-part="true">
-                  {/* Thinking Toggle - Show before content for assistant messages with reasoning */}
-                  {message.role === "assistant" && (reasoning || extractedThinking) && (
-                    <div className="flex items-center gap-2 mb-2">
-                      <ThinkingToggle
-                        isExpanded={showThinking || false}
-                        onToggle={toggleThinking || (() => {})}
-                        hasReasoning={!!(reasoning || extractedThinking)}
-                      />
-                    </div>
-                  )}
-
-                  {/* Thinking Content - Show when expanded */}
-                  {message.role === "assistant" && (reasoning || extractedThinking) && showThinking && (
-                    <ThinkingContent reasoning={reasoning || extractedThinking} />
-                  )}
-
                   <div
                     className={cn(
                       "transition-all duration-500 relative select-text",
@@ -485,20 +467,6 @@ const handleViewInGallery = useCallback((artifact: any) => {
               </div>
             ) : (
               <div key={key} className="group flex flex-col gap-2 w-full relative" data-message-content-part="true">
-                {/* Thinking Toggle - Show before content for assistant messages with reasoning */}
-                {message.role === "assistant" && reasoning && (
-                  <div className="flex items-center gap-2 mb-2">
-                    <ThinkingToggle
-                      isExpanded={showThinking || false}
-                      onToggle={toggleThinking || (() => {})}
-                      hasReasoning={!!reasoning}
-                    />
-                  </div>
-                )}
-
-                {/* Thinking Content - Show when expanded */}
-                {message.role === "assistant" && reasoning && showThinking && <ThinkingContent reasoning={reasoning} />}
-
                 <div
                   className={cn(
                     "transition-all duration-500 relative select-text",

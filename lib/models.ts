@@ -13,8 +13,12 @@ export const AI_MODELS = [
   "llama-3.1-405b-instruct",
   "llama-3.1-70b-instruct",
   "llama-3.1-8b-instruct",
+  "qwen/qwen3-8b:free",
   "o1-preview",
   "o1-mini",
+  "o3",
+  "o3-mini",
+  "o4-mini",
   // Ollama models will be added dynamically
 ] as const
 
@@ -123,6 +127,33 @@ export function getModelConfig(model: AIModel): ModelConfig {
         supportsSearch: false,
         supportsThinking: true,
       }
+    case "o3":
+      return {
+        provider: "openai",
+        modelId: "o3",
+        name: "o3",
+        headerKey: "X-OpenAI-API-Key",
+        supportsSearch: false,
+        supportsThinking: true,
+      }
+    case "o3-mini":
+      return {
+        provider: "openai",
+        modelId: "o3-mini",
+        name: "o3-mini",
+        headerKey: "X-OpenAI-API-Key",
+        supportsSearch: false,
+        supportsThinking: true,
+      }
+    case "o4-mini":
+      return {
+        provider: "openai",
+        modelId: "o4-mini",
+        name: "o4-mini",
+        headerKey: "X-OpenAI-API-Key",
+        supportsSearch: false,
+        supportsThinking: true,
+      }
     case "gemini-2.0-flash-exp":
       return {
         provider: "google",
@@ -219,6 +250,15 @@ export function getModelConfig(model: AIModel): ModelConfig {
         provider: "openrouter",
         modelId: "meta-llama/llama-3.1-8b-instruct",
         name: "llama-3.1-8b-instruct",
+        headerKey: "X-OpenRouter-API-Key",
+        supportsSearch: false,
+        supportsThinking: false,
+      }
+    case "qwen/qwen3-8b:free":
+      return {
+        provider: "openrouter",
+        modelId: "qwen/qwen3-8b:free",
+        name: "qwen/qwen3-8b:free",
         headerKey: "X-OpenRouter-API-Key",
         supportsSearch: false,
         supportsThinking: false,

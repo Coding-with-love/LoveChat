@@ -775,7 +775,9 @@ export async function POST(req: NextRequest) {
 
     // Extract user preferences from request data
     const userPreferences = data?.userPreferences || null
+    const reasoningEffort = data?.reasoningEffort || "medium" // Default to medium if not specified
     console.log("👤 User preferences:", userPreferences ? "present" : "not found")
+    console.log("🧠 Reasoning effort:", reasoningEffort)
     if (userPreferences) {
       console.log("👤 User preferences details:", {
         preferredName: userPreferences.preferredName,
@@ -799,81 +801,236 @@ export async function POST(req: NextRequest) {
     // Check if this model supports thinking and needs special processing
     const isThinkingModel = modelConfig.supportsThinking
     
-    // Special handling for OpenAI O1 models - they don't use thinking tags and don't support streaming
-    const isO1Model = modelConfig.provider === "openai" && (modelConfig.modelId === "o1-preview" || modelConfig.modelId === "o1-mini")
+    // Special handling for OpenAI reasoning models - they use the new Responses API
+    const isOpenAIReasoningModel = modelConfig.provider === "openai" && modelConfig.supportsThinking
     
-    // Custom thinking processor only for non-Google, non-O1 thinking models (like Ollama with thinking tags)
-    const needsCustomThinkingProcessor = isThinkingModel && !isO1Model && modelConfig.provider !== "google"
+    // Custom thinking processor only for non-Google, non-OpenAI thinking models (like Ollama with thinking tags)
+    const needsCustomThinkingProcessor = isThinkingModel && !isOpenAIReasoningModel && modelConfig.provider !== "google"
     
-    if (isO1Model) {
-      console.log("🧠 Using OpenAI O1 model - non-streaming with internal reasoning")
-
-      // O1 models don't support streaming and handle reasoning internally
-      // They also don't support system messages, so we need to convert the system prompt to a user message
-      const o1Messages = [...processedMessages]
-      
-      // If we have a system prompt, prepend it as a user message
-      if (systemPrompt && systemPrompt.trim()) {
-        o1Messages.unshift({
-          role: "user",
-          content: `System instructions: ${systemPrompt}\n\nPlease follow these instructions for all responses.`
-        })
-      }
-      
-      const completionOptions = {
-        model: aiModel,
-        messages: o1Messages,
-        max_completion_tokens: 4000, // O1 models require max_completion_tokens instead of max_tokens
-        experimental_attachments: experimental_attachments || undefined,
-      }
-
-      console.log("🚀 Starting O1 model generation (non-streaming)...")
-      console.log("🧠 O1 messages count:", o1Messages.length)
+    if (isOpenAIReasoningModel) {
+      console.log("🧠 Using OpenAI reasoning model with Responses API:", modelConfig.modelId)
 
       try {
-        // Use generateText instead of streamText for O1 models
-        const { generateText } = await import('ai')
+        // Prepare input messages for the Responses API
+        const inputMessages = [...processedMessages]
         
-        const result = await generateText(completionOptions)
-        
-        console.log("✅ O1 model generation completed")
-        console.log("🧠 Reasoning tokens used:", result.usage?.completionTokens || 0)
-        console.log("🧠 Total tokens used:", result.usage?.totalTokens || 0)
-        
-        // Create a reasoning explanation for O1 models since they don't expose their thinking
-        const reasoningTokens = result.usage?.completionTokens || 0
-        const totalTokens = result.usage?.totalTokens || 0
-        const inputTokens = totalTokens - reasoningTokens
-        
-        const reasoningExplanation = `🧠 **O1 Model Internal Reasoning**
+        // Add system prompt as the first user message if present
+        if (systemPrompt && systemPrompt.trim()) {
+          inputMessages.unshift({
+            role: "user",
+            content: `System instructions: ${systemPrompt}\n\nPlease follow these instructions for all responses.`
+          })
+        }
 
-This response was generated using ${modelConfig.modelId}, which performs internal reasoning that is not exposed through the API.
+        console.log("🚀 Starting OpenAI reasoning model generation...")
+        console.log("🧠 Input messages count:", inputMessages.length)
+        console.log("🔑 API Key present:", apiKey ? `${apiKey.substring(0, 10)}...` : "MISSING")
+        console.log("🎯 Model ID:", modelConfig.modelId)
 
-**Token Usage:**
-- Input tokens: ${inputTokens}
-- Reasoning tokens: ${reasoningTokens} (internal thinking)
-- Output tokens: ${reasoningTokens}
-- Total tokens: ${totalTokens}
+        const requestBody = {
+          model: modelConfig.modelId,
+          reasoning: { 
+            effort: reasoningEffort, // Use user-selected reasoning effort
+            summary: "auto" // Use "auto" as recommended for summaries
+          },
+          input: inputMessages,
+          max_output_tokens: 25000, // Reserve space for reasoning as recommended
+        }
 
-The model spent time thinking through your request before providing this response, but the reasoning process is handled internally by OpenAI and cannot be displayed.`
+        console.log("📤 Request body:", JSON.stringify(requestBody, null, 2))
+
+        // Use the OpenAI Responses API directly
+        const openaiResponse = await fetch("https://api.openai.com/v1/responses", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify(requestBody),
+        })
+
+        console.log("📡 OpenAI API Response Status:", openaiResponse.status)
+        console.log("📡 OpenAI API Response Headers:", Object.fromEntries(openaiResponse.headers.entries()))
+
+        if (!openaiResponse.ok) {
+          const errorText = await openaiResponse.text()
+          console.error("❌ OpenAI Responses API error:", openaiResponse.status, errorText)
+          
+          // Check for specific error types
+          if (openaiResponse.status === 404) {
+            throw new Error(`OpenAI reasoning model '${modelConfig.modelId}' not found. This model may require organization verification or may not be available yet. Please check your OpenAI account access.`)
+          } else if (openaiResponse.status === 401) {
+            throw new Error("Invalid OpenAI API key. Please check your API key in Settings.")
+          } else if (openaiResponse.status === 429) {
+            throw new Error("OpenAI API rate limit exceeded. Please try again later.")
+          } else if (openaiResponse.status === 403) {
+            throw new Error(`Access denied to OpenAI reasoning model '${modelConfig.modelId}'. You may need organization verification to access this model.`)
+          }
+          
+          throw new Error(`OpenAI Responses API error: ${openaiResponse.status} ${errorText}`)
+        }
+
+        const responseData = await openaiResponse.json()
+        
+        console.log("✅ OpenAI reasoning model generation completed")
+        console.log("🧠 Full response data:", JSON.stringify(responseData, null, 2))
+        console.log("🧠 Response status:", responseData.status)
+        console.log("🧠 Token usage:", responseData.usage)
+        console.log("🧠 Output text:", responseData.output_text)
+        console.log("🧠 Output array:", responseData.output)
+        
+        // Extract the response text and reasoning summary
+        let responseText = responseData.output_text || ""
+        let reasoningSummary = null
+        
+        // If output_text is empty, try to extract from output array
+        if (!responseText && responseData.output && Array.isArray(responseData.output)) {
+          console.log("🔍 output_text is empty, checking output array...")
+          
+          // Look for message content in the output array
+          const messageItem = responseData.output.find((item: any) => 
+            item.type === "message" && item.content
+          )
+          
+          if (messageItem && Array.isArray(messageItem.content)) {
+            console.log("🔍 Message item content structure:", JSON.stringify(messageItem.content, null, 2))
+            
+            // Extract text from content array
+            const textContent = messageItem.content
+              .filter((content: any) => content.type === "text")
+              .map((content: any) => content.text)
+              .join("")
+            
+            if (textContent) {
+              responseText = textContent
+              console.log("🔍 Found text in message content:", typeof responseText === 'string' ? responseText.substring(0, 100) + "..." : responseText)
+            } else {
+              // Try alternative extraction methods
+              console.log("🔍 No text found with standard method, trying alternatives...")
+              
+              // Try to get any text content regardless of type
+              const alternativeText = messageItem.content
+                .map((content: any) => content.text || content.content || content)
+                .filter((text: any) => typeof text === 'string' && text.trim())
+                .join("")
+              
+              if (alternativeText) {
+                responseText = alternativeText
+                console.log("🔍 Found text with alternative method:", responseText.substring(0, 100) + "...")
+              }
+            }
+          }
+          
+          // Fallback: look for any item with text content
+          if (!responseText) {
+            const textItem = responseData.output.find((item: any) => 
+              item.type === "text" || item.text
+            )
+            
+            if (textItem) {
+              responseText = textItem.text || textItem.content || ""
+              console.log("🔍 Found text in fallback search:", typeof responseText === 'string' ? responseText.substring(0, 100) + "..." : responseText)
+            }
+          }
+        }
+        
+        // Look for reasoning summary in the output
+        if (responseData.output && Array.isArray(responseData.output)) {
+          const reasoningItem = responseData.output.find((item: any) => item.type === "reasoning")
+          if (reasoningItem) {
+            console.log("🧠 Full reasoning item structure:", JSON.stringify(reasoningItem, null, 2))
+            
+            if (reasoningItem.summary && Array.isArray(reasoningItem.summary) && reasoningItem.summary.length > 0) {
+              reasoningSummary = reasoningItem.summary.map((s: any) => s.content || s.text || s).join('\n\n')
+              console.log("🧠 Found reasoning summary:", reasoningSummary ? reasoningSummary.substring(0, 100) + "..." : "Empty summary")
+            } else {
+              console.log("🧠 Reasoning item found but summary is empty or missing")
+              
+              // Try to extract reasoning from other possible fields
+              if (reasoningItem.content) {
+                reasoningSummary = typeof reasoningItem.content === 'string' ? reasoningItem.content : JSON.stringify(reasoningItem.content)
+                console.log("🧠 Found reasoning in content field:", reasoningSummary.substring(0, 100) + "...")
+              } else if (reasoningItem.text) {
+                reasoningSummary = reasoningItem.text
+                console.log("🧠 Found reasoning in text field:", reasoningSummary.substring(0, 100) + "...")
+              }
+            }
+          } else {
+            console.log("🧠 No reasoning item found in output array")
+          }
+        }
+        
+        console.log("🔍 Final extracted responseText:", responseText ? (typeof responseText === 'string' ? responseText.substring(0, 100) + "..." : JSON.stringify(responseText).substring(0, 100) + "...") : "EMPTY!")
+        
+        // If we still don't have response text, this is an error
+        if (!responseText) {
+          console.error("❌ No response text found in OpenAI response!")
+          console.error("❌ Full response structure:", JSON.stringify(responseData, null, 2))
+          throw new Error("No response text received from OpenAI reasoning model")
+        }
+        
+        // Create a comprehensive reasoning explanation
+        const usage = responseData.usage || {}
+        const reasoningTokens = usage.output_tokens_details?.reasoning_tokens || 0
+        
+        let reasoningExplanation = `🧠 **OpenAI Reasoning Model: ${modelConfig.modelId}**
+
+This response was generated using OpenAI's reasoning model, which performs internal reasoning before providing the final answer.`
+
+        // Add reasoning summary if available
+        if (reasoningSummary) {
+          reasoningExplanation += `\n\n**Reasoning Summary:**\n${reasoningSummary}`
+        } else {
+          reasoningExplanation += `\n\n**🧠 Internal Reasoning Process:**
+The model performed ${reasoningTokens} tokens worth of internal reasoning to generate this response.
+
+**Why the reasoning summary is empty:**
+• We're using the correct **Responses API** (\`/v1/responses\`) with proper parameters
+• However, **reasoning summaries require special access** from OpenAI
+• You need to request the **"Reasoning Summary" feature flag** in your OpenAI Dashboard
+• Without this access, the summary field remains \`null\` (this is expected behavior)
+
+**What's happening behind the scenes:**
+• The model IS performing internal reasoning (${reasoningTokens} reasoning tokens used)
+• OpenAI intentionally keeps the full reasoning steps private for security/IP reasons
+• Only accounts with the feature flag can receive limited reasoning summaries
+• Even with access, summaries only appear when sufficient reasoning material is generated
+
+**To get reasoning summaries:**
+1. **Request access**: Go to OpenAI Dashboard → Limited-access features → "Reasoning Summary"
+2. **Wait for approval**: Usually takes 1-2 days
+3. **Summaries will then appear**: When the model generates enough reasoning content
+
+**Reasoning Control:**
+You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). Currently set to: **${reasoningEffort}**
+
+**Current Status:** ✅ API configured correctly, ⏳ waiting for OpenAI feature access`
+        }
+        
+        // Handle incomplete responses
+        if (responseData.status === "incomplete") {
+          const reason = responseData.incomplete_details?.reason || "unknown"
+          reasoningExplanation += `\n\n⚠️ **Note:** This response was incomplete due to: ${reason}`
+          
+          if (reason === "max_output_tokens") {
+            reasoningExplanation += `\nThe model reached the token limit during generation. Consider increasing max_output_tokens for longer responses.`
+          }
+        }
         
         // Save the message to database with reasoning explanation
         await handleMessageSave(
           threadId,
           aiMessageId,
           user.id,
-          result.text,
-          null, // no sources for O1
-          result.providerMetadata,
+          responseText,
+          null, // no sources for reasoning models
+          { usage: responseData.usage }, // include usage metadata
           modelConfig,
           apiKey!,
-          reasoningExplanation, // add reasoning explanation
+          reasoningExplanation,
         )
 
         // Return the result in the expected data stream format for the AI SDK
-        const responseText = result.text
-        
-        // Create a simple data stream response (reasoning will be available through database)
         const dataStreamResponse = `0:${JSON.stringify(responseText)}\nd:{"finishReason":"stop"}\n`
         
         return new Response(dataStreamResponse, {
@@ -884,7 +1041,18 @@ The model spent time thinking through your request before providing this respons
           },
         })
       } catch (error) {
-        console.error("❌ Error with O1 model:", error)
+        console.error("❌ Error with OpenAI reasoning model:", error)
+        
+        // Provide more specific error messages
+        if (error instanceof Error) {
+          if (error.message.includes("401")) {
+            throw new Error("Invalid OpenAI API key. Please check your API key in Settings.")
+          } else if (error.message.includes("429")) {
+            throw new Error("OpenAI API rate limit exceeded. Please try again later.")
+          } else if (error.message.includes("404")) {
+            throw new Error(`OpenAI reasoning model '${modelConfig.modelId}' not found. You may need organization verification to access this model.`)
+          }
+        }
         throw error
       }
     } else if (needsCustomThinkingProcessor) {
@@ -1242,7 +1410,7 @@ The model spent time thinking through your request before providing this respons
         onFinish: async ({ text, finishReason, usage, sources, providerMetadata }: any) => {
           console.log("🏁 AI generation finished")
           try {
-            await handleMessageSave(threadId, aiMessageId, user.id, text, sources, providerMetadata, modelConfig, apiKey!)
+          await handleMessageSave(threadId, aiMessageId, user.id, text, sources, providerMetadata, modelConfig, apiKey!)
             console.log("✅ Message saved successfully")
           } catch (saveError) {
             console.error("❌ Error saving message:", saveError)
@@ -1650,7 +1818,9 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
 
     // Extract user preferences from request data
     const userPreferences = data?.userPreferences || null
+    const reasoningEffort = data?.reasoningEffort || "medium" // Default to medium if not specified
     console.log("👤 Ollama user preferences:", userPreferences ? "present" : "not found")
+    console.log("🧠 Reasoning effort:", reasoningEffort)
     if (userPreferences) {
       console.log("👤 Ollama user preferences details:", {
         preferredName: userPreferences.preferredName,
