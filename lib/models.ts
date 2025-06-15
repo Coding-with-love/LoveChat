@@ -6,6 +6,8 @@ export const AI_MODELS = [
   "gemini-1.5-pro",
   "gemini-1.5-flash",
   "gemini-2.0-flash-thinking-exp",
+  "gemini-2.5-pro-preview-06-05",
+  "gemini-2.5-flash-preview-05-20",
   "claude-3-5-sonnet-20241022",
   "claude-3-5-haiku-20241022",
   "llama-3.1-405b-instruct",
@@ -156,7 +158,25 @@ export function getModelConfig(model: AIModel): ModelConfig {
         headerKey: "X-Google-API-Key",
         // Thinking models support search too
         supportsSearch: true,
-        supportsThinking: true,
+        supportsThinking: true, // Re-enabled with proper implementation
+      }
+    case "gemini-2.5-pro-preview-06-05":
+      return {
+        provider: "google",
+        modelId: "gemini-2.5-pro-preview-06-05",
+        name: "gemini-2.5-pro-preview-06-05",
+        headerKey: "X-Google-API-Key",
+        supportsSearch: true,
+        supportsThinking: true, // Re-enabled with proper implementation
+      }
+    case "gemini-2.5-flash-preview-05-20":
+      return {
+        provider: "google",
+        modelId: "gemini-2.5-flash-preview-05-20",
+        name: "gemini-2.5-flash-preview-05-20",
+        headerKey: "X-Google-API-Key",
+        supportsSearch: true,
+        supportsThinking: true, // Re-enabled with proper implementation
       }
     case "claude-3-5-sonnet-20241022":
       return {

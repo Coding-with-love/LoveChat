@@ -774,9 +774,96 @@ export async function POST(req: NextRequest) {
 
     // Check if this model supports thinking and needs special processing
     const isThinkingModel = modelConfig.supportsThinking
-    const needsCustomThinkingProcessor = isThinkingModel && modelConfig.provider !== "google"
     
-    if (needsCustomThinkingProcessor) {
+    // Special handling for OpenAI O1 models - they don't use thinking tags and don't support streaming
+    const isO1Model = modelConfig.provider === "openai" && (modelConfig.modelId === "o1-preview" || modelConfig.modelId === "o1-mini")
+    
+    // Custom thinking processor only for non-Google, non-O1 thinking models (like Ollama with thinking tags)
+    const needsCustomThinkingProcessor = isThinkingModel && !isO1Model && modelConfig.provider !== "google"
+    
+    if (isO1Model) {
+      console.log("🧠 Using OpenAI O1 model - non-streaming with internal reasoning")
+
+      // O1 models don't support streaming and handle reasoning internally
+      // They also don't support system messages, so we need to convert the system prompt to a user message
+      const o1Messages = [...processedMessages]
+      
+      // If we have a system prompt, prepend it as a user message
+      if (systemPrompt && systemPrompt.trim()) {
+        o1Messages.unshift({
+          role: "user",
+          content: `System instructions: ${systemPrompt}\n\nPlease follow these instructions for all responses.`
+        })
+      }
+      
+      const completionOptions = {
+        model: aiModel,
+        messages: o1Messages,
+        max_completion_tokens: 4000, // O1 models require max_completion_tokens instead of max_tokens
+        experimental_attachments: experimental_attachments || undefined,
+      }
+
+      console.log("🚀 Starting O1 model generation (non-streaming)...")
+      console.log("🧠 O1 messages count:", o1Messages.length)
+
+      try {
+        // Use generateText instead of streamText for O1 models
+        const { generateText } = await import('ai')
+        
+        const result = await generateText(completionOptions)
+        
+        console.log("✅ O1 model generation completed")
+        console.log("🧠 Reasoning tokens used:", result.usage?.completionTokens || 0)
+        console.log("🧠 Total tokens used:", result.usage?.totalTokens || 0)
+        
+        // Create a reasoning explanation for O1 models since they don't expose their thinking
+        const reasoningTokens = result.usage?.completionTokens || 0
+        const totalTokens = result.usage?.totalTokens || 0
+        const inputTokens = totalTokens - reasoningTokens
+        
+        const reasoningExplanation = `🧠 **O1 Model Internal Reasoning**
+
+This response was generated using ${modelConfig.modelId}, which performs internal reasoning that is not exposed through the API.
+
+**Token Usage:**
+- Input tokens: ${inputTokens}
+- Reasoning tokens: ${reasoningTokens} (internal thinking)
+- Output tokens: ${reasoningTokens}
+- Total tokens: ${totalTokens}
+
+The model spent time thinking through your request before providing this response, but the reasoning process is handled internally by OpenAI and cannot be displayed.`
+        
+        // Save the message to database with reasoning explanation
+        await handleMessageSave(
+          threadId,
+          aiMessageId,
+          user.id,
+          result.text,
+          null, // no sources for O1
+          result.providerMetadata,
+          modelConfig,
+          apiKey!,
+          reasoningExplanation, // add reasoning explanation
+        )
+
+        // Return the result in the expected data stream format for the AI SDK
+        const responseText = result.text
+        
+        // Create a simple data stream response (reasoning will be available through database)
+        const dataStreamResponse = `0:${JSON.stringify(responseText)}\nd:{"finishReason":"stop"}\n`
+        
+        return new Response(dataStreamResponse, {
+          headers: {
+            "Content-Type": "text/plain; charset=utf-8",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+          },
+        })
+      } catch (error) {
+        console.error("❌ Error with O1 model:", error)
+        throw error
+      }
+    } else if (needsCustomThinkingProcessor) {
       console.log("🧠 Using thinking model - custom stream handling")
 
       // Create stream options without any transforms
@@ -795,8 +882,8 @@ export async function POST(req: NextRequest) {
           if (text.includes("<Thinking>") && text.includes("</Thinking>")) {
             console.log("🧠 Detected thinking content in response")
 
-            // Extract thinking content (note: using <Thinking> not <Thinking>)
-            const thinkMatch = text.match(/<Thinking>([\s\S]*?)<\/think>/)
+            // Extract thinking content
+            const thinkMatch = text.match(/<Thinking>([\s\S]*?)<\/Thinking>/)
             if (thinkMatch) {
               reasoning = thinkMatch[1].trim()
               console.log("🧠 Extracted reasoning:", reasoning.substring(0, 100) + "...")
@@ -896,7 +983,7 @@ export async function POST(req: NextRequest) {
                           if (!protectionResult.allowed) {
                             console.warn(`🛡️ Stream protection triggered:`, protectionResult.reason)
                             const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
-                            const encodedError = `0:"${errorMsg.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
+                            const encodedError = `0:${JSON.stringify(errorMsg)}\n`
                             safeEnqueue(new TextEncoder().encode(encodedError))
                             safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
                             safeClose()
@@ -973,15 +1060,15 @@ export async function POST(req: NextRequest) {
                     if (!protectionResult.allowed) {
                       console.warn(`🛡️ Stream protection triggered:`, protectionResult.reason)
                       const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
-                      const encodedError = `0:"${errorMsg.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
+                      const encodedError = `0:${JSON.stringify(errorMsg)}\n`
                       safeEnqueue(new TextEncoder().encode(encodedError))
                       safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
                       safeClose()
                       return
                     }
 
-                    // Re-encode as proper data stream format
-                    const encodedChunk = `0:"${processedChunk.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
+                    // Re-encode as proper data stream format with proper JSON escaping
+                    const encodedChunk = `0:${JSON.stringify(processedChunk)}\n`
                     safeEnqueue(new TextEncoder().encode(encodedChunk))
                   }
                 }
@@ -992,7 +1079,7 @@ export async function POST(req: NextRequest) {
                 // Final protection check
                 const protectionResult = streamProtection.analyzeChunk(buffer)
                 if (protectionResult.allowed) {
-                  const encodedChunk = `0:"${buffer.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
+                  const encodedChunk = `0:${JSON.stringify(buffer)}\n`
                   safeEnqueue(new TextEncoder().encode(encodedChunk))
                 }
               }
@@ -1014,8 +1101,115 @@ export async function POST(req: NextRequest) {
           },
         })
       })
+    } else if (isThinkingModel && modelConfig.provider === "google") {
+      // Google thinking models - use proper thinking configuration based on official docs
+      console.log("🧠 Using Google thinking model processing for:", modelConfig.modelId)
+      console.log("🤖 Model provider:", modelConfig.provider)
+      console.log("🤖 Is thinking model:", isThinkingModel)
+      
+      const streamOptions = {
+        model: aiModel,
+        messages: processedMessages,
+        system: systemPrompt,
+        experimental_attachments: experimental_attachments || undefined,
+        // Proper Google thinking configuration based on official docs
+        experimental_providerOptions: {
+          google: {
+            thinkingConfig: {
+              includeThoughts: true, // Enable thought summaries
+            },
+          },
+        },
+        onFinish: async ({ text, finishReason, usage, sources, providerMetadata }: any) => {
+          console.log("🏁 AI generation finished")
+          console.log("🔍 Provider metadata:", JSON.stringify(providerMetadata, null, 2))
+          
+          // Extract reasoning from Google thinking model response
+          let cleanedText = text
+          let reasoning = null
+          
+          // Check if the response contains thinking parts based on official docs
+          if (providerMetadata?.parts) {
+            console.log("🔍 Found parts in provider metadata:", providerMetadata.parts.length)
+            const thoughtParts = providerMetadata.parts.filter((part: any) => part.thought)
+            console.log("🔍 Found thought parts:", thoughtParts.length)
+            if (thoughtParts.length > 0) {
+              reasoning = thoughtParts.map((part: any) => part.thought).join('\n\n')
+              console.log("🧠 Extracted Google thinking reasoning:", reasoning.substring(0, 100) + "...")
+            }
+          } else {
+            console.log("🔍 No parts found in provider metadata")
+          }
+          
+          try {
+            await handleMessageSave(threadId, aiMessageId, user.id, cleanedText, sources, providerMetadata, modelConfig, apiKey!, reasoning)
+            console.log("✅ Message saved successfully")
+          } catch (saveError) {
+            console.error("❌ Error saving message:", saveError)
+          }
+        },
+      }
+
+      console.log("🚀 Starting Google thinking model generation...")
+      console.log("🤖 Final system prompt being sent to AI (Google thinking):", systemPrompt)
+      console.log("🔧 Google thinking config:", JSON.stringify(streamOptions.experimental_providerOptions, null, 2))
+
+      // Wrap the stream creation in circuit breaker
+      return await streamCircuitBreaker.execute(async () => {
+        console.log("🔄 Executing streamText with Google thinking model")
+        let result
+        try {
+          result = streamText(streamOptions)
+          console.log("✅ streamText initialized successfully for Google thinking model")
+        } catch (error) {
+          console.error("❌ Error in streamText initialization for Google thinking model:", error)
+          // Check for specific Google API errors
+          if (error instanceof Error) {
+            if (error.message.includes("API_KEY_INVALID") || error.message.includes("403")) {
+              throw new Error("Invalid Google API key. Please check your API key in Settings.")
+            } else if (error.message.includes("QUOTA_EXCEEDED") || error.message.includes("429")) {
+              throw new Error("Google API quota exceeded. Please try again later.")
+            } else if (error.message.includes("model not found") || error.message.includes("404")) {
+              throw new Error(`Model ${modelConfig.modelId} not found or not available.`)
+            }
+          }
+          throw error
+        }
+
+        // Use the AI SDK's built-in data stream response with error handling
+        return result.toDataStreamResponse({
+          headers: {
+            "Content-Type": "text/plain; charset=utf-8",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+          },
+          getErrorMessage: (error: unknown) => {
+            console.error("🚨 Google thinking model stream error:", error)
+            if (error == null) {
+              return 'Unknown error occurred'
+            }
+            if (typeof error === 'string') {
+              return error
+            }
+            if (error instanceof Error) {
+              console.error("🚨 Error details:", {
+                name: error.name,
+                message: error.message,
+                stack: error.stack,
+                cause: error.cause
+              })
+              return error.message
+            }
+            return JSON.stringify(error)
+          },
+        })
+      })
     } else {
       // Regular models - use standard processing with protection
+      console.log("🤖 Using standard model processing for:", modelConfig.modelId)
+      console.log("🤖 Model provider:", modelConfig.provider)
+      console.log("🤖 Is thinking model:", isThinkingModel)
+      
       const streamOptions = {
         model: aiModel,
         messages: processedMessages,
@@ -1023,7 +1217,12 @@ export async function POST(req: NextRequest) {
         experimental_attachments: experimental_attachments || undefined,
         onFinish: async ({ text, finishReason, usage, sources, providerMetadata }: any) => {
           console.log("🏁 AI generation finished")
-          await handleMessageSave(threadId, aiMessageId, user.id, text, sources, providerMetadata, modelConfig, apiKey!)
+          try {
+            await handleMessageSave(threadId, aiMessageId, user.id, text, sources, providerMetadata, modelConfig, apiKey!)
+            console.log("✅ Message saved successfully")
+          } catch (saveError) {
+            console.error("❌ Error saving message:", saveError)
+          }
         },
       }
 
@@ -1059,6 +1258,25 @@ export async function POST(req: NextRequest) {
             "Content-Type": "text/plain; charset=utf-8",
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
+          },
+          getErrorMessage: (error: unknown) => {
+            console.error("🚨 Regular model stream error:", error)
+            if (error == null) {
+              return 'Unknown error occurred'
+            }
+            if (typeof error === 'string') {
+              return error
+            }
+            if (error instanceof Error) {
+              console.error("🚨 Error details:", {
+                name: error.name,
+                message: error.message,
+                stack: error.stack,
+                cause: error.cause
+              })
+              return error.message
+            }
+            return JSON.stringify(error)
           },
         })
       })
@@ -1613,7 +1831,7 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
                         null, // sources
                         null, // providerMetadata
                         modelConfig,
-                        "", // apiKey
+                        "", // Ollama doesn't use API keys
                         reasoning,
                       )
                     }
