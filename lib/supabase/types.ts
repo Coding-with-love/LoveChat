@@ -20,7 +20,7 @@ export interface Message {
   user_id: string
   content: string
   role: "user" | "assistant" | "system"
-  parts: any[] | null
+  parts: any[] | null // parts can include workflow_result type for workflow execution results
   reasoning: string | null
   created_at: string
   updated_at: string

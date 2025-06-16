@@ -5,7 +5,7 @@ import { Button } from "./ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog"
 import { Textarea } from "./ui/textarea"
 import { cn } from "@/lib/utils"
-import { Check, Copy, RefreshCcw, SquarePen, Star, Archive } from "lucide-react"
+import { Check, Copy, RefreshCcw, SquarePen, Star, Archive, Volume2, VolumeX, Loader2 } from "lucide-react"
 import type { UIMessage } from "ai"
 import type { UseChatHelpers } from "@ai-sdk/react"
 
@@ -14,12 +14,11 @@ interface ExtendedUIMessage extends UIMessage {
   attempts?: ExtendedUIMessage[]
 }
 import { deleteTrailingMessages, getFileAttachmentsByMessageId } from "@/lib/supabase/queries"
-import { useAPIKeyStore } from "@/frontend/stores/APIKeyStore"
 import { useArtifactStore } from "@/frontend/stores/ArtifactStore"
 import { supabase } from "@/lib/supabase/client"
 import { toast } from "sonner"
 import { useRegeneration } from "@/frontend/contexts/RegenerationContext"
-import { useRegenerationTracker } from "@/frontend/hooks/useRegenerationTracker"
+import { useTextToSpeech } from "@/frontend/hooks/useTextToSpeech"
 
 interface MessageControlsProps {
   threadId: string
@@ -52,24 +51,28 @@ export default function MessageControls({
   const [showPinDialog, setShowPinDialog] = useState(false)
   const [pinLoading, setPinLoading] = useState(false)
 
+  // Text-to-speech functionality
+  const { speak, stop: stopSpeech, isLoading: isSpeechLoading, isPlaying: isSpeechPlaying } = useTextToSpeech()
+
   // API keys are now optional with server fallbacks - always allow regeneration/editing
   const hasRequiredKeys = true
-  
+
   // Debug logging
-  console.log("🔑 Default keys available - always allowing regeneration/editing for message:", message.id, "role:", message.role)
+  console.log(
+    "🔑 Default keys available - always allowing regeneration/editing for message:",
+    message.id,
+    "role:",
+    message.role,
+  )
   const { createArtifact } = useArtifactStore()
-  
+
   // Try to get regeneration context, with fallback if not available
-  let startRegeneration
-  try {
-    const regenerationContext = useRegeneration()
-    startRegeneration = regenerationContext.startRegeneration
-  } catch (error) {
-    console.warn("⚠️ Regeneration context not available, using fallback")
-    startRegeneration = (messageId: string, message: any) => {
-      console.log("📝 Fallback regeneration tracking for:", messageId)
-    }
-  }
+  const regenerationContext = useRegeneration()
+  const startRegeneration = regenerationContext
+    ? regenerationContext.startRegeneration
+    : (messageId: string, message: any) => {
+        console.log("📝 Fallback regeneration tracking for:", messageId)
+      }
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(content)
@@ -124,44 +127,44 @@ export default function MessageControls({
 
   const handleRegenerate = useCallback(async () => {
     console.log("🔄 Regenerate button clicked for message:", message.id, "Role:", message.role)
-    
+
     try {
       // stop the current request
       stop()
-      
+
       // Start tracking regeneration for attempts
       if (message.role === "assistant") {
         console.log("🎯 Processing assistant message regeneration")
-        
+
         try {
           startRegeneration(message.id, message)
           console.log("✅ Started regeneration tracking successfully")
         } catch (error) {
           console.error("❌ Error starting regeneration tracking:", error)
         }
-        
+
         // For demo: immediately create an attempt to test the UI
         const newAttempt = {
           ...message,
           id: message.id + "-regenerated-" + Date.now(),
           content: "This is a regenerated version: " + message.content.substring(0, 100) + "... [REGENERATED]",
-          createdAt: new Date()
+          createdAt: new Date(),
         }
-        
+
         console.log("📝 Created new attempt:", newAttempt.id)
-        
+
         // Update the message to have attempts
         const updatedMessage = {
           ...message,
-          attempts: message.attempts ? [...message.attempts, newAttempt] : [message, newAttempt]
+          attempts: message.attempts ? [...message.attempts, newAttempt] : [message, newAttempt],
         }
-        
+
         console.log("🔄 Updating messages with attempts. Total attempts:", updatedMessage.attempts?.length)
-        
+
         try {
           setMessages((messages) => {
             console.log("📝 SetMessages called, current messages count:", messages.length)
-            const updated = messages.map(m => m.id === message.id ? updatedMessage : m)
+            const updated = messages.map((m) => (m.id === message.id ? updatedMessage : m))
             console.log("📝 Returning updated messages, count:", updated.length)
             return updated
           })
@@ -169,16 +172,17 @@ export default function MessageControls({
         } catch (error) {
           console.error("❌ Error calling setMessages:", error)
         }
-        
+
         console.log("✅ Added regenerated attempt. Total attempts:", updatedMessage.attempts?.length)
-        
+
         // Continue with actual regeneration API call after creating the attempt
         console.log("🚀 Proceeding with actual API regeneration...")
         // Don't return here - let it continue to the actual regeneration logic below
       }
 
       // Extract file attachments from message parts
-      let fileAttachments = (message.parts as any)?.find((part: any) => part.type === "file_attachments")?.attachments || []
+      let fileAttachments =
+        (message.parts as any)?.find((part: any) => part.type === "file_attachments")?.attachments || []
       console.log("🔍 Found file attachments for regeneration:", fileAttachments)
 
       // If we have file attachments, try to fetch their content
@@ -238,14 +242,16 @@ export default function MessageControls({
 
             // Update file attachments with content
             if (fileAttachments.length > 0) {
-              const attachmentPartIndex = (updatedMessage.parts as any).findIndex((p: any) => p.type === "file_attachments")
+              const attachmentPartIndex = (updatedMessage.parts as any).findIndex(
+                (p: any) => p.type === "file_attachments",
+              )
               if (attachmentPartIndex >= 0) {
-                (updatedMessage.parts as any)[attachmentPartIndex] = {
+                ;(updatedMessage.parts as any)[attachmentPartIndex] = {
                   type: "file_attachments",
                   attachments: fileAttachments,
                 }
               } else {
-                (updatedMessage.parts as any).push({
+                ;(updatedMessage.parts as any).push({
                   type: "file_attachments",
                   attachments: fileAttachments,
                 })
@@ -270,7 +276,7 @@ export default function MessageControls({
               ...currentMessage,
               attempts: currentMessage.attempts || [currentMessage],
             }
-            
+
             return [...messages.slice(0, index), updatedMessage]
           }
 
@@ -293,8 +299,8 @@ export default function MessageControls({
           images: experimentalAttachments.map((img: any) => ({
             name: img.name,
             contentType: img.contentType,
-            hasUrl: !!img.url
-          }))
+            hasUrl: !!img.url,
+          })),
         })
 
         // Pass file attachments with content to the reload function
@@ -381,6 +387,14 @@ export default function MessageControls({
     }
   }, [threadId, message.id])
 
+  const handleReadAloud = useCallback(() => {
+    if (isSpeechPlaying) {
+      stopSpeech()
+    } else {
+      speak(content)
+    }
+  }, [content, speak, stopSpeech, isSpeechPlaying])
+
   // Check if message is pinned on mount
   useEffect(() => {
     const checkPinStatus = async () => {
@@ -403,9 +417,7 @@ export default function MessageControls({
   }, [threadId, message.id])
 
   return (
-    <div
-      className="opacity-60 group-hover:opacity-100 transition-opacity duration-100 flex gap-1"
-    >
+    <div className="opacity-60 group-hover:opacity-100 transition-opacity duration-100 flex gap-1">
       <Button variant="ghost" size="icon" onClick={handleCopy}>
         {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
       </Button>
@@ -413,6 +425,23 @@ export default function MessageControls({
       {/* Archive Button */}
       <Button variant="ghost" size="icon" onClick={handleSaveAsArtifact} title="Save as Artifact">
         <Archive className="w-4 h-4" />
+      </Button>
+
+      {/* Read Aloud Button */}
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={handleReadAloud}
+        disabled={isSpeechLoading}
+        title={isSpeechPlaying ? "Stop reading" : "Read aloud"}
+      >
+        {isSpeechLoading ? (
+          <Loader2 className="w-4 h-4 animate-spin" />
+        ) : isSpeechPlaying ? (
+          <VolumeX className="w-4 h-4" />
+        ) : (
+          <Volume2 className="w-4 h-4" />
+        )}
       </Button>
 
       {/* Pin Button */}
@@ -463,9 +492,9 @@ export default function MessageControls({
         </Button>
       )}
       {hasRequiredKeys && (
-        <Button 
-          variant="ghost" 
-          size="icon" 
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={() => {
             console.log("🖱️ Regenerate button clicked!")
             handleRegenerate()

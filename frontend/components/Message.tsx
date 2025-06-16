@@ -20,17 +20,21 @@ import { ThinkingIndicator } from "./ThinkingIndicator"
 import MessageContentRenderer from "./MessageContentRenderer"
 import { ArtifactCard } from "./ArtifactCard"
 import { useArtifactStore } from "@/frontend/stores/ArtifactStore"
+import { useWorkflowStore } from "@/frontend/stores/WorkflowStore"
 import { Badge } from "@/frontend/components/ui/badge"
-import { Code, FileText, Copy, Plus } from "lucide-react"
+import { Button } from "@/frontend/components/ui/button"
+import { Code, FileText, Copy, Plus, Workflow, Play, CheckCircle2, Clock, AlertCircle, Zap, Sparkles } from "lucide-react"
 import { ArtifactIndicator, MessageArtifactSummary } from "./ArtifactIndicator"
 import MessageAttemptNavigator from "./MessageAttemptNavigator"
+import type { WorkflowExecution } from "@/lib/types/workflow"
+import { WorkflowExecutionRenderer } from "./WorkflowExecutionRenderer"
 
 // Helper function to check equality (you might want to import this from a utility library)
 function equal(a: any, b: any): boolean {
   return JSON.stringify(a) === JSON.stringify(b)
 }
 
-// Extend UIMessage to include reasoning field and message attempts
+// Extend UIMessage to include reasoning field, message attempts, and workflow information
 interface ExtendedUIMessage extends UIMessage {
   reasoning?: string
   attempts?: ExtendedUIMessage[]
@@ -38,6 +42,9 @@ interface ExtendedUIMessage extends UIMessage {
   parentMessageId?: string
   attemptNumber?: number
   isActiveAttempt?: boolean
+  workflowExecutionId?: string
+  workflowId?: string
+  workflowName?: string
 }
 
 function PureMessage({
@@ -82,6 +89,24 @@ function PureMessage({
     const artifacts = getArtifactsByMessageId(message.id)
     setMessageArtifacts(artifacts)
   }, [message.id, getArtifactsByMessageId])
+
+  // Workflow functionality
+  const { executeWorkflow, createWorkflow, executions, fetchExecutions } = useWorkflowStore()
+  const [workflowExecution, setWorkflowExecution] = useState<WorkflowExecution | null>(null)
+  const [isCreatingWorkflow, setIsCreatingWorkflow] = useState(false)
+
+  // Fetch workflow execution if this message is associated with one
+  useEffect(() => {
+    if (message.workflowExecutionId) {
+      const execution = executions.find(e => e.id === message.workflowExecutionId)
+      setWorkflowExecution(execution || null)
+      
+      // If not found in store, fetch executions
+      if (!execution) {
+        fetchExecutions()
+      }
+    }
+  }, [message.workflowExecutionId, executions, fetchExecutions])
 
   // Message attempts handling
   const attempts = message.attempts || [message]
@@ -196,6 +221,11 @@ function PureMessage({
   // Check if this message used web search
   const usedWebSearch = sources.length > 0
 
+  // Check if this is a workflow execution message
+  const isWorkflowExecution = actualCurrentMessage.content?.includes('🚀') && 
+    (actualCurrentMessage.content?.includes('Executing workflow:') || actualCurrentMessage.content?.includes('Starting workflow:')) &&
+    actualCurrentMessage.content?.includes('⚡')
+
   // Filter out tool calls and other non-user-facing parts
   const displayParts =
   actualCurrentMessage.parts?.filter((part) => {
@@ -304,10 +334,58 @@ const isSelectionInThisMessage = useCallback(() => {
     return messageRef.current.contains(selectionNode)
   }, [selection])
 
-const handleViewInGallery = useCallback((artifact: any) => {
+  const handleViewInGallery = useCallback((artifact: any) => {
     // Navigate to artifacts gallery with this artifact highlighted
     window.location.href = `/artifacts?highlight=${artifact.id}`
   }, [])
+
+  // Workflow-related handlers
+  const handleCreateWorkflowFromMessage = useCallback(async () => {
+    if (message.role !== "assistant" || !actualCurrentMessage.content) return
+    
+    setIsCreatingWorkflow(true)
+    try {
+      const textContent = actualCurrentMessage.content
+      
+      // Create a basic workflow from this message content
+      await createWorkflow({
+        name: `Workflow from ${new Date().toLocaleDateString()}`,
+        description: `Generated from assistant message: ${textContent.substring(0, 100)}...`,
+        steps: [
+          {
+            id: "step_1",
+            name: "Process Request",
+            prompt: textContent,
+            description: "Process the user request based on the assistant's response"
+          }
+        ],
+        is_public: false,
+        tags: ["generated", "assistant-response"]
+      })
+      
+      // Optional: Show success toast or notification
+      console.log("✅ Workflow created from message")
+    } catch (error) {
+      console.error("Failed to create workflow from message:", error)
+    } finally {
+      setIsCreatingWorkflow(false)
+    }
+  }, [message.role, actualCurrentMessage.content, createWorkflow])
+
+  const getWorkflowStatusIcon = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return <CheckCircle2 className="h-3 w-3 text-green-500" />
+      case 'running':
+        return <Clock className="h-3 w-3 text-blue-500 animate-spin" />
+      case 'failed':
+        return <AlertCircle className="h-3 w-3 text-red-500" />
+      case 'cancelled':
+        return <AlertCircle className="h-3 w-3 text-gray-500" />
+      default:
+        return <Clock className="h-3 w-3 text-gray-400" />
+    }
+  }
 
   // Get artifact icon
   const getArtifactIcon = (contentType: string) => {
@@ -322,6 +400,33 @@ const handleViewInGallery = useCallback((artifact: any) => {
     }
   }
 
+  // Check if this is a workflow execution message
+  const isWorkflowExecutionMessage = message.role === "user" && 
+    message.content.includes("[EXECUTE_WORKFLOW]")
+
+  // If this is a workflow execution user message, show a special indicator instead
+  if (isWorkflowExecutionMessage) {
+    const workflowNameMatch = message.content.match(/WORKFLOW_NAME: (.+)/)
+    const workflowName = workflowNameMatch ? workflowNameMatch[1] : "Unknown Workflow"
+    
+    return (
+      <div
+        ref={messageRef}
+        role="article"
+        className="flex flex-col transition-all duration-500 relative items-start w-full"
+        data-message-id={message.id}
+        data-message-content="true"
+      >
+        <div className="mb-3 flex items-center gap-2 px-3 py-2 bg-accent/50 border border-border rounded-lg text-sm">
+          <Workflow className="h-4 w-4 text-primary" />
+          <span className="text-primary font-medium">
+            🚀 Executing workflow: {workflowName}
+          </span>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div
       ref={messageRef}
@@ -334,8 +439,26 @@ const handleViewInGallery = useCallback((artifact: any) => {
       data-message-id={message.id}
       data-message-content="true" // Add this attribute to help identify message content areas
     >
-      {/* Web Search Banner for Assistant Messages */}
-      {message.role === "assistant" && usedWebSearch && <WebSearchBanner />}
+      {/* Web Search Banner for Assistant Messages (only for non-workflow messages) */}
+      {message.role === "assistant" && usedWebSearch && !isWorkflowExecution && <WebSearchBanner />}
+
+      {/* Workflow Execution Banner for Assistant Messages */}
+      {message.role === "assistant" && (message.workflowExecutionId || workflowExecution) && (
+        <div className="mb-3 flex items-center gap-2 px-3 py-2 bg-accent/50 border border-border rounded-lg text-sm">
+          <Workflow className="h-4 w-4 text-primary" />
+          <span className="text-primary font-medium">
+            Generated by workflow: {message.workflowName || workflowExecution?.workflow_id}
+          </span>
+          {workflowExecution && (
+            <div className="flex items-center gap-1 ml-auto">
+              {getWorkflowStatusIcon(workflowExecution.status)}
+              <span className="text-xs capitalize text-primary">
+                {workflowExecution.status}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Thinking Indicator for streaming thinking models */}
       {isCurrentlyThinking && (
@@ -383,6 +506,23 @@ const handleViewInGallery = useCallback((artifact: any) => {
                 cleanText = cleanText.replace(/<Thinking>[\s\S]*?<\/Thinking>/g, "").trim()
               }
 
+              // Check if this is a workflow execution message
+              const isWorkflowExecution = cleanText.includes('🚀') && 
+                (cleanText.includes('Executing workflow:') || cleanText.includes('Starting workflow:')) &&
+                cleanText.includes('⚡')
+
+              if (isWorkflowExecution) {
+                return (
+                  <div key={key} className="group flex flex-col gap-2 w-full relative" data-message-content-part="true">
+                    <WorkflowExecutionRenderer 
+                      content={cleanText}
+                      isStreaming={isStreaming}
+                      sources={sources}
+                    />
+                  </div>
+                )
+              }
+
               return (
                 <div key={key} className="group flex flex-col gap-2 w-full relative" data-message-content-part="true">
                   <div
@@ -421,6 +561,22 @@ const handleViewInGallery = useCallback((artifact: any) => {
                           variant="icon"
                           className="opacity-60 group-hover:opacity-100 transition-opacity"
                         />
+                        {message.role === "assistant" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={handleCreateWorkflowFromMessage}
+                            disabled={isCreatingWorkflow}
+                            className="opacity-60 group-hover:opacity-100 transition-opacity h-6 px-2 text-xs"
+                            title="Create workflow from this response"
+                          >
+                            {isCreatingWorkflow ? (
+                              <Clock className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Zap className="h-3 w-3" />
+                            )}
+                          </Button>
+                        )}
                         {currentMessage.role === "assistant" && (
                           <MessageAttemptNavigator
                             currentIndex={currentAttemptIndex}
@@ -579,6 +735,22 @@ const handleViewInGallery = useCallback((artifact: any) => {
                         variant="minimal"
                         className="opacity-0 group-hover:opacity-100 transition-opacity"
                       />
+                      {message.role === "assistant" && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleCreateWorkflowFromMessage}
+                          disabled={isCreatingWorkflow}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity h-6 px-2 text-xs"
+                          title="Create workflow from this response"
+                        >
+                          {isCreatingWorkflow ? (
+                            <Clock className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Zap className="h-3 w-3" />
+                          )}
+                        </Button>
+                      )}
                       {currentMessage.role === "assistant" && (
                         <MessageAttemptNavigator
                           currentIndex={currentAttemptIndex}
@@ -617,6 +789,49 @@ const handleViewInGallery = useCallback((artifact: any) => {
       {fileAttachments.length > 0 && (
         <div className={cn("mt-2", message.role === "user" ? "self-end max-w-[80%]" : "self-start w-full")}>
           <FileAttachmentViewer attachments={fileAttachments} />
+        </div>
+      )}
+
+      {/* Display workflow execution details if available */}
+      {workflowExecution && message.role === "assistant" && !isStreaming && (
+        <div className="mt-2 space-y-2 w-full">
+          <div className="bg-accent/50 border border-border rounded-lg p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <Workflow className="h-4 w-4 text-primary" />
+                <span className="text-sm font-medium text-primary">
+                  Workflow Execution
+                </span>
+              </div>
+              <div className="flex items-center gap-1">
+                {getWorkflowStatusIcon(workflowExecution.status)}
+                <span className="text-xs capitalize text-primary">
+                  {workflowExecution.status}
+                </span>
+              </div>
+            </div>
+            
+            {workflowExecution.step_results && workflowExecution.step_results.length > 0 && (
+              <div className="space-y-1">
+                <span className="text-xs text-primary">Steps:</span>
+                <div className="space-y-1">
+                  {workflowExecution.step_results.map((step, index) => (
+                    <div key={step.step_id} className="flex items-center gap-2 text-xs">
+                      {getWorkflowStatusIcon(step.status)}
+                      <span className="text-primary">
+                        Step {index + 1}: {step.status}
+                      </span>
+                      {step.error && (
+                        <span className="text-red-500 text-xs truncate">
+                          ({step.error})
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -672,6 +887,9 @@ const Message = memo(PureMessage, (prevProps, nextProps) => {
   if (prevProps.message.content !== nextProps.message.content) return false
   if (!equal(prevProps.message.parts, nextProps.message.parts)) return false
   if (prevProps.message.reasoning !== nextProps.message.reasoning) return false
+  if (prevProps.message.workflowExecutionId !== nextProps.message.workflowExecutionId) return false
+  if (prevProps.message.workflowId !== nextProps.message.workflowId) return false
+  if (prevProps.message.workflowName !== nextProps.message.workflowName) return false
   return true
 })
 

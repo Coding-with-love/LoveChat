@@ -31,7 +31,23 @@ import { useMessageSummary } from "../hooks/useMessageSummary"
 import { useAuth } from "@/frontend/components/AuthProvider"
 import FileUpload, { FilePreviewList } from "./FileUpload"
 import type { FileUploadResult } from "@/lib/supabase/file-upload"
-import { ChevronDown, Check, ArrowUpIcon, Search, Info, Bot, Settings, Sparkles, Archive, X, Code, FileText, Copy, Plus, Loader2 } from 'lucide-react'
+import {
+  ChevronDown,
+  Check,
+  ArrowUpIcon,
+  Search,
+  Info,
+  Settings,
+  Sparkles,
+  Archive,
+  X,
+  Code,
+  FileText,
+  Copy,
+  Plus,
+  Loader2,
+  Zap,
+} from "lucide-react"
 import { useKeyboardShortcuts } from "@/frontend/hooks/useKeyboardShortcuts"
 import PersonaTemplateSelector from "./PersonaTemplateSelector"
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover"
@@ -61,6 +77,7 @@ import { Badge } from "@/frontend/components/ui/badge"
 import { CrossChatArtifactIndicator } from "./CrossChatArtifactIndicator"
 import { ProviderLogo } from "@/frontend/components/ProviderLogo"
 import { useSidebar } from "@/frontend/components/ui/sidebar"
+import { WorkflowBuilder } from "./WorkflowBuilder"
 
 interface ChatMessagePart {
   type: "text" | "file_attachments" | "artifact_references"
@@ -88,6 +105,7 @@ interface ChatInputProps {
   setInput: UseChatHelpers["setInput"]
   append: UseChatHelpers["append"]
   stop: UseChatHelpers["stop"]
+  onRefreshMessages?: () => void
 }
 
 interface StopButtonProps {
@@ -113,7 +131,7 @@ const createUserMessage = (id: string, text: string): UIMessage => ({
   createdAt: new Date(),
 })
 
-function PureChatInput({ threadId, input, status, setInput, append, stop }: ChatInputProps) {
+function PureChatInput({ threadId, input, status, setInput, append, stop, onRefreshMessages }: ChatInputProps) {
   const { user } = useAuth()
   const getKey = useAPIKeyStore((state) => state.getKey)
   const { selectedModel, setModel, getEnabledModels, ensureValidSelectedModel } = useModelStore()
@@ -126,7 +144,8 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
   const [editTemplateOpen, setEditTemplateOpen] = useState(false)
   const [editingPersona, setEditingPersona] = useState<Persona | null>(null)
   const [editingTemplate, setEditingTemplate] = useState<PromptTemplate | null>(null)
-  
+  const [workflowBuilderOpen, setWorkflowBuilderOpen] = useState(false)
+
   // Get sidebar state for responsive positioning
   const { state: sidebarState, isMobile } = useSidebar()
   const sidebarCollapsed = sidebarState === "collapsed"
@@ -497,11 +516,11 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
 
       // Create API message with technical tags for the AI - this will include file attachments for UI display
       const apiMessage = createUserMessage(messageId + "_api", apiMessageContent)
-      
+
       // Add file attachments to the API message for immediate UI display
       if (hasFiles) {
         console.log("📎 Adding file attachments to message:", uploadedFiles.length)
-        
+
         if (!apiMessage.parts) {
           apiMessage.parts = []
         }
@@ -546,11 +565,11 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
 
       console.log("🖼️ Image attachments for AI vision:", {
         imageCount: experimentalAttachments.length,
-        images: experimentalAttachments.map(img => ({
+        images: experimentalAttachments.map((img) => ({
           name: img.name,
           contentType: img.contentType,
-          hasUrl: !!img.url
-        }))
+          hasUrl: !!img.url,
+        })),
       })
 
       const result = await append(apiMessage, {
@@ -614,19 +633,21 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
 
   if (!user || !isAuthenticated) {
     return (
-      <div className={cn(
-        "fixed bottom-0 w-full max-w-3xl",
-        // Smooth animations with easing
-        "transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]",
-        // Mobile: always centered with padding
-        "px-4 md:px-0",
-        // Desktop: adjust position based on sidebar state
-        isMobile 
-          ? "left-1/2 transform -translate-x-1/2" 
-          : sidebarCollapsed 
-            ? "left-1/2 transform -translate-x-1/2" 
-            : "left-[calc(var(--sidebar-width)+1rem)] right-4 transform-none max-w-none w-[calc(100vw-var(--sidebar-width)-2rem)]"
-      )}>
+      <div
+        className={cn(
+          "fixed bottom-0 w-full max-w-3xl",
+          // Smooth animations with easing
+          "transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]",
+          // Mobile: always centered with padding
+          "px-4 md:px-0",
+          // Desktop: adjust position based on sidebar state
+          isMobile
+            ? "left-1/2 transform -translate-x-1/2"
+            : sidebarCollapsed
+              ? "left-1/2 transform -translate-x-1/2"
+              : "left-[calc(var(--sidebar-width)+1rem)] right-4 transform-none max-w-none w-[calc(100vw-var(--sidebar-width)-2rem)]",
+        )}
+      >
         <div className="bg-secondary rounded-t-[20px] p-4 w-full max-w-3xl mx-auto text-center transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]">
           <p className="text-muted-foreground">Please sign in to start chatting</p>
         </div>
@@ -691,19 +712,21 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
   const searchStatusMessage = getSearchStatusMessage()
 
   return (
-    <div className={cn(
-      "fixed bottom-0 w-full max-w-3xl",
-      // Smooth animations with easing
-      "transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]",
-      // Mobile: always centered with padding
-      "px-4 md:px-0",
-      // Desktop: adjust position based on sidebar state
-      isMobile 
-        ? "left-1/2 transform -translate-x-1/2" 
-        : sidebarCollapsed 
-          ? "left-1/2 transform -translate-x-1/2" 
-          : "left-[calc(var(--sidebar-width)+1rem)] right-4 transform-none max-w-none w-[calc(100vw-var(--sidebar-width)-2rem)]"
-    )}>
+    <div
+      className={cn(
+        "fixed bottom-0 w-full max-w-3xl",
+        // Smooth animations with easing
+        "transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]",
+        // Mobile: always centered with padding
+        "px-4 md:px-0",
+        // Desktop: adjust position based on sidebar state
+        isMobile
+          ? "left-1/2 transform -translate-x-1/2"
+          : sidebarCollapsed
+            ? "left-1/2 transform -translate-x-1/2"
+            : "left-[calc(var(--sidebar-width)+1rem)] right-4 transform-none max-w-none w-[calc(100vw-var(--sidebar-width)-2rem)]",
+      )}
+    >
       <div className="bg-background/95 backdrop-blur-sm border border-border rounded-t-2xl shadow-2xl pb-0 w-full max-w-3xl mx-auto transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]">
         {/* Active Persona Indicator - only show for non-default personas */}
         {currentPersona && !currentPersona.is_default && (
@@ -723,7 +746,7 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
               <div className="flex items-center gap-2 mb-2">
                 <Archive className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm font-medium text-muted-foreground">Referenced Artifacts</span>
-                {artifactReferences.some(ref => ref.artifact.thread_id !== threadId) && (
+                {artifactReferences.some((ref) => ref.artifact.thread_id !== threadId) && (
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -743,19 +766,17 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
                 {artifactReferences.map((ref) => {
                   const isCrossChat = ref.artifact.thread_id !== threadId
                   return (
-                    <Badge 
-                      key={ref.id} 
-                      variant="secondary" 
-                                             className={cn(
-                         "flex items-center gap-2 pr-1 pl-2 py-1 text-xs",
-                         isCrossChat && "border-accent bg-accent/20 dark:border-accent dark:bg-accent/10"
-                       )}
+                    <Badge
+                      key={ref.id}
+                      variant="secondary"
+                      className={cn(
+                        "flex items-center gap-2 pr-1 pl-2 py-1 text-xs",
+                        isCrossChat && "border-accent bg-accent/20 dark:border-accent dark:bg-accent/10",
+                      )}
                     >
                       {getArtifactIcon(ref.artifact.content_type)}
                       <span className="max-w-[120px] truncate">{ref.artifact.title}</span>
-                                             {isCrossChat && (
-                         <Archive className="h-2 w-2 text-primary" />
-                       )}
+                      {isCrossChat && <Archive className="h-2 w-2 text-primary" />}
                       {ref.type === "insert" ? (
                         <Copy className="h-3 w-3 text-blue-500" />
                       ) : (
@@ -905,7 +926,29 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
-                      
+
+                      {/* Workflows Button */}
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setWorkflowBuilderOpen(true)}
+                              className="h-9 w-9 transition-all duration-200 rounded-lg hover:bg-muted border border-border/50"
+                              aria-label="Open workflow builder"
+                              disabled={status === "streaming" || status === "submitted"}
+                            >
+                              <Zap className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Create AI workflow pipelines</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+
                       {/* Cross-Chat Artifact Indicator */}
                       <CrossChatArtifactIndicator currentThreadId={threadId} />
                     </div>
@@ -939,12 +982,12 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
                                 {webSearchEnabled ? "Web Search Enabled" : "Enable Web Search"}
                               </p>
                               {webSearchEnabled && (
-                                <p className="text-xs text-muted-foreground mt-1">
-                                  Real-time search available
-                                </p>
+                                <p className="text-xs text-muted-foreground mt-1">Real-time search available</p>
                               )}
                               {!webSearchEnabled && (
-                                <p className="text-xs text-muted-foreground mt-1">Get real-time information from the web</p>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  Get real-time information from the web
+                                </p>
                               )}
                             </div>
                           </TooltipContent>
@@ -987,6 +1030,9 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
           </div>
         </div>
       </div>
+
+      {/* Workflow Builder */}
+      <WorkflowBuilder open={workflowBuilderOpen} onOpenChange={setWorkflowBuilderOpen} threadId={threadId} onRefreshMessages={onRefreshMessages} />
 
       {/* Enhanced Web Search Status Indicator */}
       {searchStatusMessage && (
@@ -1176,9 +1222,9 @@ const PureChatModelDropdown = () => {
               {groupIndex > 0 && <DropdownMenuSeparator />}
               <div className="px-2 py-1.5">
                 <div className="text-xs font-medium text-muted-foreground flex items-center gap-2">
-                  <ProviderLogo 
-                    provider={provider.toLowerCase() as "openai" | "google" | "openrouter" | "ollama"} 
-                    size="sm" 
+                  <ProviderLogo
+                    provider={provider.toLowerCase() as "openai" | "google" | "openrouter" | "ollama"}
+                    size="sm"
                   />
                   {provider}
                 </div>
@@ -1202,10 +1248,7 @@ const PureChatModelDropdown = () => {
           {availableModels.length < AI_MODELS.length && (
             <>
               <DropdownMenuSeparator />
-              <DropdownMenuItem 
-                className="cursor-pointer"
-                onSelect={() => navigate("/settings")}
-              >
+              <DropdownMenuItem className="cursor-pointer" onSelect={() => navigate("/settings")}>
                 <div className="flex items-center gap-2">
                   <Settings className="w-3 h-3" />
                   <span>Manage models in Settings</span>

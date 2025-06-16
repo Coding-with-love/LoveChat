@@ -38,9 +38,10 @@ interface ChatProps {
   threadId: string
   initialMessages: UIMessage[]
   registerRef?: (id: string, ref: HTMLDivElement | null) => void
+  onRefreshMessages?: () => void
 }
 
-export default function Chat({ threadId, initialMessages, registerRef }: ChatProps) {
+export default function Chat({ threadId, initialMessages, registerRef, onRefreshMessages }: ChatProps) {
   const { getKey } = useAPIKeyStore()
   const selectedModel = useModelStore((state) => state.selectedModel)
   const modelConfig = useMemo(() => getModelConfig(selectedModel), [selectedModel])
@@ -146,6 +147,45 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
     },
     refreshStoresOnVisible: false, // Don't refresh stores here, Thread handles it
   })
+
+  // Listen for workflow execution events
+  useEffect(() => {
+    const handleWorkflowMessage = async (event: Event) => {
+      const customEvent = event as CustomEvent
+      console.log("🔧 Received workflow message event:", customEvent.detail)
+      
+      if (customEvent.detail?.message && customEvent.detail?.executionData) {
+        try {
+          // Create a proper UIMessage for the workflow execution
+          const workflowUserMessage: UIMessage = {
+            id: uuidv4(),
+            role: "user",
+            content: customEvent.detail.message,
+            createdAt: new Date(),
+            parts: [{ type: "text", text: customEvent.detail.message }]
+          }
+          
+          console.log("💾 Saving workflow user message to database:", workflowUserMessage.id)
+          
+          // Save the user message to the database first
+          await createMessage(threadId, workflowUserMessage)
+          console.log("✅ Workflow user message saved to database")
+          
+          // Then send through the normal chat flow
+          await append(workflowUserMessage)
+          console.log("✅ Workflow message sent to chat API")
+        } catch (error) {
+          console.error("❌ Failed to handle workflow message:", error)
+        }
+      }
+    }
+
+    window.addEventListener('sendWorkflowMessage', handleWorkflowMessage)
+    
+    return () => {
+      window.removeEventListener('sendWorkflowMessage', handleWorkflowMessage)
+    }
+  }, [append, threadId])
 
   // Debug logging
   useEffect(() => {
@@ -603,7 +643,7 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
             console.log("🔄 Updating message with new attempts:", updatedMessage.id, "Total attempts:", updatedMessage.attempts?.length)
             setMessages((prevMessages) => {
               return prevMessages.map(msg => 
-                msg.id === updatedMessage.id ? updatedMessage : msg
+                msg.id === updatedMessage.id ? updatedMessage as UIMessage : msg
               )
             })
           }}
@@ -622,7 +662,7 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
             onPromptClick={handlePromptClick}
           />
         </RegenerationProvider>
-        <ChatInput threadId={threadId} input={input} status={status} append={append} setInput={setInput} stop={stop} />
+        <ChatInput threadId={threadId} input={input} status={status} append={append} setInput={setInput} stop={stop} onRefreshMessages={onRefreshMessages} />
       </main>
 
       {showScrollToBottom && (

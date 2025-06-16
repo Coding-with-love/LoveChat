@@ -177,5 +177,5 @@ export default function Thread() {
     )
   }
 
-  return <Chat threadId={id!} initialMessages={convertToUIMessages(messages)} registerRef={registerRef} />
+  return <Chat threadId={id!} initialMessages={convertToUIMessages(messages)} registerRef={registerRef} onRefreshMessages={() => initializeThread(true)} />
 }
