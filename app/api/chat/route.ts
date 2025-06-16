@@ -529,26 +529,28 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Fallback to environment variables if no user key is found
+    // Fallback to environment variables if no user key is found (only for Google)
     if (!apiKey) {
-      console.log("🔄 Attempting to use default API key from environment for provider:", modelConfig.provider)
+      console.log("🔄 Checking if fallback API key is allowed for provider:", modelConfig.provider)
       
       switch (modelConfig.provider.toLowerCase()) {
         case "openai":
-          apiKey = process.env.OPENAI_API_KEY || null
+          // OpenAI requires user-provided API key - no fallback
+          console.log("❌ OpenAI requires user-provided API key - no server fallback allowed")
           break
         case "google":
+          // Google allows server fallback
           apiKey = process.env.GOOGLE_API_KEY || null
+          if (apiKey) {
+            console.log("✅ Using server fallback API key for Google")
+          } else {
+            console.log("❌ No server fallback API key available for Google")
+          }
           break
         case "openrouter":
-          apiKey = process.env.OPENROUTER_API_KEY || null
+          // OpenRouter requires user-provided API key - no fallback
+          console.log("❌ OpenRouter requires user-provided API key - no server fallback allowed")
           break
-      }
-
-      if (apiKey) {
-        console.log("✅ Using default API key from environment for provider:", modelConfig.provider)
-      } else {
-        console.log("❌ No default API key found in environment for provider:", modelConfig.provider)
       }
     }
 

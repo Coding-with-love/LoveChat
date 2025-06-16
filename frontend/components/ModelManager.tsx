@@ -218,6 +218,20 @@ export function ModelManager() {
     const displayName = model.startsWith("ollama:") ? model.replace("ollama:", "") : model
     const icon = <ProviderLogo provider={config.provider} size="lg" />
 
+    const hasUserKey = !!getKey(config.provider)
+    let hasApiKey = false
+    
+    // Determine if model has required API keys based on provider requirements
+    if (config.provider === "ollama") {
+      hasApiKey = true // Ollama doesn't need API keys
+    } else if (config.provider === "google") {
+      hasApiKey = true // Google is optional - server has fallback
+    } else if (config.provider === "openai" || config.provider === "openrouter") {
+      hasApiKey = hasUserKey // OpenAI and OpenRouter require user keys
+    } else {
+      hasApiKey = hasUserKey // Other providers require user keys
+    }
+
     return {
       model,
       icon,
@@ -226,8 +240,8 @@ export function ModelManager() {
       provider: providerName,
       features,
       isEnabled: enabledModels.includes(model),
-      hasApiKey: true, // Always true now with server fallback keys
-      isUsingDefaultKey: config.provider !== "ollama" && !getKey(config.provider),
+      hasApiKey,
+      isUsingDefaultKey: config.provider !== "ollama" && !hasUserKey,
       searchUrl
     }
   }

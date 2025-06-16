@@ -155,9 +155,17 @@ export const useAPIKeyStore = create<APIKeyStore>()(
         const hasUserKey = !!state.keys[normalizedProvider]
         console.log("🔍 Checking if required API key exists for provider:", provider, "Has user key:", hasUserKey)
         
-        // For now, return true if no user key (assuming default keys are available)
-        // The actual API call will handle the fallback and show proper errors
-        return true
+        // Provider-specific requirements
+        if (normalizedProvider === "openai" || normalizedProvider === "openrouter") {
+          // OpenAI and OpenRouter require user-provided API keys
+          return hasUserKey
+        } else if (normalizedProvider === "google") {
+          // Google is optional - server has fallback
+          return true
+        } else {
+          // For other providers, require user key
+          return hasUserKey
+        }
       },
       hasDefaultKeys: async (provider: string) => {
         const normalizedProvider = provider.toLowerCase()

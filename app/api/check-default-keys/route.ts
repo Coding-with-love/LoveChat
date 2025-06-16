@@ -13,13 +13,16 @@ export async function POST(req: NextRequest) {
 
     switch (normalizedProvider) {
       case "openai":
-        hasDefaultKey = !!process.env.OPENAI_API_KEY
+        // OpenAI requires user-provided API key - no server fallback allowed
+        hasDefaultKey = false
         break
       case "google":
+        // Google allows server fallback
         hasDefaultKey = !!process.env.GOOGLE_API_KEY
         break
       case "openrouter":
-        hasDefaultKey = !!process.env.OPENROUTER_API_KEY
+        // OpenRouter requires user-provided API key - no server fallback allowed
+        hasDefaultKey = false
         break
       case "ollama":
         hasDefaultKey = true // Ollama doesn't need API keys

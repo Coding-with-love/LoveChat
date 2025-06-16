@@ -77,7 +77,15 @@ export const useModelStore = create<ModelState>()(
                 if (modelConfig.provider === "ollama") {
                   return isOllamaConnected
                 }
-                return !!useAPIKeyStore.getState().getKey(modelConfig.provider)
+                const hasUserKey = !!useAPIKeyStore.getState().getKey(modelConfig.provider)
+                // Apply provider-specific requirements
+                if (modelConfig.provider === "openai" || modelConfig.provider === "openrouter") {
+                  return hasUserKey // Require user key
+                } else if (modelConfig.provider === "google") {
+                  return true // Google allows server fallback
+                } else {
+                  return hasUserKey // Other providers require user key
+                }
               } catch {
                 return false
               }
@@ -134,22 +142,56 @@ export const useModelStore = create<ModelState>()(
               return true // Always allow Ollama models - let the chat endpoint handle connection issues
             }
             
-            // Always check if the key actually exists
-            const hasKey = !!getKey(modelConfig.provider)
+            // Check if user has provided their own API key
+            const hasUserKey = !!getKey(modelConfig.provider)
             
-            // If we have a key, always include the model
-            if (hasKey) {
+            // Provider-specific API key requirements
+            if (modelConfig.provider === "openai") {
+              // OpenAI models require user-provided API key
+              if (hasUserKey) {
+                console.log("✅ OpenAI model allowed with user API key:", model)
+                return true
+              } else {
+                console.log("❌ OpenAI model blocked - user API key required:", model)
+                // During loading, preserve the currently selected model to prevent UI flickering
+                if (isLoading && model === state.selectedModel) {
+                  return true
+                }
+                return false
+              }
+            } else if (modelConfig.provider === "openrouter") {
+              // OpenRouter models require user-provided API key
+              if (hasUserKey) {
+                console.log("✅ OpenRouter model allowed with user API key:", model)
+                return true
+              } else {
+                console.log("❌ OpenRouter model blocked - user API key required:", model)
+                // During loading, preserve the currently selected model to prevent UI flickering
+                if (isLoading && model === state.selectedModel) {
+                  return true
+                }
+                return false
+              }
+            } else if (modelConfig.provider === "google") {
+              // Google models are optional - can use server fallback
+              if (hasUserKey) {
+                console.log("✅ Google model allowed with user API key:", model)
+              } else {
+                console.log("✅ Google model allowed with server fallback API key:", model)
+              }
               return true
+            } else {
+              // For any other providers, require user key
+              if (hasUserKey) {
+                return true
+              } else {
+                console.log("❌ Model blocked - user API key required for provider:", modelConfig.provider, model)
+                if (isLoading && model === state.selectedModel) {
+                  return true
+                }
+                return false
+              }
             }
-            
-            // During loading, only preserve the currently selected model
-            // This prevents losing the user's selection while still being conservative about which models to show
-            if (isLoading && model === state.selectedModel) {
-              return true
-            }
-            
-            // Otherwise, exclude models without keys
-            return false
           } catch {
             // If getModelConfig throws an error, exclude this model
             return false
@@ -183,7 +225,11 @@ export const useModelStore = create<ModelState>()(
             if (modelConfig.provider === "ollama") {
               // Always consider Ollama models available - let the chat endpoint handle connection
               return model
+            } else if (modelConfig.provider === "google") {
+              // Google models are optional - can use server fallback
+              return model
             } else if (getKey(modelConfig.provider)) {
+              // For OpenAI/OpenRouter, require user key
               return model
             }
           } catch {
