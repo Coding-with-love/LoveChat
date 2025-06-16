@@ -799,8 +799,8 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
                   Rename
                 </DropdownMenuItem>
                 <DropdownMenuSub>
-                  <DropdownMenuSubTrigger className="flex items-center gap-2">
-                    <Folder className="h-4 w-4" />
+                  <DropdownMenuSubTrigger>
+                    <Folder className="h-4 w-4 mr-2" />
                     Move to Project
                   </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent>
@@ -1076,8 +1076,8 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
                     Rename
                   </DropdownMenuItem>
                   <DropdownMenuSub>
-                    <DropdownMenuSubTrigger className="flex items-center gap-2">
-                      <Folder className="h-4 w-4" />
+                    <DropdownMenuSubTrigger>
+                      <Folder className="h-4 w-4 mr-2" />
                       Move to Project
                     </DropdownMenuSubTrigger>
                     <DropdownMenuSubContent>
