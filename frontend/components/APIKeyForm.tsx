@@ -235,13 +235,34 @@ export default function APIKeyForm() {
 
   return (
     <div className="space-y-6">
+      {/* Information about default keys */}
+      <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+        <div className="flex items-start gap-3">
+          <div className="flex-shrink-0 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center mt-0.5">
+            <Check className="h-3 w-3 text-white" />
+          </div>
+          <div className="space-y-2">
+            <h4 className="text-sm font-medium text-blue-900 dark:text-blue-100">
+              No API Keys Required!
+            </h4>
+            <p className="text-xs text-blue-700 dark:text-blue-200">
+              This app provides default API keys so you can start chatting immediately. 
+              You can optionally add your own API keys below to override the defaults and use your own usage quotas.
+            </p>
+            <p className="text-xs text-blue-600 dark:text-blue-300 font-medium">
+              💡 Models with "Using default key" badges are ready to use without any setup!
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* OpenAI API Key */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <Label htmlFor="openai-key" className="text-sm font-medium">
             OpenAI API Key
           </Label>
-          <span className="text-xs text-muted-foreground">Required for GPT-4o, GPT-4-turbo models</span>
+          <span className="text-xs text-muted-foreground">Optional override for GPT-4o, GPT-4-turbo models</span>
         </div>
         <div className="relative">
           <Input
@@ -279,9 +300,9 @@ export default function APIKeyForm() {
         </div>
         <div className="flex items-center gap-2 text-xs">
           <span
-            className={cn("flex h-2 w-2 rounded-full", openaiKey ? "bg-green-500" : "bg-gray-300 dark:bg-gray-600")}
+            className={cn("flex h-2 w-2 rounded-full", openaiKey ? "bg-green-500" : "bg-green-400")}
           />
-          <span className="text-muted-foreground">{openaiKey ? "API key set" : "No API key set"}</span>
+          <span className="text-muted-foreground">{openaiKey ? "Using your API key" : "Using default API key"}</span>
         </div>
       </div>
 
@@ -291,7 +312,7 @@ export default function APIKeyForm() {
           <Label htmlFor="google-key" className="text-sm font-medium">
             Google API Key
           </Label>
-          <span className="text-xs text-muted-foreground">Required for Gemini models</span>
+          <span className="text-xs text-muted-foreground">Optional override for Gemini models</span>
         </div>
         <div className="relative">
           <Input
@@ -329,9 +350,9 @@ export default function APIKeyForm() {
         </div>
         <div className="flex items-center gap-2 text-xs">
           <span
-            className={cn("flex h-2 w-2 rounded-full", googleKey ? "bg-green-500" : "bg-gray-300 dark:bg-gray-600")}
+            className={cn("flex h-2 w-2 rounded-full", googleKey ? "bg-green-500" : "bg-green-400")}
           />
-          <span className="text-muted-foreground">{googleKey ? "API key set" : "No API key set"}</span>
+          <span className="text-muted-foreground">{googleKey ? "Using your API key" : "Using default API key"}</span>
         </div>
       </div>
 
@@ -341,7 +362,7 @@ export default function APIKeyForm() {
           <Label htmlFor="openrouter-key" className="text-sm font-medium">
             OpenRouter API Key
           </Label>
-          <span className="text-xs text-muted-foreground">Required for Claude and other models</span>
+          <span className="text-xs text-muted-foreground">Optional override for Claude and other models</span>
         </div>
         <div className="relative">
           <Input
@@ -379,9 +400,9 @@ export default function APIKeyForm() {
         </div>
         <div className="flex items-center gap-2 text-xs">
           <span
-            className={cn("flex h-2 w-2 rounded-full", openrouterKey ? "bg-green-500" : "bg-gray-300 dark:bg-gray-600")}
+            className={cn("flex h-2 w-2 rounded-full", openrouterKey ? "bg-green-500" : "bg-green-400")}
           />
-          <span className="text-muted-foreground">{openrouterKey ? "API key set" : "No API key set"}</span>
+          <span className="text-muted-foreground">{openrouterKey ? "Using your API key" : "Using default API key"}</span>
         </div>
       </div>
 
@@ -394,66 +415,10 @@ export default function APIKeyForm() {
         ) : (
           <>
             <Check className="mr-2 h-4 w-4" />
-            Save API Keys
+            Override with Your Keys
           </>
         )}
       </Button>
-
-      {/* Debug Info */}
-      <div className="mt-8 p-4 bg-muted rounded-lg">
-        <h3 className="text-sm font-medium mb-2">API Key Status</h3>
-        <div className="space-y-2 text-xs">
-          <div className="flex items-center justify-between">
-            <span>OpenAI:</span>
-            <span className={cn("font-medium", openaiKey ? "text-green-500" : "text-red-500")}>
-              {openaiKey ? "Configured" : "Not Configured"}
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span>Google:</span>
-            <span className={cn("font-medium", googleKey ? "text-green-500" : "text-red-500")}>
-              {googleKey ? "Configured" : "Not Configured"}
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span>OpenRouter:</span>
-            <span className={cn("font-medium", openrouterKey ? "text-green-500" : "text-red-500")}>
-              {openrouterKey ? "Configured" : "Not Configured"}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {showForceLoad && (
-        <div className="mt-8 p-4 bg-muted rounded-lg">
-          <h3 className="text-sm font-medium mb-2">API Key Status</h3>
-          <div className="space-y-2 text-xs">
-            <div className="flex items-center justify-between">
-              <span>OpenAI:</span>
-              <span className={cn("font-medium", openaiKey ? "text-green-500" : "text-red-500")}>
-                {openaiKey ? "Configured" : "Not Configured"}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>Google:</span>
-              <span className={cn("font-medium", googleKey ? "text-green-500" : "text-red-500")}>
-                {googleKey ? "Configured" : "Not Configured"}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>OpenRouter:</span>
-              <span className={cn("font-medium", openrouterKey ? "text-green-500" : "text-red-500")}>
-                {openrouterKey ? "Configured" : "Not Configured"}
-              </span>
-            </div>
-          </div>
-          <div className="mt-4 space-x-2">
-            <Button onClick={handleForceLoad} variant="outline">
-              Force Load API Keys
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

@@ -24,6 +24,10 @@ export interface Message {
   reasoning: string | null
   created_at: string
   updated_at: string
+  // New fields for message attempts
+  parent_message_id?: string | null
+  attempt_number?: number
+  is_active_attempt?: boolean
 }
 
 // Add PinnedMessage interface

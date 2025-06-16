@@ -502,6 +502,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Try to get user's API key from database first
     if (!apiKey) {
       console.log("❌ Missing API key for provider:", modelConfig.provider)
 
@@ -519,12 +520,35 @@ export async function POST(req: NextRequest) {
           console.error("❌ Database error fetching API key:", dbError)
         } else if (dbApiKey?.api_key) {
           apiKey = dbApiKey.api_key
-          console.log("✅ Found API key in database for provider:", modelConfig.provider)
+          console.log("✅ Found user API key in database for provider:", modelConfig.provider)
         } else {
-          console.log("❌ No API key found in database for provider:", modelConfig.provider)
+          console.log("❌ No user API key found in database for provider:", modelConfig.provider)
         }
       } catch (dbError) {
         console.error("❌ Error fetching API key from database:", dbError)
+      }
+    }
+
+    // Fallback to environment variables if no user key is found
+    if (!apiKey) {
+      console.log("🔄 Attempting to use default API key from environment for provider:", modelConfig.provider)
+      
+      switch (modelConfig.provider.toLowerCase()) {
+        case "openai":
+          apiKey = process.env.OPENAI_API_KEY || null
+          break
+        case "google":
+          apiKey = process.env.GOOGLE_API_KEY || null
+          break
+        case "openrouter":
+          apiKey = process.env.OPENROUTER_API_KEY || null
+          break
+      }
+
+      if (apiKey) {
+        console.log("✅ Using default API key from environment for provider:", modelConfig.provider)
+      } else {
+        console.log("❌ No default API key found in environment for provider:", modelConfig.provider)
       }
     }
 
@@ -1117,12 +1141,12 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
 
         // Initialize enhanced stream protection for thinking models
         const streamProtection = new StreamProtection({
-          maxRepetitions: 3, // Reduced from 4 to catch repetitions earlier
+          maxRepetitions: 10, // Increased to allow for legitimate thinking tags
           repetitionWindowSize: 50, // Reduced from 100 to detect smaller repetition patterns
           maxResponseLength: 40000,
           timeoutMs: 180000, // 3 minutes for thinking models
-          maxSimilarChunks: 4, // Reduced from 6 to be more aggressive about similar content
-          minRepetitionLength: 5, // Add minimum length for repetition detection
+          maxSimilarChunks: 20, // Significantly increased for Ollama's incremental streaming
+          minRepetitionLength: 15, // Increased to skip short patterns like thinking tags
         })
 
         // Create a custom readable stream that filters out thinking content AND protects against loops
@@ -1132,6 +1156,10 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
             let buffer = ""
             let insideThinking = false
             let lastThinkingTag = ""
+            let fullResponse = ""
+            let reasoning = ""
+            let cleanedText = "" // Declare cleanedText here
+            let sentContent = "" // Track what we've already sent to avoid duplication
 
             const safeEnqueue = (chunk: Uint8Array) => {
               try {
@@ -1202,66 +1230,71 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
 
                   while (i < buffer.length) {
                     if (!insideThinking) {
-                      // Look for start of thinking
-                      const thinkStart = buffer.indexOf("<Thinking>", i)
+                      // Look for start of thinking (lowercase)
+                      const thinkStart = buffer.indexOf("<think>", i)
                       if (thinkStart !== -1) {
-                        // Add content before thinking tag
+                        // Add content before thinking
                         processedChunk += buffer.substring(i, thinkStart)
-                        // Also include the thinking tag in the output for real-time processing
-                        processedChunk += "<Thinking>"
+                        // Don't include the thinking tag in the output for streaming
                         insideThinking = true
-                        i = thinkStart + 10 // Skip "<Thinking>"
-                        lastThinkingTag = "<Thinking>"
+                        i = thinkStart + 7 // Skip "<think>"
                       } else {
                         // No thinking tag found, add rest of buffer
                         processedChunk += buffer.substring(i)
                         break
                       }
                     } else {
-                      // Look for end of thinking
-                      const thinkEnd = buffer.indexOf("</Thinking>", i)
+                      // Look for end of thinking (lowercase)
+                      const thinkEnd = buffer.indexOf("</think>", i)
                       if (thinkEnd !== -1) {
-                        // Include thinking content in the output
+                        // Capture thinking content
                         const thinkingContent = buffer.substring(i, thinkEnd)
-                        processedChunk += thinkingContent
-                        processedChunk += "<Thinking></Thinking>" // Include closing tag
+                        if (!reasoning) reasoning = thinkingContent
+                        else reasoning += thinkingContent
 
+                        // Exit thinking mode
                         insideThinking = false
-                        i = thinkEnd + 11 // Skip "<Thinking></Thinking>"
-                        lastThinkingTag = "</Thinking>"
+                        i = thinkEnd + 8 // Skip "</think>"
                       } else {
-                        // Still inside thinking, include partial thinking content
-                        processedChunk += buffer.substring(i)
+                        // Still inside thinking, skip rest of buffer
                         break
                       }
                     }
                   }
 
                   // Update buffer to keep unprocessed content
-                  if (i < buffer.length) {
+                  if (i < buffer.length && insideThinking) {
+                    // Keep the unprocessed part if we're still inside thinking
                     buffer = buffer.substring(i)
                   } else {
+                    // Clear buffer if we've processed everything
                     buffer = ""
                   }
 
-                  // Send processed chunk if we have content - but check for protection first
-                  if (processedChunk) {
+                  // Only send non-thinking content - but check protection first
+                  // IMPORTANT: Only send the NEW content, not accumulated content
+                  if (processedChunk && !insideThinking) {
                     // Check with stream protection
                     const protectionResult = streamProtection.analyzeChunk(processedChunk)
-                    
+
                     if (!protectionResult.allowed) {
-                      console.warn(`🛡️ Stream protection triggered:`, protectionResult.reason)
+                      console.warn("🛡️ Ollama stream protection triggered:", protectionResult.reason)
+                      console.log("📊 Ollama stream stats:", streamProtection.getStats())
+
+                      // Send error message to client
                       const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
                       const encodedError = `0:${JSON.stringify(errorMsg)}\n`
                       safeEnqueue(new TextEncoder().encode(encodedError))
+
+                      // Terminate the stream
                       safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
                       safeClose()
                       return
                     }
 
-                    // Re-encode as proper data stream format with proper JSON escaping
-                    const encodedChunk = `0:${JSON.stringify(processedChunk)}\n`
-                    safeEnqueue(new TextEncoder().encode(encodedChunk))
+                    // Format as AI SDK compatible stream
+                    const streamChunk = `0:${JSON.stringify(processedChunk)}\n`
+                    safeEnqueue(new TextEncoder().encode(streamChunk))
                   }
                 }
               }
@@ -1516,6 +1549,500 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
   }
 }
 
+async function handleOllamaChat(req: NextRequest, messages: any[], model: string, headersList: Headers, data?: any) {
+  try {
+    console.log("🦙 Handling Ollama chat request")
+
+    // Get authorization header and authenticate user
+    const authHeader = headersList.get("authorization")
+    let user = null
+    let userEmail = ""
+
+    if (authHeader?.startsWith("Bearer ")) {
+      const token = authHeader.substring(7)
+      const authResult = await supabaseServer.auth.getUser(token)
+      if (!authResult.error && authResult.data.user) {
+        user = authResult.data.user
+        userEmail = user.email || ""
+        console.log("✅ Ollama user authenticated:", user.id)
+      }
+    }
+
+    const ollamaModel = model.replace("ollama:", "")
+    console.log("🦙 Using Ollama model:", ollamaModel)
+
+    // Get the Ollama base URL from headers (sent by frontend) or fallback to environment/default
+    const ollamaUrl = headersList.get('x-ollama-base-url') || 
+                      headersList.get('X-Ollama-Base-URL') || 
+                      process.env.OLLAMA_URL || 
+                      "http://localhost:11434"
+    console.log("🦙 Ollama URL:", ollamaUrl)
+
+    // Get model config to check if this is a thinking model
+    const modelConfig = getModelConfig(model as AIModel)
+    const isThinkingModel = modelConfig.supportsThinking
+    console.log("🧠 Ollama model supports thinking:", isThinkingModel)
+
+    const threadId = req.nextUrl.searchParams.get("threadId") as string
+    const aiMessageId = uuidv4()
+
+    // Get thread persona if one is assigned and user is authenticated
+    let threadPersona = null
+    if (threadId && user) {
+      try {
+        console.log("🎭 Looking up persona for Ollama thread:", threadId)
+
+        const { data: threadPersonaData, error: personaError } = await supabaseServer
+          .from("thread_personas")
+          .select(`
+            *,
+            personas (
+              id,
+              name,
+              description,
+              system_prompt,
+              avatar_emoji,
+              color,
+              is_default,
+              is_public
+            )
+          `)
+          .eq("thread_id", threadId)
+          .eq("user_id", user.id)
+          .single()
+
+        if (!personaError && threadPersonaData?.personas) {
+          threadPersona = threadPersonaData.personas
+          console.log("✅ Found persona for Ollama thread:", threadPersona.name)
+        } else {
+          console.log("ℹ️ No persona assigned to Ollama thread")
+        }
+      } catch (error) {
+        console.log("⚠️ Error looking up persona for Ollama:", error)
+      }
+    }
+
+    // Extract user preferences from request data
+    const userPreferences = data?.userPreferences || null
+    const reasoningEffort = data?.reasoningEffort || "medium"
+    console.log("👤 Ollama user preferences:", userPreferences ? "present" : "not found")
+
+    // Create system prompt for Ollama
+    const systemPrompt = getSystemPrompt(false, false, userEmail, threadPersona, userPreferences)
+    console.log("📝 Ollama generated system prompt preview:", systemPrompt.substring(0, 200) + "...")
+
+    // Prepare messages for Ollama - inject system prompt as system message
+    const ollamaMessages = [
+      {
+        role: "system",
+        content: systemPrompt,
+      },
+      ...messages,
+    ]
+
+    console.log("📨 Ollama messages prepared:", ollamaMessages.length)
+
+    const response = await fetch(`${ollamaUrl}/api/chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: ollamaModel,
+        messages: ollamaMessages,
+        stream: true,
+      }),
+    })
+
+    if (!response.ok) {
+      console.error("❌ Ollama API error:", response.status, response.statusText)
+      return NextResponse.json({ error: "Ollama API error" }, { status: response.status })
+    }
+
+    console.log("✅ Ollama response received, streaming...")
+
+    // For thinking models, we need special handling
+    if (isThinkingModel) {
+      console.log("🧠 Using thinking-aware stream processing for Ollama")
+
+      // Initialize stream protection for Ollama thinking models
+      const streamProtection = new StreamProtection({
+        maxRepetitions: 10,
+        repetitionWindowSize: 50,
+        maxResponseLength: 40000,
+        timeoutMs: 180000,
+        maxSimilarChunks: 20,
+        minRepetitionLength: 15,
+      })
+
+      // Create a readable stream from the Ollama response with thinking handling AND protection
+      const stream = new ReadableStream({
+        async start(controller) {
+          const reader = response.body?.getReader()
+          if (!reader) {
+            controller.close()
+            return
+          }
+
+          let isClosed = false
+          let insideThinking = false
+          let fullResponse = ""
+          let reasoning = null
+          let cleanedText = ""
+
+          const safeEnqueue = (chunk: Uint8Array) => {
+            if (!isClosed) {
+              try {
+                controller.enqueue(chunk)
+              } catch (error) {
+                console.warn("⚠️ Controller already closed, ignoring chunk")
+                isClosed = true
+              }
+            }
+          }
+
+          const safeClose = () => {
+            if (!isClosed) {
+              try {
+                controller.close()
+                isClosed = true
+              } catch (error) {
+                console.warn("⚠️ Controller already closed")
+              }
+            }
+          }
+
+          try {
+            while (true) {
+              const { done, value } = await reader.read()
+              if (done) break
+
+              // Parse the Ollama response chunks
+              const chunk = new TextDecoder().decode(value)
+              const lines = chunk.split("\n").filter((line) => line.trim())
+
+              for (const line of lines) {
+                if (isClosed) break
+
+                try {
+                  const data = JSON.parse(line)
+                  if (data.message?.content) {
+                    const content = data.message.content
+                    fullResponse += content
+
+                    // For thinking models, we need to handle <think> tags
+                    if (!insideThinking) {
+                      // Check if this token starts a thinking section
+                      if (content.includes("<think>")) {
+                        const parts = content.split("<think>")
+                        const beforeThink = parts[0]
+                        
+                        // Send content before <think> tag
+                        if (beforeThink) {
+                          const protectionResult = streamProtection.analyzeChunk(beforeThink)
+                          if (!protectionResult.allowed) {
+                            console.warn("🛡️ Ollama stream protection triggered:", protectionResult.reason)
+                            const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
+                            const encodedError = `0:${JSON.stringify(errorMsg)}\n`
+                            safeEnqueue(new TextEncoder().encode(encodedError))
+                            safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
+                            safeClose()
+                            return
+                          }
+                          const streamChunk = `0:${JSON.stringify(beforeThink)}\n`
+                          safeEnqueue(new TextEncoder().encode(streamChunk))
+                        }
+                        
+                        // Enter thinking mode
+                        insideThinking = true
+                        
+                        // Handle any thinking content in this same token
+                        if (parts.length > 1) {
+                          const thinkingPart = parts.slice(1).join("<think>")
+                          if (thinkingPart.includes("</think>")) {
+                            const thinkParts = thinkingPart.split("</think>")
+                            const thinkContent = thinkParts[0]
+                            if (!reasoning) reasoning = thinkContent
+                            else reasoning += thinkContent
+                            
+                            // Exit thinking mode
+                            insideThinking = false
+                            
+                            // Send any content after </think>
+                            if (thinkParts.length > 1) {
+                              const afterThink = thinkParts.slice(1).join("</think>")
+                              if (afterThink) {
+                                const protectionResult = streamProtection.analyzeChunk(afterThink)
+                                if (!protectionResult.allowed) {
+                                  console.warn("🛡️ Ollama stream protection triggered:", protectionResult.reason)
+                                  const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
+                                  const encodedError = `0:${JSON.stringify(errorMsg)}\n`
+                                  safeEnqueue(new TextEncoder().encode(encodedError))
+                                  safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
+                                  safeClose()
+                                  return
+                                }
+                                const streamChunk = `0:${JSON.stringify(afterThink)}\n`
+                                safeEnqueue(new TextEncoder().encode(streamChunk))
+                              }
+                            }
+                          } else {
+                            // Still inside thinking, add to reasoning
+                            if (!reasoning) reasoning = thinkingPart
+                            else reasoning += thinkingPart
+                          }
+                        }
+                      } else {
+                        // Normal content outside thinking - send it directly
+                        const protectionResult = streamProtection.analyzeChunk(content)
+                        if (!protectionResult.allowed) {
+                          console.warn("🛡️ Ollama stream protection triggered:", protectionResult.reason)
+                          const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
+                          const encodedError = `0:${JSON.stringify(errorMsg)}\n`
+                          safeEnqueue(new TextEncoder().encode(encodedError))
+                          safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
+                          safeClose()
+                          return
+                        }
+                        const streamChunk = `0:${JSON.stringify(content)}\n`
+                        safeEnqueue(new TextEncoder().encode(streamChunk))
+                      }
+                    } else {
+                      // We're inside thinking - check for end tag
+                      if (content.includes("</think>")) {
+                        const parts = content.split("</think>")
+                        const thinkContent = parts[0]
+                        if (!reasoning) reasoning = thinkContent
+                        else reasoning += thinkContent
+                        
+                        // Exit thinking mode
+                        insideThinking = false
+                        
+                        // Send any content after </think>
+                        if (parts.length > 1) {
+                          const afterThink = parts.slice(1).join("</think>")
+                          if (afterThink) {
+                            const protectionResult = streamProtection.analyzeChunk(afterThink)
+                            if (!protectionResult.allowed) {
+                              console.warn("🛡️ Ollama stream protection triggered:", protectionResult.reason)
+                              const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
+                              const encodedError = `0:${JSON.stringify(errorMsg)}\n`
+                              safeEnqueue(new TextEncoder().encode(encodedError))
+                              safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
+                              safeClose()
+                              return
+                            }
+                            const streamChunk = `0:${JSON.stringify(afterThink)}\n`
+                            safeEnqueue(new TextEncoder().encode(streamChunk))
+                          }
+                        }
+                      } else {
+                        // Still inside thinking, add to reasoning
+                        if (!reasoning) reasoning = content
+                        else reasoning += content
+                      }
+                    }
+                  }
+
+                  if (data.done) {
+                    safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
+
+                    // Save the message with reasoning
+                    if (threadId && user) {
+                      // Clean the full response by removing thinking tags
+                      cleanedText = fullResponse.replace(/<think>[\s\S]*?<\/think>/g, "").trim()
+
+                      await handleMessageSave(
+                        threadId,
+                        aiMessageId,
+                        user.id,
+                        cleanedText,
+                        null, // sources
+                        null, // providerMetadata
+                        modelConfig,
+                        "", // Ollama doesn't use API keys
+                        reasoning,
+                      )
+                    }
+                    // In the thinking model section, after saving the message, add:
+                    if (threadId && user && cleanedText && cleanedText.trim().length > 0) {
+                      await createArtifactsFromContent(cleanedText, threadId, aiMessageId, user.id)
+                    }
+
+                    safeClose()
+                    return
+                  }
+                } catch (parseError) {
+                  console.warn("⚠️ Failed to parse Ollama chunk:", parseError)
+                }
+              }
+            }
+          } catch (error) {
+            console.error("❌ Error reading Ollama stream:", error)
+            if (!isClosed) {
+              try {
+                controller.error(error)
+              } catch (controllerError) {
+                console.warn("⚠️ Failed to signal error to controller")
+              }
+            }
+          } finally {
+            safeClose()
+          }
+        },
+      })
+
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+        },
+      })
+    } else {
+      // Regular non-thinking Ollama model
+      console.log("🦙 Using standard stream processing for Ollama")
+
+      // Initialize stream protection for regular Ollama models
+      const streamProtection = new StreamProtection({
+        maxRepetitions: 5,
+        repetitionWindowSize: 80,
+        maxResponseLength: 50000,
+        timeoutMs: 120000, // 2 minutes for regular models
+        maxSimilarChunks: 8,
+      })
+
+      // Create a readable stream from the Ollama response with protection
+      const stream = new ReadableStream({
+        async start(controller) {
+          const reader = response.body?.getReader()
+          if (!reader) {
+            controller.close()
+            return
+          }
+
+          let isClosed = false
+          let fullResponse = "" // Accumulate the full response for saving
+
+          const safeEnqueue = (chunk: Uint8Array) => {
+            if (!isClosed) {
+              try {
+                controller.enqueue(chunk)
+              } catch (error) {
+                console.warn("⚠️ Controller already closed, ignoring chunk")
+                isClosed = true
+              }
+            }
+          }
+
+          const safeClose = () => {
+            if (!isClosed) {
+              try {
+                controller.close()
+                isClosed = true
+              } catch (error) {
+                console.warn("⚠️ Controller already closed")
+              }
+            }
+          }
+
+          try {
+            while (true) {
+              const { done, value } = await reader.read()
+              if (done) break
+
+              // Parse the Ollama response chunks
+              const chunk = new TextDecoder().decode(value)
+              const lines = chunk.split("\n").filter((line) => line.trim())
+
+              for (const line of lines) {
+                if (isClosed) break
+
+                try {
+                  const data = JSON.parse(line)
+                  if (data.message?.content) {
+                    const content = data.message.content
+
+                    // Accumulate the full response
+                    fullResponse += content
+
+                    // Check with stream protection
+                    const protectionResult = streamProtection.analyzeChunk(content)
+
+                    if (!protectionResult.allowed) {
+                      console.warn("🛡️ Ollama stream protection triggered:", protectionResult.reason)
+                      console.log("📊 Ollama stream stats:", streamProtection.getStats())
+
+                      // Send error message to client
+                      const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
+                      const encodedError = `0:${JSON.stringify(errorMsg)}\n`
+                      safeEnqueue(new TextEncoder().encode(encodedError))
+
+                      // Terminate the stream
+                      safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
+                      safeClose()
+                      return
+                    }
+
+                    // Format as AI SDK compatible stream
+                    const streamChunk = `0:${JSON.stringify(content)}\n`
+                    safeEnqueue(new TextEncoder().encode(streamChunk))
+                  }
+                  if (data.done) {
+                    safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
+
+                    // Save the message for non-thinking Ollama models (similar to thinking models)
+                    if (threadId && user && fullResponse && fullResponse.trim().length > 0) {
+                      await handleMessageSave(
+                        threadId,
+                        aiMessageId,
+                        user.id,
+                        fullResponse.trim(),
+                        null, // sources
+                        null, // providerMetadata
+                        modelConfig,
+                        "", // Ollama doesn't use API keys
+                        null, // no reasoning for non-thinking models
+                      )
+                    }
+
+                    safeClose()
+                    return
+                  }
+                } catch (parseError) {
+                  console.warn("⚠️ Failed to parse Ollama chunk:", parseError)
+                }
+              }
+            }
+          } catch (error) {
+            console.error("❌ Error reading Ollama stream:", error)
+            if (!isClosed) {
+              try {
+                controller.error(error)
+              } catch (controllerError) {
+                console.warn("⚠️ Failed to signal error to controller")
+              }
+            }
+          } finally {
+            safeClose()
+          }
+        },
+      })
+
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+        },
+      })
+    }
+  } catch (error) {
+    console.error("💥 Ollama handler error:", error)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+  }
+}
+
 // Helper function to get system prompt
 function getSystemPrompt(
   webSearchEnabled: boolean,
@@ -1743,456 +2270,5 @@ async function handleMessageSave(
     }
   } catch (error) {
     console.error("💥 Error saving AI message:", error)
-  }
-}
-
-// Ollama handler function
-async function handleOllamaChat(req: NextRequest, messages: any[], model: string, headersList: Headers, data?: any) {
-  try {
-    console.log("🦙 Handling Ollama chat request")
-
-    // Get authorization header and authenticate user
-    const authHeader = headersList.get("authorization")
-    let user = null
-    let userEmail = ""
-
-    if (authHeader?.startsWith("Bearer ")) {
-      const token = authHeader.substring(7)
-      const authResult = await supabaseServer.auth.getUser(token)
-      if (!authResult.error && authResult.data.user) {
-        user = authResult.data.user
-        userEmail = user.email || ""
-        console.log("✅ Ollama user authenticated:", user.id)
-      }
-    }
-
-    const ollamaModel = model.replace("ollama:", "")
-    console.log("🦙 Using Ollama model:", ollamaModel)
-
-    // Get the Ollama base URL from headers (sent by frontend) or fallback to environment/default
-    const ollamaUrl = headersList.get('x-ollama-base-url') || 
-                      headersList.get('X-Ollama-Base-URL') || 
-                      process.env.OLLAMA_URL || 
-                      "http://localhost:11434"
-    console.log("🦙 Ollama URL:", ollamaUrl)
-    console.log("🦙 Available headers:", {
-      'x-ollama-base-url': headersList.get('x-ollama-base-url'),
-      'X-Ollama-Base-URL': headersList.get('X-Ollama-Base-URL'),
-      'authorization': headersList.get('authorization') ? '***' : 'missing'
-    })
-
-    // Get model config to check if this is a thinking model
-    const modelConfig = getModelConfig(model as AIModel)
-    const isThinkingModel = modelConfig.supportsThinking
-    console.log("🧠 Ollama model supports thinking:", isThinkingModel)
-
-    const threadId = req.nextUrl.searchParams.get("threadId") as string
-    const aiMessageId = uuidv4()
-
-    // Get thread persona if one is assigned and user is authenticated
-    let threadPersona = null
-    if (threadId && user) {
-      try {
-        console.log("🎭 Looking up persona for Ollama thread:", threadId)
-
-        const { data: threadPersonaData, error: personaError } = await supabaseServer
-          .from("thread_personas")
-          .select(`
-            *,
-            personas (
-              id,
-              name,
-              description,
-              system_prompt,
-              avatar_emoji,
-              color,
-              is_default,
-              is_public
-            )
-          `)
-          .eq("thread_id", threadId)
-          .eq("user_id", user.id)
-          .single()
-
-        if (!personaError && threadPersonaData?.personas) {
-          threadPersona = threadPersonaData.personas
-          console.log("✅ Found persona for Ollama thread:", threadPersona.name)
-        } else {
-          console.log("ℹ️ No persona assigned to Ollama thread")
-        }
-      } catch (error) {
-        console.log("⚠️ Error looking up persona for Ollama:", error)
-      }
-    }
-
-    // Extract user preferences from request data
-    const userPreferences = data?.userPreferences || null
-    const reasoningEffort = data?.reasoningEffort || "medium" // Default to medium if not specified
-    console.log("👤 Ollama user preferences:", userPreferences ? "present" : "not found")
-    console.log("🧠 Reasoning effort:", reasoningEffort)
-    if (userPreferences) {
-      console.log("👤 Ollama user preferences details:", {
-        preferredName: userPreferences.preferredName,
-        occupation: userPreferences.occupation,
-        assistantTraits: userPreferences.assistantTraits,
-        customInstructions: userPreferences.customInstructions,
-      })
-    }
-
-    // Create system prompt for Ollama (will be injected as system message)
-    const systemPrompt = getSystemPrompt(false, false, userEmail, threadPersona, userPreferences) // Ollama doesn't support web search in this context
-    console.log("📝 Ollama generated system prompt preview:", systemPrompt.substring(0, 200) + "...")
-    console.log("🤖 Full Ollama system prompt being sent:", systemPrompt)
-
-    // Prepare messages for Ollama - inject system prompt as system message
-    const ollamaMessages = [
-      {
-        role: "system",
-        content: systemPrompt,
-      },
-      ...messages,
-    ]
-
-    console.log("📨 Ollama messages prepared:", ollamaMessages.length)
-
-    const response = await fetch(`${ollamaUrl}/api/chat`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: ollamaModel,
-        messages: ollamaMessages,
-        stream: true,
-      }),
-    })
-
-    if (!response.ok) {
-      console.error("❌ Ollama API error:", response.status, response.statusText)
-      return NextResponse.json({ error: "Ollama API error" }, { status: response.status })
-    }
-
-    console.log("✅ Ollama response received, streaming...")
-
-    // For thinking models, we need special handling
-    if (isThinkingModel) {
-      console.log("🧠 Using thinking-aware stream processing for Ollama")
-
-      // Initialize stream protection for Ollama thinking models
-      const streamProtection = new StreamProtection({
-        maxRepetitions: 3, // Reduced from 4 to catch repetitions earlier
-        repetitionWindowSize: 50, // Reduced from 100 to detect smaller repetition patterns
-        maxResponseLength: 40000,
-        timeoutMs: 180000, // 3 minutes for thinking models
-        maxSimilarChunks: 4, // Reduced from 6 to be more aggressive about similar content
-        minRepetitionLength: 5, // Add minimum length for repetition detection
-      })
-
-      // Create a readable stream from the Ollama response with thinking handling AND protection
-      const stream = new ReadableStream({
-        async start(controller) {
-          const reader = response.body?.getReader()
-          if (!reader) {
-            controller.close()
-            return
-          }
-
-          let isClosed = false
-          let buffer = ""
-          let insideThinking = false
-          let fullResponse = ""
-          let reasoning = null
-          let cleanedText = "" // Declare cleanedText here
-
-          const safeEnqueue = (chunk: Uint8Array) => {
-            if (!isClosed) {
-              try {
-                controller.enqueue(chunk)
-              } catch (error) {
-                console.warn("⚠️ Controller already closed, ignoring chunk")
-                isClosed = true
-              }
-            }
-          }
-
-          const safeClose = () => {
-            if (!isClosed) {
-              try {
-                controller.close()
-                isClosed = true
-              } catch (error) {
-                console.warn("⚠️ Controller already closed")
-              }
-            }
-          }
-
-          try {
-            while (true) {
-              const { done, value } = await reader.read()
-              if (done) break
-
-              // Parse the Ollama response chunks
-              const chunk = new TextDecoder().decode(value)
-              const lines = chunk.split("\n").filter((line) => line.trim())
-
-              for (const line of lines) {
-                if (isClosed) break
-
-                try {
-                  const data = JSON.parse(line)
-                  if (data.message?.content) {
-                    const content = data.message.content
-                    fullResponse += content
-
-                    // Process for thinking tags
-                    buffer += content
-                    let processedContent = ""
-
-                    // Simple state machine to extract thinking content
-                    let i = 0
-                    while (i < buffer.length) {
-                      if (!insideThinking) {
-                        // Look for start of thinking
-                        const thinkStart = buffer.indexOf("<Thinking>", i)
-                        if (thinkStart !== -1) {
-                          // Add content before thinking
-                          processedContent += buffer.substring(i, thinkStart)
-                          // Also include the thinking tag in the output for real-time processing
-                          processedContent += "<Thinking>"
-                          insideThinking = true
-                          i = thinkStart + 10 // Skip "<Thinking>"
-                        } else {
-                          // No thinking tag found, add rest of buffer
-                          processedContent += buffer.substring(i)
-                          break
-                        }
-                      } else {
-                        // Look for end of thinking
-                        const thinkEnd = buffer.indexOf("</Thinking>", i)
-                        if (thinkEnd !== -1) {
-                          // Capture thinking content
-                          const thinkingContent = buffer.substring(i, thinkEnd)
-                          if (!reasoning) reasoning = thinkingContent
-                          else reasoning += thinkingContent
-
-                          // Skip thinking content
-                          insideThinking = false
-                          i = thinkEnd + 11 // Skip "</Thinking>"
-                        } else {
-                          // Still inside thinking, skip rest of buffer
-                          break
-                        }
-                      }
-                    }
-
-                    // Update buffer to keep unprocessed content
-                    if (i < buffer.length) {
-                      buffer = buffer.substring(i)
-                    } else {
-                      buffer = ""
-                    }
-
-                    // Only send non-thinking content - but check protection first
-                    if (processedContent) {
-                      // Check with stream protection
-                      const protectionResult = streamProtection.analyzeChunk(processedContent)
-
-                      if (!protectionResult.allowed) {
-                        console.warn("🛡️ Ollama stream protection triggered:", protectionResult.reason)
-                        console.log("📊 Ollama stream stats:", streamProtection.getStats())
-
-                        // Send error message to client
-                        const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
-                        const encodedError = `0:"${errorMsg.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
-                        safeEnqueue(new TextEncoder().encode(encodedError))
-
-                        // Terminate the stream
-                        safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
-                        safeClose()
-                        return
-                      }
-
-                      // Format as AI SDK compatible stream
-                      const streamChunk = `0:"${processedContent.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
-                      safeEnqueue(new TextEncoder().encode(streamChunk))
-                    }
-                  }
-
-                  if (data.done) {
-                    safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
-
-                    // Save the message with reasoning
-                    if (threadId && user) {
-                      // Clean the full response by removing thinking tags
-                      cleanedText = fullResponse.replace(/<Thinking>[\s\S]*?<\/think>/g, "").trim()
-
-                      await handleMessageSave(
-                        threadId,
-                        aiMessageId,
-                        user.id,
-                        cleanedText,
-                        null, // sources
-                        null, // providerMetadata
-                        modelConfig,
-                        "", // Ollama doesn't use API keys
-                        reasoning,
-                      )
-                    }
-                    // In the thinking model section, after saving the message, add:
-                    if (threadId && user && cleanedText && cleanedText.trim().length > 0) {
-                      await createArtifactsFromContent(cleanedText, threadId, aiMessageId, user.id)
-                    }
-
-                    safeClose()
-                    return
-                  }
-                } catch (parseError) {
-                  console.warn("⚠️ Failed to parse Ollama chunk:", parseError)
-                }
-              }
-            }
-          } catch (error) {
-            console.error("❌ Error reading Ollama stream:", error)
-            if (!isClosed) {
-              try {
-                controller.error(error)
-              } catch (controllerError) {
-                console.warn("⚠️ Failed to signal error to controller")
-              }
-            }
-          } finally {
-            safeClose()
-          }
-        },
-      })
-
-      return new Response(stream, {
-        headers: {
-          "Content-Type": "text/plain; charset=utf-8",
-          "Cache-Control": "no-cache",
-          "Connection": "keep-alive",
-        },
-      })
-    } else {
-      // Regular non-thinking Ollama model
-      console.log("🦙 Using standard stream processing for Ollama")
-
-      // Initialize stream protection for regular Ollama models
-      const streamProtection = new StreamProtection({
-        maxRepetitions: 5,
-        repetitionWindowSize: 80,
-        maxResponseLength: 50000,
-        timeoutMs: 120000, // 2 minutes for regular models
-        maxSimilarChunks: 8,
-      })
-
-      // Create a readable stream from the Ollama response with protection
-      const stream = new ReadableStream({
-        async start(controller) {
-          const reader = response.body?.getReader()
-          if (!reader) {
-            controller.close()
-            return
-          }
-
-          let isClosed = false
-
-          const safeEnqueue = (chunk: Uint8Array) => {
-            if (!isClosed) {
-              try {
-                controller.enqueue(chunk)
-              } catch (error) {
-                console.warn("⚠️ Controller already closed, ignoring chunk")
-                isClosed = true
-              }
-            }
-          }
-
-          const safeClose = () => {
-            if (!isClosed) {
-              try {
-                controller.close()
-                isClosed = true
-              } catch (error) {
-                console.warn("⚠️ Controller already closed")
-              }
-            }
-          }
-
-          try {
-            while (true) {
-              const { done, value } = await reader.read()
-              if (done) break
-
-              // Parse the Ollama response chunks
-              const chunk = new TextDecoder().decode(value)
-              const lines = chunk.split("\n").filter((line) => line.trim())
-
-              for (const line of lines) {
-                if (isClosed) break
-
-                try {
-                  const data = JSON.parse(line)
-                  if (data.message?.content) {
-                    const content = data.message.content
-
-                    // Check with stream protection
-                    const protectionResult = streamProtection.analyzeChunk(content)
-
-                    if (!protectionResult.allowed) {
-                      console.warn("🛡️ Ollama stream protection triggered:", protectionResult.reason)
-                      console.log("📊 Ollama stream stats:", streamProtection.getStats())
-
-                      // Send error message to client
-                      const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
-                      const encodedError = `0:"${errorMsg.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
-                      safeEnqueue(new TextEncoder().encode(encodedError))
-
-                      // Terminate the stream
-                      safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
-                      safeClose()
-                      return
-                    }
-
-                    // Format as AI SDK compatible stream
-                    const streamChunk = `0:"${content.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
-                    safeEnqueue(new TextEncoder().encode(streamChunk))
-                  }
-                  if (data.done) {
-                    safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
-                    safeClose()
-                    return
-                  }
-                } catch (parseError) {
-                  console.warn("⚠️ Failed to parse Ollama chunk:", parseError)
-                }
-              }
-            }
-          } catch (error) {
-            console.error("❌ Error reading Ollama stream:", error)
-            if (!isClosed) {
-              try {
-                controller.error(error)
-              } catch (controllerError) {
-                console.warn("⚠️ Failed to signal error to controller")
-              }
-            }
-          } finally {
-            safeClose()
-          }
-        },
-      })
-
-      return new Response(stream, {
-        headers: {
-          "Content-Type": "text/plain; charset=utf-8",
-          "Cache-Control": "no-cache",
-          "Connection": "keep-alive",
-        },
-      })
-    }
-  } catch (error) {
-    console.error("💥 Ollama handler error:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

@@ -85,6 +85,12 @@ export async function POST(req: Request) {
       }
     }
 
+    // Fallback to server environment variable if no user key found
+    if (!googleApiKey && process.env.GOOGLE_API_KEY) {
+      googleApiKey = process.env.GOOGLE_API_KEY
+      console.log("✅ Using server fallback Google API key")
+    }
+
           if (!googleApiKey) {
         // Check if the user is using Ollama - if so, provide a fallback title
       
@@ -115,13 +121,48 @@ export async function POST(req: Request) {
         return NextResponse.json({ title: fallbackTitle, isTitle, messageId, threadId })
       }
       
-      // For non-title requests, just return success without doing anything
+      // For non-title requests (message summaries), create fallback summary
+      if (messageId && prompt) {
+        const fallbackSummary = prompt.length > 50 
+          ? prompt.substring(0, 47) + "..." 
+          : prompt
+        
+        console.log("📝 Using fallback summary for message:", fallbackSummary)
+        
+        // Create message summary with fallback
+        try {
+          const { error: summaryError } = await supabaseServer.from("message_summaries").insert({
+            thread_id: threadId,
+            message_id: messageId,
+            user_id: user.id,
+            content: fallbackSummary,
+          })
+
+          if (summaryError) {
+            console.error("❌ Failed to create fallback message summary:", summaryError)
+          } else {
+            console.log("✅ Fallback message summary created successfully")
+          }
+        } catch (summaryError) {
+          console.error("❌ Exception creating fallback message summary:", summaryError)
+        }
+
+        return NextResponse.json({ 
+          title: fallbackSummary, 
+          isTitle: false, 
+          messageId, 
+          threadId,
+          note: "Using fallback summary generation" 
+        })
+      }
+      
+      // For requests without messageId or prompt, just return success
       return NextResponse.json({ 
         title: "Chat", 
         isTitle: false, 
         messageId, 
         threadId,
-        note: "Title generation requires Google API key. Using fallback." 
+        note: "Summary generation requires Google API key. Using fallback." 
       })
     }
 
@@ -135,9 +176,31 @@ export async function POST(req: Request) {
       .eq("user_id", user.id)
       .single()
 
-    if (threadError || !thread) {
+    if (threadError) {
       console.error("❌ Thread verification failed:", threadError)
-      return NextResponse.json({ error: "Thread not found or access denied" }, { status: 404 })
+      
+      // If thread doesn't exist, try to create it for Ollama users
+      if (threadError.code === "PGRST116") {
+        console.log("🔗 Thread doesn't exist, creating it for completion...")
+        try {
+          const { error: createError } = await supabaseServer.from("threads").insert({
+            id: threadId,
+            title: "New Chat",
+            user_id: user.id,
+          })
+
+          if (createError) {
+            console.error("❌ Failed to create thread for completion:", createError)
+            return NextResponse.json({ error: "Thread not found or access denied" }, { status: 404 })
+          }
+          console.log("✅ Thread created successfully for completion")
+        } catch (createError) {
+          console.error("❌ Exception creating thread for completion:", createError)
+          return NextResponse.json({ error: "Thread not found or access denied" }, { status: 404 })
+        }
+      } else {
+        return NextResponse.json({ error: "Thread not found or access denied" }, { status: 404 })
+      }
     }
 
     console.log("✅ Thread verified for user")
@@ -231,6 +294,24 @@ export async function POST(req: Request) {
             if (updateError) {
               console.error("❌ Failed to update thread title:", updateError)
               return NextResponse.json({ error: "Failed to update thread title" }, { status: 500 })
+            }
+          } else if (messageId) {
+            // Create message summary with fallback
+            try {
+              const { error: summaryError } = await supabaseServer.from("message_summaries").insert({
+                thread_id: threadId,
+                message_id: messageId,
+                user_id: user.id,
+                content: fallbackTitle,
+              })
+
+              if (summaryError) {
+                console.error("❌ Failed to create fallback message summary:", summaryError)
+              } else {
+                console.log("✅ Fallback message summary created successfully")
+              }
+            } catch (summaryError) {
+              console.error("❌ Exception creating fallback message summary:", summaryError)
             }
           }
           

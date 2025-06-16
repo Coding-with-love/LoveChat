@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useRef } from "react"
+import { useState, useCallback, useRef, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
@@ -91,6 +91,28 @@ export default function HistorySyncSettings() {
     messagesCount: number
   } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Debug effect to check ref initialization
+  useEffect(() => {
+    console.log("🔍 Component mounted, fileInputRef.current:", fileInputRef.current)
+    
+    // Add a slight delay to check after DOM is fully rendered
+    const timer = setTimeout(() => {
+      console.log("🔍 After timeout, fileInputRef.current:", fileInputRef.current)
+      if (fileInputRef.current) {
+        console.log("✅ File input element found:", {
+          id: fileInputRef.current.id,
+          type: fileInputRef.current.type,
+          accept: fileInputRef.current.accept,
+          disabled: fileInputRef.current.disabled
+        })
+      } else {
+        console.error("❌ File input element not found!")
+      }
+    }, 100)
+    
+    return () => clearTimeout(timer)
+  }, [])
 
   const getAllArtifacts = async () => {
     try {
@@ -449,10 +471,19 @@ export default function HistorySyncSettings() {
   }
 
   const handleImportHistory = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    console.log("🔍 handleImportHistory triggered")
+    console.log("🔍 handleImportHistory triggered from:", event.type || "unknown event")
+    console.log("📋 Event:", event)
     console.log("📋 Event target:", event.target)
+    console.log("📋 Event target value:", event.target.value)
     console.log("📁 Files:", event.target.files)
     console.log("📁 Files length:", event.target.files?.length)
+    console.log("📁 Files array:", Array.from(event.target.files || []))
+    
+    // Add stack trace to see where this is called from
+    console.log("📍 Call stack:", new Error().stack)
+    
+    // Show immediate feedback that file selection was detected
+    toast.info("File selected, processing...")
     
     const file = event.target.files?.[0]
     if (!file) {
@@ -461,18 +492,36 @@ export default function HistorySyncSettings() {
       return
     }
     
-    console.log("📁 File selected:", file.name, file.size, file.type)
+    console.log("📁 File selected:", {
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      lastModified: new Date(file.lastModified).toISOString()
+    })
+    
+    // Show file details in UI
+    toast.info(`Processing: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`)
     
     // Validate file type
     if (!file.type.includes('json') && !file.name.endsWith('.json')) {
       console.log("❌ Invalid file type:", file.type)
-      toast.error("Please select a valid JSON file")
+      toast.error(`Invalid file type: ${file.type}. Please select a valid JSON file`)
       return
     }
     
-    await processImportFile(file)
-    // Reset the file input
-    event.target.value = ""
+    console.log("✅ File validation passed, starting import process...")
+    
+    try {
+      await processImportFile(file)
+      console.log("✅ Import process completed successfully")
+    } catch (error) {
+      console.error("❌ Import process failed:", error)
+      toast.error(`Import failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      // Reset the file input
+      event.target.value = ""
+      console.log("🔄 File input reset")
+    }
   }
 
   const handleDeleteAllHistory = async () => {
@@ -521,12 +570,50 @@ export default function HistorySyncSettings() {
     }
   }, [])
 
-  const handleFileButtonClick = () => {
+  const handleFileButtonClick = (e: React.MouseEvent) => {
+    // Prevent event propagation to avoid conflicts with drag/drop handlers
+    e.preventDefault()
+    e.stopPropagation()
+    
     console.log("🖱️ Browse Files button clicked")
     console.log("📋 File input ref:", fileInputRef.current)
+    console.log("📋 File input ref exists:", !!fileInputRef.current)
+    
     if (fileInputRef.current) {
       console.log("✅ File input exists, triggering click")
-      fileInputRef.current.click()
+      
+      // Add event listener to catch the change event before clicking
+      const handleFileChange = (event: Event) => {
+        console.log("🎯 Direct file change event caught!")
+        const target = event.target as HTMLInputElement
+        console.log("📁 Files from direct event:", target.files)
+        
+        if (target.files && target.files.length > 0) {
+          console.log("📁 File selected via direct event, processing...")
+          const syntheticEvent = {
+            target: target,
+            currentTarget: target
+          } as React.ChangeEvent<HTMLInputElement>
+          
+          handleImportHistory(syntheticEvent)
+        }
+        
+        // Remove the listener after handling
+        fileInputRef.current?.removeEventListener('change', handleFileChange)
+      }
+      
+      // Add temporary event listener
+      fileInputRef.current.addEventListener('change', handleFileChange)
+      
+      try {
+        fileInputRef.current.click()
+        console.log("✅ File input click triggered successfully")
+      } catch (error) {
+        console.error("❌ Error triggering file input click:", error)
+        toast.error("Failed to open file dialog")
+        // Clean up the event listener if click failed
+        fileInputRef.current?.removeEventListener('change', handleFileChange)
+      }
     } else {
       console.error("❌ File input ref is null")
       toast.error("File input not available")
@@ -616,6 +703,17 @@ export default function HistorySyncSettings() {
           <div className="space-y-4">
             <Label htmlFor="import-file">Import JSON File</Label>
             
+            {/* Hidden file input - moved outside drag zone to avoid conflicts */}
+            <input
+              id="import-file"
+              ref={fileInputRef}
+              type="file"
+              accept=".json"
+              onChange={handleImportHistory}
+              disabled={isImporting}
+              className="hidden"
+            />
+            
             {/* Drag and Drop Zone */}
             <div
               className={`relative border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
@@ -640,21 +738,11 @@ export default function HistorySyncSettings() {
                   onClick={handleFileButtonClick}
                   disabled={isImporting}
                   className="mt-2"
+                  onMouseDown={(e) => e.stopPropagation()}
                 >
                   Browse Files
                 </Button>
               </div>
-              
-              {/* Hidden file input */}
-              <input
-                id="import-file"
-                ref={fileInputRef}
-                type="file"
-                accept=".json"
-                onChange={handleImportHistory}
-                disabled={isImporting}
-                className="hidden"
-              />
             </div>
           </div>
 

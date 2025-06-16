@@ -81,6 +81,9 @@ export default function ChatLayout() {
   const titleInputRef = useRef<HTMLInputElement>(null)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const navigate = useNavigate()
+  
+  // Ref to store the sidebar refresh function
+  const sidebarRefreshRef = useRef<() => void>(() => {})
 
   useEffect(() => {
     if (isEditingTitle && titleInputRef.current) {
@@ -179,6 +182,10 @@ export default function ChatLayout() {
       }
 
       toast.success("Chat duplicated successfully")
+      
+      // Refresh the sidebar to show the new thread immediately
+      sidebarRefreshRef.current()
+      
       navigate(`/chat/${newThreadId}`) // Navigate to the new thread
     } catch (error) {
       console.error("Error duplicating chat:", error)
@@ -205,20 +212,15 @@ export default function ChatLayout() {
     if (!id || !thread) return
 
     try {
-      // Toggle the archived status
-      const isCurrentlyArchived = thread.title.includes("(Archived)")
+      // Get the current archived status from the database field, not the title
+      const isCurrentlyArchived = thread.is_archived || false
 
       // Update the database
       await toggleThreadArchived(id, !isCurrentlyArchived)
 
-      // Update the title to reflect archived status
-      const newTitle = isCurrentlyArchived ? thread.title.replace(" (Archived)", "") : `${thread.title} (Archived)`
-
-      const success = await updateTitle(newTitle)
-
-      if (success) {
-        toast.success(isCurrentlyArchived ? "Chat unarchived" : "Chat archived")
-      }
+      toast.success(isCurrentlyArchived ? "Chat unarchived" : "Chat archived")
+      
+      console.log(`✅ Chat ${id} ${!isCurrentlyArchived ? 'archived' : 'unarchived'} from ChatLayout`)
     } catch (error) {
       console.error("Error archiving chat:", error)
       toast.error("Failed to update archive status")
@@ -248,7 +250,11 @@ export default function ChatLayout() {
       await deleteThread(id)
       toast.success("Chat deleted successfully")
       setIsDeleteDialogOpen(false)
-      navigate("/") // Navigate to home after deletion
+      
+      // Refresh the sidebar to remove the deleted thread immediately
+      sidebarRefreshRef.current()
+      
+      navigate("/chat") // Navigate to chat home after deletion
     } catch (error) {
       console.error("Error deleting chat:", error)
       toast.error("Failed to delete chat")
@@ -258,7 +264,7 @@ export default function ChatLayout() {
   return (
     <SidebarProvider>
       <div className="flex flex-1 relative">
-        <ChatSidebar />
+        <ChatSidebar onRefreshData={sidebarRefreshRef} />
         <div className="flex-1 flex flex-col relative pl-2">
           {/* Sticky Header */}
           <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -301,16 +307,18 @@ export default function ChatLayout() {
 
               {/* Right side - Chat controls */}
               <div className="flex items-center gap-2">
-                {/* Search */}
-                <Button
-                  onClick={toggleSearch}
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8"
-                  aria-label="Search in chat"
-                >
-                  <Search className="h-4 w-4" />
-                </Button>
+                {/* Search - only show when there's an active chat */}
+                {id && (
+                  <Button
+                    onClick={toggleSearch}
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    aria-label="Search in chat"
+                  >
+                    <Search className="h-4 w-4" />
+                  </Button>
+                )}
 
                 {/* Export */}
                 {id && (
@@ -336,16 +344,18 @@ export default function ChatLayout() {
                   </DropdownMenu>
                 )}
 
-                {/* Message Navigator */}
-                <Button
-                  onClick={handleToggleNavigator}
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8"
-                  aria-label={isNavigatorVisible ? "Hide message navigator" : "Show message navigator"}
-                >
-                  <MessageSquareMore className="h-4 w-4" />
-                </Button>
+                {/* Message Navigator - only show when there's an active chat */}
+                {id && (
+                  <Button
+                    onClick={handleToggleNavigator}
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    aria-label={isNavigatorVisible ? "Hide message navigator" : "Show message navigator"}
+                  >
+                    <MessageSquareMore className="h-4 w-4" />
+                  </Button>
+                )}
 
                 {/* Pinned Messages */}
                 {id && (

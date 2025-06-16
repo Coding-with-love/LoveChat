@@ -38,6 +38,7 @@ import { Button } from "@/frontend/components/ui/button"
 import { Badge } from "@/frontend/components/ui/badge"
 import { Separator } from "@/frontend/components/ui/separator"
 import { useTabVisibility } from "@/frontend/hooks/useTabVisibility"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/frontend/components/ui/select"
 
 function Settings() {
   const [sharedThreads, setSharedThreads] = useState<any[]>([])
@@ -46,6 +47,7 @@ function Settings() {
   const [editingShare, setEditingShare] = useState<any>(null)
   const [showForceLoadShares, setShowForceLoadShares] = useState(false)
   const [globalLoading, setGlobalLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState("account")
   const { user, signOut } = useAuth()
 
   // Add tab visibility management to refresh state when returning to settings
@@ -487,8 +489,151 @@ function Settings() {
       {/* Content */}
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-5xl mx-auto">
-          <Tabs defaultValue="account" className="space-y-8">
-            <TabsList className="grid w-full grid-cols-8 h-auto p-1.5 bg-gradient-to-r from-muted/50 via-muted/30 to-muted/50 backdrop-blur-xl border border-border/50 shadow-lg">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
+            {/* Mobile Dropdown Selector */}
+            <div className="lg:hidden">
+              <Select value={activeTab} onValueChange={setActiveTab}>
+                <SelectTrigger className="w-full h-12 bg-gradient-to-r from-muted/50 via-muted/30 to-muted/50 backdrop-blur-xl border border-border/50 shadow-lg">
+                  <SelectValue>
+                    <div className="flex items-center gap-3">
+                      {activeTab === "account" && (
+                        <>
+                          <div className="p-2 rounded-lg bg-gradient-to-br from-blue-500/10 to-purple-500/10 border border-blue-500/20">
+                            <User className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                          </div>
+                          <span className="font-medium">Account</span>
+                        </>
+                      )}
+                      {activeTab === "customization" && (
+                        <>
+                          <div className="p-2 rounded-lg bg-gradient-to-br from-green-500/10 to-teal-500/10 border border-green-500/20">
+                            <Sliders className="h-4 w-4 text-green-600 dark:text-green-400" />
+                          </div>
+                          <span className="font-medium">Customization</span>
+                        </>
+                      )}
+                      {activeTab === "history" && (
+                        <>
+                          <div className="p-2 rounded-lg bg-gradient-to-br from-indigo-500/10 to-blue-500/10 border border-indigo-500/20">
+                            <History className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                          </div>
+                          <span className="font-medium">History</span>
+                        </>
+                      )}
+                      {activeTab === "attachments" && (
+                        <>
+                          <div className="p-2 rounded-lg bg-gradient-to-br from-violet-500/10 to-indigo-500/10 border border-violet-500/20">
+                            <Paperclip className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+                          </div>
+                          <span className="font-medium">Attachments</span>
+                        </>
+                      )}
+                      {activeTab === "artifacts" && (
+                        <>
+                          <div className="p-2 rounded-lg bg-gradient-to-br from-emerald-500/10 to-teal-500/10 border border-emerald-500/20">
+                            <Archive className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                          </div>
+                          <span className="font-medium">Artifacts</span>
+                        </>
+                      )}
+                      {activeTab === "api-keys" && (
+                        <>
+                          <div className="p-2 rounded-lg bg-gradient-to-br from-amber-500/10 to-orange-500/10 border border-amber-500/20">
+                            <Key className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                          </div>
+                          <span className="font-medium">API Keys</span>
+                        </>
+                      )}
+                      {activeTab === "models" && (
+                        <>
+                          <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500/10 to-pink-500/10 border border-purple-500/20">
+                            <Bot className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                          </div>
+                          <span className="font-medium">Models</span>
+                        </>
+                      )}
+                      {activeTab === "sharing" && (
+                        <>
+                          <div className="p-2 rounded-lg bg-gradient-to-br from-cyan-500/10 to-blue-500/10 border border-cyan-500/20">
+                            <Share2 className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
+                          </div>
+                          <span className="font-medium">Sharing</span>
+                        </>
+                      )}
+                    </div>
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent className="w-full">
+                  <SelectItem value="account">
+                    <div className="flex items-center gap-3">
+                      <div className="p-1.5 rounded-md bg-gradient-to-br from-blue-500/10 to-purple-500/10 border border-blue-500/20">
+                        <User className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                      </div>
+                      <span className="font-medium">Account</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="customization">
+                    <div className="flex items-center gap-3">
+                      <div className="p-1.5 rounded-md bg-gradient-to-br from-green-500/10 to-teal-500/10 border border-green-500/20">
+                        <Sliders className="h-4 w-4 text-green-600 dark:text-green-400" />
+                      </div>
+                      <span className="font-medium">Customization</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="history">
+                    <div className="flex items-center gap-3">
+                      <div className="p-1.5 rounded-md bg-gradient-to-br from-indigo-500/10 to-blue-500/10 border border-indigo-500/20">
+                        <History className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                      </div>
+                      <span className="font-medium">History</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="attachments">
+                    <div className="flex items-center gap-3">
+                      <div className="p-1.5 rounded-md bg-gradient-to-br from-violet-500/10 to-indigo-500/10 border border-violet-500/20">
+                        <Paperclip className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+                      </div>
+                      <span className="font-medium">Attachments</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="artifacts">
+                    <div className="flex items-center gap-3">
+                      <div className="p-1.5 rounded-md bg-gradient-to-br from-emerald-500/10 to-teal-500/10 border border-emerald-500/20">
+                        <Archive className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                      </div>
+                      <span className="font-medium">Artifacts</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="api-keys">
+                    <div className="flex items-center gap-3">
+                      <div className="p-1.5 rounded-md bg-gradient-to-br from-amber-500/10 to-orange-500/10 border border-amber-500/20">
+                        <Key className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                      </div>
+                      <span className="font-medium">API Keys</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="models">
+                    <div className="flex items-center gap-3">
+                      <div className="p-1.5 rounded-md bg-gradient-to-br from-purple-500/10 to-pink-500/10 border border-purple-500/20">
+                        <Bot className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                      </div>
+                      <span className="font-medium">Models</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="sharing">
+                    <div className="flex items-center gap-3">
+                      <div className="p-1.5 rounded-md bg-gradient-to-br from-cyan-500/10 to-blue-500/10 border border-cyan-500/20">
+                        <Share2 className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
+                      </div>
+                      <span className="font-medium">Sharing</span>
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Desktop Tab List */}
+            <TabsList className="hidden lg:grid w-full grid-cols-8 h-auto p-1.5 bg-gradient-to-r from-muted/50 via-muted/30 to-muted/50 backdrop-blur-xl border border-border/50 shadow-lg">
               <TabsTrigger
                 value="account"
                 className="flex flex-col gap-2 py-4 px-3 data-[state=active]:bg-gradient-to-br data-[state=active]:from-blue-500/10 data-[state=active]:to-purple-500/10 data-[state=active]:border data-[state=active]:border-blue-500/20 data-[state=active]:shadow-md rounded-lg transition-all duration-300"
@@ -512,7 +657,7 @@ function Settings() {
               </TabsTrigger>
               <TabsTrigger
                 value="attachments"
-                className="flex flex-col gap-2 py-4 px-3 data-[state=active]:bg-gradient-to-br data-[state=active]:from-violet-500/10 data-[state=active]:to-indigo-500/10 data-[state=active]:border data-[state=active]:border-violet-500/20 data-[state=active]:shadow-md rounded-lg transition-all duration-300"
+                className="flex items-center gap-2 py-4 px-3 data-[state=active]:bg-gradient-to-br data-[state=active]:from-violet-500/10 data-[state=active]:to-indigo-500/10 data-[state=active]:border data-[state=active]:border-violet-500/20 data-[state=active]:shadow-md rounded-lg transition-all duration-300"
               >
                 <Paperclip className="h-4 w-4" />
                 <span className="text-xs font-medium">Attachments</span>

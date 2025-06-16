@@ -23,6 +23,10 @@ import { getMessageParts } from "@ai-sdk/ui-utils"
 import { useTabVisibility } from "@/frontend/hooks/useTabVisibility"
 import RealtimeThinking from "./RealTimeThinking"
 import { useUserPreferencesStore } from "@/frontend/stores/UserPreferencesStore"
+import { RegenerationProvider } from "@/frontend/contexts/RegenerationContext"
+import { useMessageAttempts } from "@/frontend/hooks/useMessageAttempts"
+import { useRegenerationTracker } from "@/frontend/hooks/useRegenerationTracker"
+import { useMessageInterceptor } from "@/frontend/hooks/useMessageInterceptor"
 
 // Extend UIMessage to include reasoning field
 interface ExtendedUIMessage extends UIMessage {
@@ -57,6 +61,12 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
 
   // Get user preferences for chat
   const userPreferences = useUserPreferencesStore()
+  
+  // Message attempts hook
+  const { addMessageAttempt } = useMessageAttempts()
+  
+  // Regeneration tracker hook
+  const { startRegeneration, captureNewAttempt, finishRegeneration } = useRegenerationTracker()
 
   // Monitor API key state for debugging
   const currentApiKey = getKey(modelConfig.provider)
@@ -115,16 +125,10 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
         }
       }
 
-      const uiMessage: ExtendedUIMessage = {
-        id: message.id || crypto.randomUUID(),
-        role: message.role,
-        content: message.content || "",
-        createdAt: message.createdAt || new Date(),
-        parts: parts as UIMessage["parts"],
-        model: selectedModel,
-        reasoning: reasoning,
+      // Log reasoning extraction for debugging
+      if (reasoning) {
+        console.log("🧠 Extracted reasoning from stream:", reasoning.substring(0, 100) + "...")
       }
-      return uiMessage
     },
     autoResume: true,
   })
@@ -579,27 +583,14 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
       {/* Global Resuming Indicator */}
       <GlobalResumingIndicator isResuming={isResuming} resumeProgress={resumeProgress} threadTitle="Current Chat" />
 
-      {showRealtimeThinking && supportsThinking && (
-        <div className="fixed top-20 right-4 z-50 w-80 max-h-[70vh] overflow-auto bg-white dark:bg-gray-900 border-2 border-purple-500 rounded-lg shadow-lg">
-          <div className="p-2 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 text-xs font-bold">
-            REALTIME THINKING VISIBLE
-          </div>
-          <RealtimeThinking
-            isVisible={showRealtimeThinking}
-            thinkingContent={realtimeThinking}
-            messageId={currentMessageIdRef.current || "thinking"}
-          />
-        </div>
-      )}
-
       {/* Pinned Messages Panel */}
       {showPinnedMessages && (
-        <div className="fixed top-16 right-4 z-40 w-80 max-h-96 bg-background border rounded-lg shadow-lg">
+        <div className="fixed top-16 right-4 z-40 w-80 max-w-[calc(100vw-2rem)] max-h-96 bg-background border rounded-lg shadow-lg">
           <PinnedMessages threadId={threadId} onClose={() => setShowPinnedMessages(false)} />
         </div>
       )}
 
-      <main className="flex flex-col w-full max-w-3xl pt-10 pb-56 mx-auto transition-all duration-300 ease-in-out">
+      <main className="flex flex-col w-full max-w-3xl pt-10 pb-56 mx-auto transition-all duration-300 ease-in-out px-4 sm:px-6 lg:px-8">
         {/* Global Thinking Indicator - shown when streaming starts with thinking models */}
         {isThinking && status === "streaming" && supportsThinking && (
           <div className="mb-6 flex justify-center">
@@ -607,19 +598,30 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
           </div>
         )}
 
-        <Messages
-          threadId={threadId}
-          messages={messages}
-          status={status}
-          setMessages={setMessages}
-          reload={reload}
-          error={error}
-          registerRef={registerRef || (() => {})}
-          stop={stop}
-          resumeComplete={resumeComplete}
-          resumedMessageId={resumedMessageId}
-          onPromptClick={handlePromptClick}
-        />
+        <RegenerationProvider
+          onMessageUpdate={(updatedMessage) => {
+            console.log("🔄 Updating message with new attempts:", updatedMessage.id, "Total attempts:", updatedMessage.attempts?.length)
+            setMessages((prevMessages) => {
+              return prevMessages.map(msg => 
+                msg.id === updatedMessage.id ? updatedMessage : msg
+              )
+            })
+          }}
+        >
+          <Messages
+            threadId={threadId}
+            messages={messages}
+            status={status}
+            setMessages={setMessages}
+            reload={reload}
+            error={error}
+            registerRef={registerRef || (() => {})}
+            stop={stop}
+            resumeComplete={resumeComplete}
+            resumedMessageId={resumedMessageId}
+            onPromptClick={handlePromptClick}
+          />
+        </RegenerationProvider>
         <ChatInput threadId={threadId} input={input} status={status} append={append} setInput={setInput} stop={stop} />
       </main>
 

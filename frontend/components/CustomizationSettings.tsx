@@ -97,24 +97,19 @@ export default function CustomizationSettings() {
     document.documentElement.style.setProperty("--font-sans", uiFont)
     document.documentElement.style.setProperty("--font-mono", codeFont)
 
-    // Apply font size
+    // Apply font size directly to the document root
     const fontSizeMap = {
-      small: {
-        base: "14px",
-        scale: "0.95",
-      },
-      medium: {
-        base: "16px",
-        scale: "1",
-      },
-      large: {
-        base: "18px",
-        scale: "1.05",
-      },
+      small: "14px",
+      medium: "16px",
+      large: "18px",
     }
 
-    document.documentElement.style.setProperty("--font-size-base", fontSizeMap[fontSize].base)
-    document.documentElement.style.setProperty("--font-size-scale", fontSizeMap[fontSize].scale)
+    document.documentElement.style.setProperty("--font-size-base", fontSizeMap[fontSize])
+    
+    // Also set the font size directly on the body for immediate effect
+    document.body.style.fontSize = fontSizeMap[fontSize]
+    
+    console.log(`🎨 Font settings applied - UI: ${uiFont}, Code: ${codeFont}, Size: ${fontSize} (${fontSizeMap[fontSize]})`)
   }, [uiFont, codeFont, fontSize])
 
   const handleAddTrait = () => {
@@ -333,14 +328,21 @@ Is Loading: ${state.isLoading}`)
 
             <div className="grid gap-2">
               <Label htmlFor="font-size">Font Size</Label>
-              <Select value={fontSize} onValueChange={(value) => setFontSize(value as "small" | "medium" | "large")}>
+              <Select 
+                value={fontSize} 
+                onValueChange={(value) => {
+                  const size = value as "small" | "medium" | "large"
+                  setFontSize(size)
+                  toast.success(`Font size changed to ${size}`)
+                }}
+              >
                 <SelectTrigger id="font-size">
                   <SelectValue placeholder="Select a size" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="small">Small</SelectItem>
-                  <SelectItem value="medium">Medium</SelectItem>
-                  <SelectItem value="large">Large</SelectItem>
+                  <SelectItem value="small">Small (14px)</SelectItem>
+                  <SelectItem value="medium">Medium (16px)</SelectItem>
+                  <SelectItem value="large">Large (18px)</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">Adjust the overall text size of the application.</p>

@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { memo, useState, useCallback, useContext, useMemo } from "react"
+import { memo, useState, useCallback, useContext, useMemo, useEffect } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import remarkMath from "remark-math"
@@ -56,8 +56,8 @@ const components: Components = {
   code: CodeBlock as Components["code"],
   pre: ({ children }) => <>{children}</>,
   table: ({ children, ...props }) => (
-    <div className="table-wrapper overflow-x-auto my-6">
-      <table {...props}>{children}</table>
+    <div className="table-wrapper overflow-x-auto my-6 max-w-full">
+      <table {...props} className="min-w-full border-collapse">{children}</table>
     </div>
   ),
   thead: ({ children, ...props }) => <thead {...props}>{children}</thead>,
@@ -90,6 +90,7 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
   const [showConverted, setShowConverted] = useState(false)
   const [isConverting, setIsConverting] = useState(false)
   const [isPinned, setIsPinned] = useState(false)
+  const [renderError, setRenderError] = useState<string | null>(null)
 
   // Memoize the regex match to prevent it from changing on every render
   const languageMatch = useMemo(() => {
@@ -123,6 +124,20 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
   // Determine if this code block should show artifact styling
   const hasArtifact = Boolean(associatedArtifact)
   const showArtifactStyling = hasArtifact || isArtifactCandidate
+
+  // Debug logging to track convert button visibility
+  useEffect(() => {
+    console.log("🔍 CodeBlock debug info:", {
+      hasOnCodeConvert: !!onCodeConvert,
+      isHovered,
+      isConverting,
+      threadId,
+      messageId,
+      language,
+      codeLength: codeString.length,
+      shouldShowConvert: onCodeConvert && isHovered && !isConverting
+    })
+  }, [onCodeConvert, isHovered, isConverting, threadId, messageId, language, codeString.length])
 
   const copyToClipboard = async (text: string) => {
     try {
@@ -180,18 +195,49 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
     URL.revokeObjectURL(url)
   }, [codeString, language])
 
+  // Error boundary for ShikiHighlighter
+  const renderCodeWithErrorHandling = useCallback(() => {
+    try {
+      const displayLang = convertedCode && showConverted ? convertedCode.language : language
+      const displayCode = convertedCode && showConverted ? convertedCode.code : codeString
+      
+      // Use the language mapping to get a valid Shiki language
+      const shikiLanguage = getShikiLanguage(displayLang || 'text')
+      
+      return (
+        <div className="relative w-full overflow-hidden">
+          <ShikiHighlighter
+            language={shikiLanguage}
+            theme={"material-theme-darker"}
+            className="text-sm font-mono w-full !max-w-none"
+            showLanguage={false}
+          >
+            {displayCode}
+          </ShikiHighlighter>
+        </div>
+      )
+    } catch (error) {
+      console.error("Error rendering Shiki syntax highlighting:", error)
+      setRenderError(error instanceof Error ? error.message : "Unknown rendering error")
+      
+      // Fallback to basic <pre><code> rendering
+      const displayCode = convertedCode && showConverted ? convertedCode.code : codeString
+      return (
+        <pre className="bg-gray-900 text-gray-100 p-4 rounded text-sm font-mono overflow-x-auto whitespace-pre-wrap break-words">
+          <code>{displayCode}</code>
+        </pre>
+      )
+    }
+  }, [convertedCode, showConverted, language, codeString])
+
   if (languageMatch && language) {
     const displayLang = convertedCode && showConverted ? convertedCode.language : language
-    const displayCode = convertedCode && showConverted ? convertedCode.code : codeString
-
-    // Use the language mapping to get a valid Shiki language
-    const shikiLanguage = getShikiLanguage(displayLang)
 
     return (
       <div
         className={cn(
-          "rounded-md relative mb-4 overflow-visible shadow-sm transition-all duration-200",
-          "border border-border"
+          "rounded-md relative mb-4 shadow-sm transition-all duration-200 w-full max-w-full",
+          "border border-border overflow-hidden"
         )}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
@@ -205,15 +251,20 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
           )}
           data-code-block-header="true"
         >
-          <div className="flex items-center space-x-2">
-            <span className="text-sm font-mono">
+          <div className="flex items-center space-x-2 min-w-0">
+            <span className="text-sm font-mono truncate">
               {displayLang}
             </span>
+            {renderError && (
+              <span className="text-xs text-red-500 bg-red-100 dark:bg-red-900/20 px-2 py-1 rounded">
+                Rendering Error
+              </span>
+            )}
             {convertedCode && (
               <button
                 onClick={toggleView}
                 className={cn(
-                  "text-xs px-2 py-0.5 rounded transition-colors flex items-center space-x-1",
+                  "text-xs px-2 py-0.5 rounded transition-colors flex items-center space-x-1 flex-shrink-0",
                   showConverted
                     ? "bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:hover:bg-blue-800/50"
                     : "bg-muted hover:bg-muted/80",
@@ -233,7 +284,7 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
               </button>
             )}
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 flex-shrink-0">
             {hasArtifact && associatedArtifact && (
               <TooltipProvider>
                 <Tooltip>
@@ -289,7 +340,7 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
               </div>
             )}
             <button
-              onClick={() => copyToClipboard(displayCode)}
+              onClick={() => copyToClipboard(convertedCode && showConverted ? convertedCode.code : codeString)}
               className="text-sm cursor-pointer hover:text-primary transition-colors p-1 rounded-md hover:bg-primary/10"
               aria-label="Copy code"
               title="Copy code"
@@ -300,21 +351,13 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
         </div>
         <div
           className={cn(
-            "transition-all duration-300",
+            "transition-all duration-300 w-full max-w-full",
+            "overflow-x-auto",
             showConverted ? "bg-blue-50/20 dark:bg-blue-950/20 border-t border-blue-200 dark:border-blue-800" : ""
           )}
           data-code-block-content="true"
         >
-          <div className="relative">
-            <ShikiHighlighter
-              language={shikiLanguage}
-              theme={"material-theme-darker"}
-              className="text-sm font-mono"
-              showLanguage={false}
-            >
-              {displayCode}
-            </ShikiHighlighter>
-          </div>
+          {renderCodeWithErrorHandling()}
         </div>
       </div>
     )

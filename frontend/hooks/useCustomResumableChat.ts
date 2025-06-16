@@ -107,11 +107,9 @@ export function useCustomResumableChat({
           timestamp: new Date().toISOString()
         })
 
-        // Only require API key for providers that need it
-        if (modelConfig.provider !== "ollama" && !apiKey) {
-          const errorMsg = `${modelConfig.provider} API key is required but not found. Please check your API key settings.`
-          console.error("🔑 [FETCH] API key error:", errorMsg)
-          throw new Error(errorMsg)
+        // API key is optional - server will fallback to default keys
+        if (!apiKey) {
+          console.log("🔑 [FETCH] No user API key, server will use defaults for provider:", modelConfig.provider)
         }
 
         // Parse and update the body to include webSearchEnabled and API key
@@ -315,21 +313,22 @@ export function useCustomResumableChat({
     }
 
     try {
-      console.log("🔄 Starting manual resume...")
-      setIsResuming(true)
-      setResumeProgress(10)
-      setResumeComplete(false)
+      console.log("🔄 Checking for streams to resume...")
 
-      // Get active streams
+      // Get active streams FIRST before setting any resuming state
       const activeStreams = await getActiveStreamsForThread(threadId)
       console.log("📋 Active streams:", activeStreams)
 
       if (activeStreams.length === 0) {
         console.log("❌ No active streams found")
-        setIsResuming(false)
-        setResumeProgress(0)
         return
       }
+
+      // Only set resuming state if we actually have streams to resume
+      console.log("🔄 Starting manual resume...")
+      setIsResuming(true)
+      setResumeProgress(10)
+      setResumeComplete(false)
 
       setResumeProgress(30)
 

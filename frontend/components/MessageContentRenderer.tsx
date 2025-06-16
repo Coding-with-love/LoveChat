@@ -23,6 +23,15 @@ function PureMessageContentRenderer({
   isMarkdown = true,
   onViewInGallery,
 }: MessageContentRendererProps) {
+  
+  // Debug: Log when MessageContentRenderer renders
+  console.log("🔍 MessageContentRenderer debug:", {
+    messageId,
+    threadId,
+    hasOnCodeConvert: !!onCodeConvert,
+    isMarkdown,
+    contentLength: content?.length || 0
+  })
   // Parse artifact references in the content and replace with friendly display
   const processedContent = useMemo(() => {
     if (!content) return { text: "", artifactRefs: [] }

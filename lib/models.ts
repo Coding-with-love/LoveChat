@@ -35,6 +35,12 @@ interface ModelConfig {
   headerKey: string
   supportsSearch?: boolean
   supportsThinking?: boolean
+  logo?: {
+    type: "image" | "svg" | "text"
+    src?: string
+    content?: string
+    alt: string
+  }
 }
 
 // List of Ollama models known to support thinking

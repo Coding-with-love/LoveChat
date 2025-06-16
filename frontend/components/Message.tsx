@@ -23,15 +23,21 @@ import { useArtifactStore } from "@/frontend/stores/ArtifactStore"
 import { Badge } from "@/frontend/components/ui/badge"
 import { Code, FileText, Copy, Plus } from "lucide-react"
 import { ArtifactIndicator, MessageArtifactSummary } from "./ArtifactIndicator"
+import MessageAttemptNavigator from "./MessageAttemptNavigator"
 
 // Helper function to check equality (you might want to import this from a utility library)
 function equal(a: any, b: any): boolean {
   return JSON.stringify(a) === JSON.stringify(b)
 }
 
-// Extend UIMessage to include reasoning field
+// Extend UIMessage to include reasoning field and message attempts
 interface ExtendedUIMessage extends UIMessage {
   reasoning?: string
+  attempts?: ExtendedUIMessage[]
+  currentAttemptIndex?: number
+  parentMessageId?: string
+  attemptNumber?: number
+  isActiveAttempt?: boolean
 }
 
 function PureMessage({
@@ -66,6 +72,7 @@ function PureMessage({
   const [mode, setMode] = useState<"view" | "edit">("view")
   const [showAnimation, setShowAnimation] = useState(false)
   const [isCurrentlyThinking, setIsCurrentlyThinking] = useState(false)
+  const [currentAttemptIndex, setCurrentAttemptIndex] = useState(0)
 
   // Artifact detection and display
   const { getArtifactsByMessageId, fetchArtifacts } = useArtifactStore()
@@ -75,6 +82,46 @@ function PureMessage({
     const artifacts = getArtifactsByMessageId(message.id)
     setMessageArtifacts(artifacts)
   }, [message.id, getArtifactsByMessageId])
+
+  // Message attempts handling
+  const attempts = message.attempts || [message]
+  const totalAttempts = attempts.length
+  const currentMessage = attempts[currentAttemptIndex] || message
+  
+  // Use real attempts from the message or fallback to single message
+  const actualAttempts = message.attempts || [message]
+  const actualTotalAttempts = actualAttempts.length
+  const actualCurrentMessage = actualAttempts[currentAttemptIndex] || message
+
+  // Reset attempt index if it exceeds available attempts
+  useEffect(() => {
+    if (currentAttemptIndex >= actualTotalAttempts) {
+      setCurrentAttemptIndex(Math.max(0, actualTotalAttempts - 1))
+    }
+  }, [currentAttemptIndex, actualTotalAttempts])
+
+  const handlePreviousAttempt = useCallback(() => {
+    setCurrentAttemptIndex(prev => Math.max(0, prev - 1))
+  }, [])
+
+  const handleNextAttempt = useCallback(() => {
+    setCurrentAttemptIndex(prev => Math.min(actualTotalAttempts - 1, prev + 1))
+  }, [actualTotalAttempts])
+
+  // Extract reasoning from current message - check multiple sources
+  const reasoning =
+    actualCurrentMessage.reasoning ||
+    actualCurrentMessage.parts?.find((part) => part.type === "reasoning")?.reasoning ||
+    (() => {
+      // Also check if thinking content is embedded in text parts
+      const textPart = actualCurrentMessage.parts?.find((part) => part.type === "text")
+      if (textPart?.text?.includes("<Thinking>") && textPart?.text?.includes("</Thinking>")) {
+        const thinkMatch = textPart.text.match(/<Thinking>([\s\S]*?)<\/Thinking>/)
+        return thinkMatch ? thinkMatch[1].trim() : null
+      }
+      return null
+      
+    })()
 
   // Refresh artifacts when streaming stops to catch auto-generated artifacts
   useEffect(() => {
@@ -87,6 +134,8 @@ function PureMessage({
       return () => clearTimeout(timeoutId)
     }
   }, [isStreaming, message.role, message.id, fetchArtifacts])
+
+
 
   const messageRef = useRef<HTMLDivElement>(null)
 
@@ -109,14 +158,14 @@ function PureMessage({
 
   // Handle thinking state for streaming messages
   useEffect(() => {
-    if (isStreaming && isThinkingModel && message.role === "assistant") {
+    if (isStreaming && isThinkingModel && actualCurrentMessage.role === "assistant") {
       // Show thinking indicator while streaming and no content yet
-      const hasContent = message.parts?.some((part) => part.type === "text" && part.text.trim())
+      const hasContent = actualCurrentMessage.parts?.some((part) => part.type === "text" && part.text.trim())
       setIsCurrentlyThinking(!hasContent)
     } else {
       setIsCurrentlyThinking(false)
     }
-  }, [isStreaming, isThinkingModel, message.role, message.parts])
+  }, [isStreaming, isThinkingModel, actualCurrentMessage.role, actualCurrentMessage.parts])
 
   // Handle resume completion animation
   useEffect(() => {
@@ -133,39 +182,24 @@ function PureMessage({
     }
   }, [resumeComplete, resumedMessageId, message.id])
 
-  // Extract file attachments from message parts
+  // Extract file attachments from current message parts
   const fileAttachments =
-    (message.parts?.find((part) => (part as any).type === "file_attachments") as any)?.attachments || []
+    (actualCurrentMessage.parts?.find((part) => (part as any).type === "file_attachments") as any)?.attachments || []
 
-  // Extract artifact references from message parts
+  // Extract artifact references from current message parts
   const artifactReferences =
-    (message.parts?.find((part) => (part as any).type === "artifact_references") as any)?.artifacts || []
+    (actualCurrentMessage.parts?.find((part) => (part as any).type === "artifact_references") as any)?.artifacts || []
 
   // Extract sources if available
-  const sources: any[] = (message.parts as any)?.find((part: any) => part.type === "sources")?.sources || []
+  const sources: any[] = (actualCurrentMessage.parts as any)?.find((part: any) => part.type === "sources")?.sources || []
 
   // Check if this message used web search
   const usedWebSearch = sources.length > 0
 
-  // Extract reasoning from message - check multiple sources
-  const reasoning =
-    message.reasoning ||
-    message.parts?.find((part) => part.type === "reasoning")?.reasoning ||
-    (() => {
-      // Also check if thinking content is embedded in text parts
-      const textPart = message.parts?.find((part) => part.type === "text")
-      if (textPart?.text?.includes("<Thinking>") && textPart?.text?.includes("</Thinking>")) {
-        const thinkMatch = textPart.text.match(/<Thinking>([\s\S]*?)<\/Thinking>/)
-        return thinkMatch ? thinkMatch[1].trim() : null
-      }
-      return null
-      
-    })()
-
   // Filter out tool calls and other non-user-facing parts
   const displayParts =
-  message.parts?.filter((part) => {
-      if (message.role === "user") {
+  actualCurrentMessage.parts?.filter((part) => {
+      if (actualCurrentMessage.role === "user") {
         return part.type === "text" || part.type === "reasoning"
       }
   return part.type === "text" || part.type === "reasoning"
@@ -190,6 +224,14 @@ const handleCodeConvert = useCallback(
     },
     [message.id],
   )
+
+  // Debug: Log when Message component renders to verify onCodeConvert is defined
+  console.log("🔍 Message component render debug:", {
+    messageId: message.id,
+    role: message.role,
+    hasHandleCodeConvert: !!handleCodeConvert,
+    threadId
+  })
 
 // Handle keyboard shortcuts
 const handleCopy = useCallback(() => {
@@ -309,6 +351,11 @@ const handleViewInGallery = useCallback((artifact: any) => {
           const textParts = displayParts.filter((part) => part.type === "text")
           const orderedParts = [...reasoningParts, ...textParts]
 
+          // If we have reasoning but no reasoning parts, add it as a virtual part
+          if (reasoning && reasoningParts.length === 0) {
+            orderedParts.unshift({ type: "reasoning", reasoning } as any)
+          }
+
           return orderedParts.map((part, index) => {
             const { type } = part
             const key = `message-${message.id}-part-${index}`
@@ -318,9 +365,9 @@ const handleViewInGallery = useCallback((artifact: any) => {
             }
 
             if (type === "text") {
-              // CRITICAL FIX: Use message.content if available (for updated messages), otherwise fall back to part.text
+              // CRITICAL FIX: Use actualCurrentMessage.content if available (for updated messages), otherwise fall back to part.text
               // This ensures that rephrased text saved to the database is displayed correctly
-              let cleanText = message.content || part.text
+              let cleanText = actualCurrentMessage.content || part.text
               let extractedThinking = ""
 
               if (cleanText.includes("<Thinking>") && cleanText.includes("</Thinking>")) {
@@ -367,12 +414,23 @@ const handleViewInGallery = useCallback((artifact: any) => {
 
                   {!isStreaming && (
                     <div className="flex items-center justify-between">
-                      <ArtifactIndicator 
-                        messageId={message.id}
-                        threadId={threadId}
-                        variant="icon"
-                        className="opacity-60 group-hover:opacity-100 transition-opacity"
-                      />
+                      <div className="flex items-center gap-2">
+                        <ArtifactIndicator 
+                          messageId={message.id}
+                          threadId={threadId}
+                          variant="icon"
+                          className="opacity-60 group-hover:opacity-100 transition-opacity"
+                        />
+                        {currentMessage.role === "assistant" && (
+                          <MessageAttemptNavigator
+                            currentIndex={currentAttemptIndex}
+                            totalAttempts={totalAttempts}
+                            onPrevious={handlePreviousAttempt}
+                            onNext={handleNextAttempt}
+                            className="opacity-60 group-hover:opacity-100 transition-opacity"
+                          />
+                        )}
+                      </div>
                       <MessageControls
                         threadId={threadId}
                         content={cleanText}
@@ -395,7 +453,14 @@ const handleViewInGallery = useCallback((artifact: any) => {
         }
 
         // For user messages, keep original order
-        return displayParts.map((part, index) => {
+        const userParts = [...displayParts]
+        
+        // If we have reasoning but no reasoning parts, add it as a virtual part
+        if (reasoning && !displayParts.some(part => part.type === "reasoning")) {
+          userParts.unshift({ type: "reasoning", reasoning } as any)
+        }
+        
+        return userParts.map((part, index) => {
           const { type } = part
           const key = `message-${message.id}-part-${index}`
 
@@ -404,16 +469,16 @@ const handleViewInGallery = useCallback((artifact: any) => {
           }
 
           if (type === "text") {
-            // CRITICAL FIX: Use message.content if available (for updated messages), otherwise fall back to part.text
+            // CRITICAL FIX: Use actualCurrentMessage.content if available (for updated messages), otherwise fall back to part.text
             // This ensures that rephrased text saved to the database is displayed correctly
-            let cleanText = message.content || part.text
+            let cleanText = actualCurrentMessage.content || part.text
             if (cleanText.includes("<Thinking>") && cleanText.includes("</Thinking>")) {
               cleanText = cleanText.replace(/<Thinking>[\s\S]*?<\/Thinking>/g, "").trim()
             }
 
             return message.role === "user" ? (
               <div key={key} className="w-full flex justify-end" data-message-content-part="true">
-                <div className="group flex flex-col gap-2 max-w-[80%]">
+                <div className="group flex flex-col gap-2 max-w-[80%] sm:max-w-[75%] lg:max-w-[70%]">
                   <div
                     className="relative px-4 py-3 rounded-xl bg-secondary border border-secondary-foreground/2"
                   >
@@ -443,12 +508,23 @@ const handleViewInGallery = useCallback((artifact: any) => {
 
                   {mode === "view" && (
                     <div className="flex items-center justify-between">
-                      <ArtifactIndicator 
-                        messageId={message.id}
-                        threadId={threadId}
-                        variant="icon"
-                        className="opacity-60 group-hover:opacity-100 transition-opacity"
-                      />
+                      <div className="flex items-center gap-2">
+                        <ArtifactIndicator 
+                          messageId={message.id}
+                          threadId={threadId}
+                          variant="icon"
+                          className="opacity-60 group-hover:opacity-100 transition-opacity"
+                        />
+                        {currentMessage.role === "assistant" && (
+                          <MessageAttemptNavigator
+                            currentIndex={currentAttemptIndex}
+                            totalAttempts={totalAttempts}
+                            onPrevious={handlePreviousAttempt}
+                            onNext={handleNextAttempt}
+                            className="opacity-60 group-hover:opacity-100 transition-opacity"
+                          />
+                        )}
+                      </div>
                       <MessageControls
                         threadId={threadId}
                         content={cleanText}
@@ -496,12 +572,23 @@ const handleViewInGallery = useCallback((artifact: any) => {
 
                 {!isStreaming && (
                   <div className="flex items-center justify-between">
-                    <ArtifactIndicator 
-                      messageId={message.id}
-                      threadId={threadId}
-                      variant="minimal"
-                      className="opacity-0 group-hover:opacity-100 transition-opacity"
-                    />
+                    <div className="flex items-center gap-2">
+                      <ArtifactIndicator 
+                        messageId={message.id}
+                        threadId={threadId}
+                        variant="minimal"
+                        className="opacity-0 group-hover:opacity-100 transition-opacity"
+                      />
+                      {currentMessage.role === "assistant" && (
+                        <MessageAttemptNavigator
+                          currentIndex={currentAttemptIndex}
+                          totalAttempts={totalAttempts}
+                          onPrevious={handlePreviousAttempt}
+                          onNext={handleNextAttempt}
+                          className="opacity-60 group-hover:opacity-100 transition-opacity"
+                        />
+                      )}
+                    </div>
                     <MessageControls
                       threadId={threadId}
                       content={cleanText}

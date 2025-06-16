@@ -11,6 +11,8 @@ interface APIKeyStore {
   removeKey: (provider: string) => Promise<void>
   hasKey: (provider: string) => boolean
   hasRequiredKeys: (provider?: string) => boolean
+  hasDefaultKeys: (provider: string) => Promise<boolean>
+  isUsingDefaultKey: (provider: string) => Promise<boolean>
   getAllKeys: () => Record<string, string>
   loadKeys: () => Promise<void>
   debug: () => void
@@ -150,9 +152,50 @@ export const useAPIKeyStore = create<APIKeyStore>()(
           return true
         }
         const normalizedProvider = provider.toLowerCase()
-        const hasKey = !!state.keys[normalizedProvider]
-        console.log("🔍 Checking if required API key exists for provider:", provider, "Has key:", hasKey)
-        return hasKey
+        const hasUserKey = !!state.keys[normalizedProvider]
+        console.log("🔍 Checking if required API key exists for provider:", provider, "Has user key:", hasUserKey)
+        
+        // For now, return true if no user key (assuming default keys are available)
+        // The actual API call will handle the fallback and show proper errors
+        return true
+      },
+      hasDefaultKeys: async (provider: string) => {
+        const normalizedProvider = provider.toLowerCase()
+        
+        try {
+          // Check if server has default keys by making a test request
+          const response = await fetch("/api/check-default-keys", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ provider: normalizedProvider }),
+          })
+          
+          if (!response.ok) {
+            return false
+          }
+          
+          const data = await response.json()
+          console.log("🔍 Default API key check for provider:", provider, "Has default key:", data.hasDefaultKey)
+          return data.hasDefaultKey
+        } catch (error) {
+          console.error("❌ Error checking default API keys:", error)
+          return false
+        }
+      },
+      isUsingDefaultKey: async (provider: string) => {
+        const state = get()
+        const normalizedProvider = provider.toLowerCase()
+        const hasUserKey = !!state.keys[normalizedProvider]
+        
+        // If user has their own key, they're not using default
+        if (hasUserKey) {
+          return false
+        }
+        
+        // Check if default key is available
+        return await get().hasDefaultKeys(provider)
       },
       getAllKeys: () => {
         const state = get()

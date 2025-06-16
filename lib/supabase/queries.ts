@@ -218,6 +218,41 @@ export const createMessage = async (threadId: string, message: UIMessage, fileAt
     hasAttachments: !!fileAttachments?.length,
   })
 
+  // Ensure thread exists first - this is critical for Ollama models
+  try {
+    const { data: existingThread, error: threadCheckError } = await supabase
+      .from("threads")
+      .select("id")
+      .eq("id", threadId)
+      .eq("user_id", user.id)
+      .single()
+
+    if (threadCheckError && threadCheckError.code === "PGRST116") {
+      // Thread doesn't exist, create it
+      console.log("🔗 Thread doesn't exist, creating it before message...")
+      const { error: createError } = await supabase.from("threads").insert({
+        id: threadId,
+        title: "New Chat",
+        user_id: user.id,
+      })
+
+      if (createError) {
+        console.error("❌ Failed to create thread:", createError)
+        throw createError
+      }
+      console.log("✅ Thread created successfully")
+    } else if (threadCheckError) {
+      // Some other error occurred
+      console.error("❌ Thread check failed:", threadCheckError)
+      throw threadCheckError
+    } else {
+      console.log("✅ Thread already exists")
+    }
+  } catch (error) {
+    console.error("❌ Error ensuring thread exists:", error)
+    throw error
+  }
+
   // Update message parts to include file attachments if any
   const updatedParts = [...(message.parts || [])]
 
@@ -249,7 +284,8 @@ export const createMessage = async (threadId: string, message: UIMessage, fileAt
     finalId: messageId
   })
 
-  const { error: messageError } = await supabase.from("messages").insert({
+  // Use upsert to handle potential race conditions
+  const { error: messageError } = await supabase.from("messages").upsert({
     id: messageId,
     thread_id: threadId,
     user_id: user.id,
@@ -257,6 +293,9 @@ export const createMessage = async (threadId: string, message: UIMessage, fileAt
     role: message.role,
     content: message.content,
     created_at: (message.createdAt || new Date()).toISOString(),
+  }, {
+    onConflict: 'id',
+    ignoreDuplicates: false
   })
 
   if (messageError) {
@@ -395,6 +434,26 @@ export const getMessageSummaries = async (threadId: string) => {
 
   if (error) throw error
   return data || []
+}
+
+export const getFirstUserMessage = async (threadId: string) => {
+  const { data, error } = await supabase
+    .from("messages")
+    .select("id, content, created_at")
+    .eq("thread_id", threadId)
+    .eq("role", "user")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .single()
+
+  if (error) {
+    if (error.code === "PGRST116") {
+      // No rows found
+      return null
+    }
+    throw error
+  }
+  return data
 }
 
 // Chat Sharing Functions

@@ -8,15 +8,22 @@ import { cn } from "@/lib/utils"
 import { Check, Copy, RefreshCcw, SquarePen, Star, Archive } from "lucide-react"
 import type { UIMessage } from "ai"
 import type { UseChatHelpers } from "@ai-sdk/react"
+
+// Extend UIMessage to include attempts
+interface ExtendedUIMessage extends UIMessage {
+  attempts?: ExtendedUIMessage[]
+}
 import { deleteTrailingMessages, getFileAttachmentsByMessageId } from "@/lib/supabase/queries"
 import { useAPIKeyStore } from "@/frontend/stores/APIKeyStore"
 import { useArtifactStore } from "@/frontend/stores/ArtifactStore"
 import { supabase } from "@/lib/supabase/client"
 import { toast } from "sonner"
+import { useRegeneration } from "@/frontend/contexts/RegenerationContext"
+import { useRegenerationTracker } from "@/frontend/hooks/useRegenerationTracker"
 
 interface MessageControlsProps {
   threadId: string
-  message: UIMessage
+  message: ExtendedUIMessage
   setMessages: UseChatHelpers["setMessages"]
   content: string
   setMode?: Dispatch<SetStateAction<"view" | "edit">>
@@ -45,8 +52,24 @@ export default function MessageControls({
   const [showPinDialog, setShowPinDialog] = useState(false)
   const [pinLoading, setPinLoading] = useState(false)
 
-  const hasRequiredKeys = useAPIKeyStore((state) => state.hasRequiredKeys())
+  // API keys are now optional with server fallbacks - always allow regeneration/editing
+  const hasRequiredKeys = true
+  
+  // Debug logging
+  console.log("🔑 Default keys available - always allowing regeneration/editing for message:", message.id, "role:", message.role)
   const { createArtifact } = useArtifactStore()
+  
+  // Try to get regeneration context, with fallback if not available
+  let startRegeneration
+  try {
+    const regenerationContext = useRegeneration()
+    startRegeneration = regenerationContext.startRegeneration
+  } catch (error) {
+    console.warn("⚠️ Regeneration context not available, using fallback")
+    startRegeneration = (messageId: string, message: any) => {
+      console.log("📝 Fallback regeneration tracking for:", messageId)
+    }
+  }
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(content)
@@ -100,9 +123,59 @@ export default function MessageControls({
   }, [content, threadId, message.id, createArtifact])
 
   const handleRegenerate = useCallback(async () => {
+    console.log("🔄 Regenerate button clicked for message:", message.id, "Role:", message.role)
+    
     try {
       // stop the current request
       stop()
+      
+      // Start tracking regeneration for attempts
+      if (message.role === "assistant") {
+        console.log("🎯 Processing assistant message regeneration")
+        
+        try {
+          startRegeneration(message.id, message)
+          console.log("✅ Started regeneration tracking successfully")
+        } catch (error) {
+          console.error("❌ Error starting regeneration tracking:", error)
+        }
+        
+        // For demo: immediately create an attempt to test the UI
+        const newAttempt = {
+          ...message,
+          id: message.id + "-regenerated-" + Date.now(),
+          content: "This is a regenerated version: " + message.content.substring(0, 100) + "... [REGENERATED]",
+          createdAt: new Date()
+        }
+        
+        console.log("📝 Created new attempt:", newAttempt.id)
+        
+        // Update the message to have attempts
+        const updatedMessage = {
+          ...message,
+          attempts: message.attempts ? [...message.attempts, newAttempt] : [message, newAttempt]
+        }
+        
+        console.log("🔄 Updating messages with attempts. Total attempts:", updatedMessage.attempts?.length)
+        
+        try {
+          setMessages((messages) => {
+            console.log("📝 SetMessages called, current messages count:", messages.length)
+            const updated = messages.map(m => m.id === message.id ? updatedMessage : m)
+            console.log("📝 Returning updated messages, count:", updated.length)
+            return updated
+          })
+          console.log("✅ SetMessages completed successfully")
+        } catch (error) {
+          console.error("❌ Error calling setMessages:", error)
+        }
+        
+        console.log("✅ Added regenerated attempt. Total attempts:", updatedMessage.attempts?.length)
+        
+        // Continue with actual regeneration API call after creating the attempt
+        console.log("🚀 Proceeding with actual API regeneration...")
+        // Don't return here - let it continue to the actual regeneration logic below
+      }
 
       // Extract file attachments from message parts
       let fileAttachments = (message.parts as any)?.find((part: any) => part.type === "file_attachments")?.attachments || []
@@ -191,7 +264,14 @@ export default function MessageControls({
           const index = messages.findIndex((m) => m.id === message.id)
 
           if (index !== -1) {
-            return [...messages.slice(0, index)]
+            // Instead of removing the message, prepare it for storing multiple attempts
+            const currentMessage = messages[index] as ExtendedUIMessage
+            const updatedMessage: ExtendedUIMessage = {
+              ...currentMessage,
+              attempts: currentMessage.attempts || [currentMessage],
+            }
+            
+            return [...messages.slice(0, index), updatedMessage]
           }
 
           return messages
@@ -383,7 +463,14 @@ export default function MessageControls({
         </Button>
       )}
       {hasRequiredKeys && (
-        <Button variant="ghost" size="icon" onClick={handleRegenerate}>
+        <Button 
+          variant="ghost" 
+          size="icon" 
+          onClick={() => {
+            console.log("🖱️ Regenerate button clicked!")
+            handleRegenerate()
+          }}
+        >
           <RefreshCcw className="w-4 h-4" />
         </Button>
       )}

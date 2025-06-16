@@ -61,12 +61,13 @@ export function useAuthenticatedChat({
       try {
         console.log("🔑 Custom fetch for chat:", url, "Web search enabled:", webSearchEnabled)
 
-        // Add model-specific API key
+        // Add model-specific API key (optional - will fallback to server defaults)
         const apiKey = getKey(modelConfig.provider)
-        // Only require API key for providers that need it
-        if (modelConfig.provider !== "ollama" && !apiKey) {
-          throw new Error(`${modelConfig.provider} API key is required`)
-        }
+        console.log("🔑 User API key check:", {
+          provider: modelConfig.provider,
+          hasUserKey: !!apiKey,
+          keyLength: apiKey?.length || 0
+        })
 
         const headers = new Headers(options?.headers || {})
         if (apiKey) {

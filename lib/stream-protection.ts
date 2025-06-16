@@ -118,7 +118,13 @@ export class StreamProtection {
         const count = (this.repetitionCounts.get(pattern) || 0) + 1
         this.repetitionCounts.set(pattern, count)
 
-        if (count >= this.maxRepetitions) {
+        // Check if this is likely incremental streaming before flagging as repetitive
+        const isLikelyIncremental = this.isLikelyIncrementalPattern(pattern, chunk)
+        
+        // Use higher threshold for incremental patterns
+        const repetitionThreshold = isLikelyIncremental ? this.maxRepetitions * 3 : this.maxRepetitions
+
+        if (count >= repetitionThreshold) {
           return {
             allowed: false,
             reason: `Detected cross-chunk repetitive pattern: "${pattern.substring(0, 20)}${pattern.length > 20 ? "..." : ""}" repeated ${count} times`,
@@ -127,9 +133,22 @@ export class StreamProtection {
       }
     }
 
-    // Add new patterns to track
+    // Add new patterns to track (but be more selective for incremental streaming)
     if (chunk.length >= this.minRepetitionLength) {
-      this.repetitionCounts.set(chunk, 1)
+      // For very short chunks that might be part of incremental streaming, be more selective
+      if (chunk.length < 50 && this.chunks.length > 5) {
+        // Check if this chunk looks like it's part of incremental streaming
+        const recentChunks = this.chunks.slice(-3)
+        const looksIncremental = recentChunks.some(recentChunk => 
+          recentChunk.includes(chunk) || chunk.includes(recentChunk)
+        )
+        
+        if (!looksIncremental) {
+          this.repetitionCounts.set(chunk, 1)
+        }
+      } else {
+        this.repetitionCounts.set(chunk, 1)
+      }
     }
 
     return { allowed: true }
@@ -154,8 +173,13 @@ export class StreamProtection {
       if (currentChunk.length > 10 && previousChunk.length > 10) {
         const similarity = this.calculateSimilarity(currentChunk, previousChunk)
 
-        if (similarity > 0.8) {
-          // 80% similar
+        // Check if this is just incremental text (common with Ollama)
+        const isIncremental = this.isIncrementalText(previousChunk, currentChunk)
+        
+        // Use higher threshold for incremental text, lower for true loops
+        const similarityThreshold = isIncremental ? 0.95 : 0.8
+
+        if (similarity > similarityThreshold) {
           this.similarChunksCount++
 
           if (this.similarChunksCount >= this.maxSimilarChunks) {
@@ -171,6 +195,25 @@ export class StreamProtection {
     }
 
     return { allowed: true }
+  }
+
+  /**
+   * Check if current chunk is just an incremental addition to previous chunk
+   */
+  private isIncrementalText(previousChunk: string, currentChunk: string): boolean {
+    // If current chunk contains the previous chunk as a prefix, it's likely incremental
+    if (currentChunk.startsWith(previousChunk)) {
+      const addition = currentChunk.slice(previousChunk.length)
+      // If the addition is small relative to the previous chunk, it's incremental
+      return addition.length <= Math.max(50, previousChunk.length * 0.3)
+    }
+    
+    // If previous chunk contains current as prefix, it's reverse incremental (less common)
+    if (previousChunk.startsWith(currentChunk)) {
+      return true
+    }
+    
+    return false
   }
 
   /**
@@ -192,6 +235,35 @@ export class StreamProtection {
     }
 
     return common / Math.max(chars1.size, chars2.size)
+  }
+
+  /**
+   * Check if a pattern is likely part of incremental streaming
+   */
+  private isLikelyIncrementalPattern(pattern: string, currentChunk: string): boolean {
+    // If pattern is very short, it's likely part of incremental streaming
+    if (pattern.length < 10) return true
+    
+    // Check recent chunks to see if this looks like incremental addition
+    const recentChunks = this.chunks.slice(-5)
+    
+    for (let i = recentChunks.length - 1; i >= 0; i--) {
+      const chunk = recentChunks[i]
+      
+      // If current chunk starts with pattern and adds relatively little content
+      if (currentChunk.startsWith(pattern)) {
+        const addition = currentChunk.slice(pattern.length)
+        const isSmallAddition = addition.length <= Math.max(20, pattern.length * 0.3)
+        if (isSmallAddition) return true
+      }
+      
+      // If pattern appears to be growing incrementally
+      if (chunk.length < currentChunk.length && currentChunk.startsWith(chunk)) {
+        return true
+      }
+    }
+    
+    return false
   }
 
   /**

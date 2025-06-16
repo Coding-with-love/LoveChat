@@ -98,6 +98,10 @@ interface Project {
   updated_at: string
 }
 
+interface ChatSidebarProps {
+  onRefreshData?: React.MutableRefObject<() => void>
+}
+
 function ProfileSection() {
   const { user, profile, signOut } = useAuth()
   const navigate = useNavigate()
@@ -232,7 +236,7 @@ function ProfileSection() {
   )
 }
 
-export function ChatSidebar() {
+export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
   const { id } = useParams()
   const navigate = useNavigate()
   const { user, loading: authLoading } = useAuth()
@@ -270,6 +274,8 @@ export function ChatSidebar() {
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
   const [deleteProjectDialogOpen, setDeleteProjectDialogOpen] = useState(false)
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null)
+  const [deleteThreadDialogOpen, setDeleteThreadDialogOpen] = useState(false)
+  const [threadToDelete, setThreadToDelete] = useState<Thread | null>(null)
   const [editingThreadId, setEditingThreadId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState("")
   const [isKeyboardShortcutsOpen, setIsKeyboardShortcutsOpen] = useState(false)
@@ -341,6 +347,14 @@ export function ChatSidebar() {
     console.log("User authenticated, fetching data...")
     fetchData()
   }, [user, authLoading, fetchData])
+
+  // Expose fetchData function to parent component
+  useEffect(() => {
+    if (onRefreshData) {
+      // Replace the parent's onRefreshData with our fetchData function
+      onRefreshData.current = () => fetchData(true)
+    }
+  }, [onRefreshData, fetchData])
 
   // Force load mechanism - show force load button after 5 seconds
   useEffect(() => {
@@ -478,15 +492,58 @@ export function ChatSidebar() {
   }, [user])
 
   const handleDeleteThread = async (threadId: string) => {
+    // Find the thread to delete and show confirmation dialog
+    const thread = threads.find(t => t.id === threadId) || archivedThreads.find(t => t.id === threadId)
+    if (thread) {
+      setThreadToDelete(thread)
+      setDeleteThreadDialogOpen(true)
+    }
+  }
+
+  const confirmDeleteThread = async () => {
+    if (!threadToDelete) return
+
+    const threadId = threadToDelete.id
+    
+    // Store the thread data for potential rollback
+    const wasInActiveThreads = threads.some(t => t.id === threadId)
+    const wasInArchivedThreads = archivedThreads.some(t => t.id === threadId)
+    
+    // Optimistic update - immediately remove from local state
+    if (wasInActiveThreads) {
+      setThreads((prev) => prev.filter((thread) => thread.id !== threadId))
+    }
+    if (wasInArchivedThreads) {
+      setArchivedThreads((prev) => prev.filter((thread) => thread.id !== threadId))
+    }
+
     try {
       await deleteThread(threadId)
+      
+      // Navigate away if we're currently viewing the deleted thread
       if (id === threadId) {
         navigate("/chat")
       }
-      toast.success("Thread deleted")
+      
+      toast.success("Chat deleted")
+      console.log(`✅ Thread ${threadId} deleted successfully`)
+      
+      // Close the dialog
+      setDeleteThreadDialogOpen(false)
+      setThreadToDelete(null)
     } catch (error) {
       console.error("Failed to delete thread:", error)
       toast.error("Failed to delete thread")
+      
+      // Revert optimistic update on error - restore the thread
+      if (threadToDelete) {
+        if (wasInActiveThreads) {
+          setThreads((prev) => [threadToDelete, ...prev])
+        }
+        if (wasInArchivedThreads) {
+          setArchivedThreads((prev) => [threadToDelete, ...prev])
+        }
+      }
     }
   }
 
@@ -562,12 +619,65 @@ export function ChatSidebar() {
   }
 
   const handleArchiveThread = async (threadId: string, isCurrentlyArchived: boolean) => {
+    const newArchivedState = !isCurrentlyArchived
+    
+    // Optimistic update - immediately update local state
+    if (isCurrentlyArchived) {
+      // Unarchiving: move from archived to active
+      setArchivedThreads((prev) => prev.filter((thread) => thread.id !== threadId))
+      setThreads((prev) => {
+        const archivedThread = archivedThreads.find((thread) => thread.id === threadId)
+        if (archivedThread) {
+          const updatedThread = { ...archivedThread, is_archived: false }
+          return [updatedThread, ...prev]
+        }
+        return prev
+      })
+    } else {
+      // Archiving: move from active to archived  
+      setThreads((prev) => prev.filter((thread) => thread.id !== threadId))
+      setArchivedThreads((prev) => {
+        const activeThread = threads.find((thread) => thread.id === threadId)
+        if (activeThread) {
+          const updatedThread = { ...activeThread, is_archived: true }
+          return [updatedThread, ...prev]
+        }
+        return prev
+      })
+    }
+
     try {
-      await toggleThreadArchived(threadId, !isCurrentlyArchived)
+      await toggleThreadArchived(threadId, newArchivedState)
       toast.success(isCurrentlyArchived ? "Chat unarchived" : "Chat archived")
+      console.log(`✅ Thread ${threadId} ${newArchivedState ? 'archived' : 'unarchived'} successfully`)
     } catch (error) {
       console.error("Failed to archive/unarchive thread:", error)
       toast.error("Failed to archive thread")
+      
+      // Revert optimistic update on error
+      if (isCurrentlyArchived) {
+        // Revert unarchiving: move back to archived
+        setThreads((prev) => prev.filter((thread) => thread.id !== threadId))
+        setArchivedThreads((prev) => {
+          const activeThread = threads.find((thread) => thread.id === threadId)
+          if (activeThread) {
+            const revertedThread = { ...activeThread, is_archived: true }
+            return [revertedThread, ...prev]
+          }
+          return prev
+        })
+      } else {
+        // Revert archiving: move back to active
+        setArchivedThreads((prev) => prev.filter((thread) => thread.id !== threadId))
+        setThreads((prev) => {
+          const archivedThread = archivedThreads.find((thread) => thread.id === threadId)
+          if (archivedThread) {
+            const revertedThread = { ...archivedThread, is_archived: false }
+            return [revertedThread, ...prev]
+          }
+          return prev
+        })
+      }
     }
   }
 
@@ -689,8 +799,8 @@ export function ChatSidebar() {
                   Rename
                 </DropdownMenuItem>
                 <DropdownMenuSub>
-                  <DropdownMenuSubTrigger>
-                    <Folder className="h-4 w-4 mr-2" />
+                  <DropdownMenuSubTrigger className="flex items-center gap-2">
+                    <Folder className="h-4 w-4" />
                     Move to Project
                   </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent>
@@ -966,8 +1076,8 @@ export function ChatSidebar() {
                     Rename
                   </DropdownMenuItem>
                   <DropdownMenuSub>
-                    <DropdownMenuSubTrigger>
-                      <Folder className="h-4 w-4 mr-2" />
+                    <DropdownMenuSubTrigger className="flex items-center gap-2">
+                      <Folder className="h-4 w-4" />
                       Move to Project
                     </DropdownMenuSubTrigger>
                     <DropdownMenuSubContent>
@@ -1187,7 +1297,7 @@ export function ChatSidebar() {
                   {unorganizedThreads.length > 0 && (
                     <>
                       <div className="px-2 py-1">
-                        <span className="text-sm font-medium text-muted-foreground">Unorganized</span>
+                        <span className="text-sm font-medium text-muted-foreground">Chats</span>
                       </div>
                       {unorganizedThreads.map(renderThread)}
                     </>
@@ -1288,7 +1398,7 @@ export function ChatSidebar() {
                 <br />
                 <br />
                 This will <strong>not</strong> delete the conversations in this project, but they will be moved to
-                "Unorganized".
+                the main chat list.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -1298,6 +1408,29 @@ export function ChatSidebar() {
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               >
                 Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={deleteThreadDialogOpen} onOpenChange={setDeleteThreadDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Chat</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete "{threadToDelete?.title}"?
+                <br />
+                <br />
+                This action cannot be undone. All messages in this conversation will be permanently deleted.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={confirmDeleteThread}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                Delete Chat
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -1314,7 +1447,7 @@ export function ChatSidebar() {
       {/* Collapsed sidebar toggle button */}
       {collapsed && (
         <Button
-          className="fixed bottom-4 left-4 z-50 h-10 w-10 rounded-full shadow-md"
+          className="sidebar-collapsed-trigger h-8 w-8 shadow-md"
           variant="outline"
           size="icon"
           onClick={toggleSidebar}

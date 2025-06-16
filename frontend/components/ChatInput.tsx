@@ -31,7 +31,7 @@ import { useMessageSummary } from "../hooks/useMessageSummary"
 import { useAuth } from "@/frontend/components/AuthProvider"
 import FileUpload, { FilePreviewList } from "./FileUpload"
 import type { FileUploadResult } from "@/lib/supabase/file-upload"
-import { ChevronDown, Check, ArrowUpIcon, Search, Info, Bot, Settings, Sparkles, Zap, Brain, Globe, Archive, X, Code, FileText, Copy, Plus, Loader2 } from 'lucide-react'
+import { ChevronDown, Check, ArrowUpIcon, Search, Info, Bot, Settings, Sparkles, Archive, X, Code, FileText, Copy, Plus, Loader2 } from 'lucide-react'
 import { useKeyboardShortcuts } from "@/frontend/hooks/useKeyboardShortcuts"
 import PersonaTemplateSelector from "./PersonaTemplateSelector"
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover"
@@ -59,6 +59,8 @@ import type { Artifact } from "@/frontend/stores/ArtifactStore"
 import { useArtifactStore } from "@/frontend/stores/ArtifactStore"
 import { Badge } from "@/frontend/components/ui/badge"
 import { CrossChatArtifactIndicator } from "./CrossChatArtifactIndicator"
+import { ProviderLogo } from "@/frontend/components/ProviderLogo"
+import { useSidebar } from "@/frontend/components/ui/sidebar"
 
 interface ChatMessagePart {
   type: "text" | "file_attachments" | "artifact_references"
@@ -124,6 +126,10 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
   const [editTemplateOpen, setEditTemplateOpen] = useState(false)
   const [editingPersona, setEditingPersona] = useState<Persona | null>(null)
   const [editingTemplate, setEditingTemplate] = useState<PromptTemplate | null>(null)
+  
+  // Get sidebar state for responsive positioning
+  const { state: sidebarState, isMobile } = useSidebar()
+  const sidebarCollapsed = sidebarState === "collapsed"
 
   // Artifact references state
   const [artifactReferences, setArtifactReferences] = useState<ArtifactReference[]>([])
@@ -187,14 +193,10 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
     fetchArtifacts()
   }, [fetchArtifacts])
 
-  // Check if we have an API key for the currently selected model
+  // Chat is always available with server fallback keys
   const canChat = useMemo(() => {
-    const modelConfig = getModelConfig(selectedModel)
-    const apiKey = getKey(modelConfig.provider)
-    const hasKey = modelConfig.provider === "ollama" ? true : !!apiKey
-
-    return hasKey
-  }, [selectedModel, getKey])
+    return true // Server has fallback API keys, so chat is always available
+  }, [])
 
   const { textareaRef, adjustHeight } = useAutoResizeTextarea({
     minHeight: 72,
@@ -222,6 +224,14 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
     const modelConfig = getModelConfig(selectedModel)
     return modelConfig.supportsSearch || false
   }, [selectedModel])
+
+  // Auto-disable web search when switching to a model that doesn't support it
+  useEffect(() => {
+    if (!currentModelSupportsSearch && webSearchEnabled) {
+      toggleWebSearch()
+      toast.info("Web search disabled - current model doesn't support web search")
+    }
+  }, [currentModelSupportsSearch, webSearchEnabled, toggleWebSearch])
 
   const handleFileUpload = (files: FileUploadResult[]) => {
     setUploadedFiles(files)
@@ -604,8 +614,20 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
 
   if (!user || !isAuthenticated) {
     return (
-      <div className="fixed bottom-0 w-full max-w-3xl">
-        <div className="bg-secondary rounded-t-[20px] p-4 w-full text-center">
+      <div className={cn(
+        "fixed bottom-0 w-full max-w-3xl",
+        // Smooth animations with easing
+        "transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]",
+        // Mobile: always centered with padding
+        "px-4 md:px-0",
+        // Desktop: adjust position based on sidebar state
+        isMobile 
+          ? "left-1/2 transform -translate-x-1/2" 
+          : sidebarCollapsed 
+            ? "left-1/2 transform -translate-x-1/2" 
+            : "left-[calc(var(--sidebar-width)+1rem)] right-4 transform-none max-w-none w-[calc(100vw-var(--sidebar-width)-2rem)]"
+      )}>
+        <div className="bg-secondary rounded-t-[20px] p-4 w-full max-w-3xl mx-auto text-center transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]">
           <p className="text-muted-foreground">Please sign in to start chatting</p>
         </div>
       </div>
@@ -669,8 +691,20 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
   const searchStatusMessage = getSearchStatusMessage()
 
   return (
-    <div className="fixed bottom-0 w-full max-w-3xl">
-      <div className="bg-background/95 backdrop-blur-sm border border-border rounded-t-2xl shadow-2xl pb-0 w-full">
+    <div className={cn(
+      "fixed bottom-0 w-full max-w-3xl",
+      // Smooth animations with easing
+      "transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]",
+      // Mobile: always centered with padding
+      "px-4 md:px-0",
+      // Desktop: adjust position based on sidebar state
+      isMobile 
+        ? "left-1/2 transform -translate-x-1/2" 
+        : sidebarCollapsed 
+          ? "left-1/2 transform -translate-x-1/2" 
+          : "left-[calc(var(--sidebar-width)+1rem)] right-4 transform-none max-w-none w-[calc(100vw-var(--sidebar-width)-2rem)]"
+    )}>
+      <div className="bg-background/95 backdrop-blur-sm border border-border rounded-t-2xl shadow-2xl pb-0 w-full max-w-3xl mx-auto transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]">
         {/* Active Persona Indicator - only show for non-default personas */}
         {currentPersona && !currentPersona.is_default && (
           <div className="px-4 pt-3">
@@ -792,15 +826,15 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
 
             <div className="h-16 flex items-center px-2 pt-3">
               <div className="flex items-center justify-between w-full">
-                <div className="flex items-center gap-3">
-                  <div className="bg-muted/50 rounded-lg p-1 border border-border/50">
+                <div className="flex items-center gap-2 md:gap-3 overflow-x-auto">
+                  <div className="bg-muted/50 rounded-lg p-1 border border-border/50 flex-shrink-0">
                     <ChatModelDropdown />
                   </div>
 
                   {/* Persona & Template Selector */}
                   <Popover>
                     <PopoverTrigger asChild>
-                      <Button variant="outline" size="sm" className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" className="flex items-center gap-2 flex-shrink-0">
                         {currentPersona && !currentPersona.is_default ? (
                           <>
                             <span>{currentPersona.avatar_emoji}</span>
@@ -832,7 +866,7 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
                     </PopoverContent>
                   </Popover>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 md:gap-2 flex-shrink-0">
                     <FileUpload
                       threadId={threadId}
                       onFileUpload={handleFileUpload}
@@ -876,54 +910,51 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
                       <CrossChatArtifactIndicator currentThreadId={threadId} />
                     </div>
 
-                    {/* Web Search Toggle */}
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            type="button"
-                            variant={webSearchEnabled ? "default" : "ghost"}
-                            size="icon"
-                            onClick={handleWebSearchToggle}
-                            className={cn(
-                              "h-9 w-9 transition-all duration-200 rounded-lg",
-                              webSearchEnabled &&
-                                currentModelSupportsSearch &&
-                                "bg-blue-500 hover:bg-blue-600 text-white shadow-md",
-                              webSearchEnabled &&
-                                !currentModelSupportsSearch &&
-                                "bg-orange-500 hover:bg-orange-600 text-white shadow-md",
-                              !webSearchEnabled && "hover:bg-muted border border-border/50",
-                            )}
-                            aria-label={webSearchEnabled ? "Disable web search" : "Enable web search"}
-                            disabled={status === "streaming" || status === "submitted"}
-                          >
-                            <Search className="h-4 w-4" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <div className="text-center">
-                            <p className="font-medium">
-                              {webSearchEnabled ? "Web Search Enabled" : "Enable Web Search"}
-                            </p>
-                            {webSearchEnabled && (
-                              <p className="text-xs text-muted-foreground mt-1">
-                                {currentModelSupportsSearch
-                                  ? "Real-time search available"
-                                  : "Current model doesn't support search"}
+                    {/* Web Search Toggle - only show for models that support search */}
+                    {currentModelSupportsSearch && (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              variant={webSearchEnabled ? "default" : "ghost"}
+                              size="icon"
+                              onClick={handleWebSearchToggle}
+                              className={cn(
+                                "h-9 w-9 transition-all duration-200 rounded-lg",
+                                webSearchEnabled &&
+                                  currentModelSupportsSearch &&
+                                  "bg-blue-500 hover:bg-blue-600 text-white shadow-md",
+                                !webSearchEnabled && "hover:bg-muted border border-border/50",
+                              )}
+                              aria-label={webSearchEnabled ? "Disable web search" : "Enable web search"}
+                              disabled={status === "streaming" || status === "submitted"}
+                            >
+                              <Search className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <div className="text-center">
+                              <p className="font-medium">
+                                {webSearchEnabled ? "Web Search Enabled" : "Enable Web Search"}
                               </p>
-                            )}
-                            {!webSearchEnabled && !currentModelSupportsSearch && (
-                              <p className="text-xs text-muted-foreground mt-1">Try Gemini models for native search</p>
-                            )}
-                          </div>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
+                              {webSearchEnabled && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  Real-time search available
+                                </p>
+                              )}
+                              {!webSearchEnabled && (
+                                <p className="text-xs text-muted-foreground mt-1">Get real-time information from the web</p>
+                              )}
+                            </div>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    )}
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-shrink-0 ml-2">
                   {status === "submitted" || status === "streaming" ? (
                     <Button
                       variant="outline"
@@ -1041,6 +1072,7 @@ const ChatInput = memo(PureChatInput, (prevProps, nextProps) => {
 const PureChatModelDropdown = () => {
   const getKey = useAPIKeyStore((state) => state.getKey)
   const { selectedModel, setModel, getEnabledModels, ensureValidSelectedModel } = useModelStore()
+  const navigate = useNavigate()
 
   // Ensure valid model selection on mount
   useEffect(() => {
@@ -1058,20 +1090,7 @@ const PureChatModelDropdown = () => {
 
   const getModelIcon = useCallback((model: AIModel) => {
     const modelConfig = getModelConfig(model)
-
-    // Provider icons
-    switch (modelConfig.provider) {
-      case "openai":
-        return <Zap className="w-3 h-3 text-green-500" />
-      case "google":
-        return <Brain className="w-3 h-3 text-blue-500" />
-      case "openrouter":
-        return <Globe className="w-3 h-3 text-purple-500" />
-      case "ollama":
-        return <Bot className="w-3 h-3 text-orange-500" />
-      default:
-        return null
-    }
+    return <ProviderLogo provider={modelConfig.provider} size="sm" />
   }, [])
 
   const getModelBadges = useCallback((model: AIModel) => {
@@ -1157,10 +1176,10 @@ const PureChatModelDropdown = () => {
               {groupIndex > 0 && <DropdownMenuSeparator />}
               <div className="px-2 py-1.5">
                 <div className="text-xs font-medium text-muted-foreground flex items-center gap-2">
-                  {provider === "OpenAI" && <Zap className="w-3 h-3 text-green-500" />}
-                  {provider === "Google" && <Brain className="w-3 h-3 text-blue-500" />}
-                  {provider === "OpenRouter" && <Globe className="w-3 h-3 text-purple-500" />}
-                  {provider === "Ollama" && <Bot className="w-3 h-3 text-orange-500" />}
+                  <ProviderLogo 
+                    provider={provider.toLowerCase() as "openai" | "google" | "openrouter" | "ollama"} 
+                    size="sm" 
+                  />
                   {provider}
                 </div>
               </div>
@@ -1183,12 +1202,15 @@ const PureChatModelDropdown = () => {
           {availableModels.length < AI_MODELS.length && (
             <>
               <DropdownMenuSeparator />
-              <div className="px-3 py-2 text-xs text-muted-foreground">
+              <DropdownMenuItem 
+                className="cursor-pointer"
+                onSelect={() => navigate("/settings")}
+              >
                 <div className="flex items-center gap-2">
                   <Settings className="w-3 h-3" />
                   <span>Manage models in Settings</span>
                 </div>
-              </div>
+              </DropdownMenuItem>
             </>
           )}
         </DropdownMenuContent>

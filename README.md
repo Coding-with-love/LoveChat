@@ -95,13 +95,39 @@ npm install
 
 3. Set up environment variables:
 Create a `.env.local` file in the root directory with the following variables:
+
 ```env
-# Add your environment variables here
-# Example:
-# OPENAI_API_KEY=your_key_here
-# SUPABASE_URL=your_supabase_url
-# SUPABASE_ANON_KEY=your_supabase_key
+# Required - Supabase Configuration
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+
+# Optional - Default API Keys (Recommended for Easy User Experience)
+# These keys will be used as fallbacks when users don't provide their own
+# Users can still override these by adding their own keys in Settings
+
+# OpenAI API Key (Get from: https://platform.openai.com/api-keys)
+OPENAI_API_KEY=your_openai_api_key_here
+
+# Google AI API Key (Get from: https://makersuite.google.com/app/apikey)  
+GOOGLE_API_KEY=your_google_api_key_here
+
+# OpenRouter API Key (Get from: https://openrouter.ai/keys)
+OPENROUTER_API_KEY=your_openrouter_api_key_here
+
+# Optional - Ollama Configuration
+OLLAMA_URL=http://localhost:11434
 ```
+
+### API Key Strategy
+**New Feature**: This app now supports a **default API key system** that provides an amazing user experience:
+
+- **For App Owners**: Add your API keys to the environment variables above
+- **For Users**: No setup required! They can start chatting immediately using your default keys
+- **Optional Override**: Users can add their own API keys in Settings to use their own quotas
+- **Visual Indicators**: The UI clearly shows when default keys vs. user keys are being used
+
+This means users can try your app instantly without any configuration, while power users can still use their own keys!
 
 4. Run the development server:
 ```bash
