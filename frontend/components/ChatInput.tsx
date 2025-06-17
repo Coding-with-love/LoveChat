@@ -1166,28 +1166,10 @@ const PureChatModelDropdown = () => {
     const modelConfig = getModelConfig(model)
     const badges = []
 
-    if (modelConfig.supportsVision) {
-      badges.push(
-        <div key="vision" className="w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center">
-          <div className="w-3 h-3 rounded-full bg-green-500 flex items-center justify-center">
-            <div className="w-1.5 h-1.5 rounded-full bg-white" />
-          </div>
-        </div>,
-      )
-    }
-
     if (modelConfig.supportsSearch) {
       badges.push(
         <div key="search" className="w-6 h-6 rounded-full bg-blue-500/20 flex items-center justify-center">
           <Search className="w-3 h-3 text-blue-400" />
-        </div>,
-      )
-    }
-
-    if (modelConfig.supportsFiles) {
-      badges.push(
-        <div key="files" className="w-6 h-6 rounded-full bg-purple-500/20 flex items-center justify-center">
-          <FileText className="w-3 h-3 text-purple-400" />
         </div>,
       )
     }
@@ -1294,8 +1276,8 @@ const PureChatModelDropdown = () => {
               {filteredFavorites.length > 0 && (
                 <div className="p-4">
                   <div className="flex items-center gap-2 mb-3">
-                    <Sparkles className="w-4 h-4 text-pink-500" />
-                    <span className="text-sm font-medium text-pink-500">Favorites</span>
+                    <Sparkles className="w-4 h-4 text-primary" />
+                    <span className="text-sm font-medium text-primary">Favorites</span>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     {filteredFavorites.map((model) => (
@@ -1326,36 +1308,43 @@ const PureChatModelDropdown = () => {
                 </div>
               )}
 
-              {/* Others Section */}
-              {otherModels.length > 0 && (
-                <div className="p-4 border-t border-border/50">
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-sm font-medium text-muted-foreground">Others</span>
-                  </div>
-                  <div className="space-y-1">
-                    {otherModels.map((model) => (
-                      <div
-                        key={model}
-                        onClick={() => setModel(model)}
-                        className={cn(
-                          "flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all duration-200 hover:bg-muted/50",
-                          selectedModel === model ? "bg-primary/5 border border-primary/20" : "hover:bg-muted/30",
-                        )}
-                      >
-                        <div className="flex items-center gap-3">
-                          {getModelIcon(model)}
-                          <div>
-                            <div className="text-sm font-medium text-foreground">{model.replace("ollama:", "")}</div>
-                            <div className="text-xs text-muted-foreground">{getProviderName(model)}</div>
+              {/* Provider Sections */}
+              {(["openai", "google", "openrouter", "ollama"] as const).map((provider) => {
+                const providerModels = otherModels.filter(
+                  (model) => getModelConfig(model).provider === provider
+                )
+                if (providerModels.length === 0) return null
+
+                return (
+                  <div key={provider} className="p-4 border-t border-border/50">
+                    <div className="flex items-center gap-2 mb-3">
+                      <ProviderLogo provider={provider} size="sm" />
+                      <span className="text-sm font-medium">{getProviderName(providerModels[0])}</span>
+                    </div>
+                    <div className="space-y-1">
+                      {providerModels.map((model) => (
+                        <div
+                          key={model}
+                          onClick={() => setModel(model)}
+                          className={cn(
+                            "flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all duration-200 hover:bg-muted/50",
+                            selectedModel === model ? "bg-primary/5 border border-primary/20" : "hover:bg-muted/30",
+                          )}
+                        >
+                          <div className="flex items-center gap-3">
+                            {getModelIcon(model)}
+                            <div>
+                              <div className="text-sm font-medium text-foreground">{model.replace("ollama:", "")}</div>
+                            </div>
+                            {selectedModel === model && <div className="w-2 h-2 rounded-full bg-primary ml-2" />}
                           </div>
-                          {selectedModel === model && <div className="w-2 h-2 rounded-full bg-primary ml-2" />}
+                          <div className="flex items-center gap-1">{getModelBadges(model)}</div>
                         </div>
-                        <div className="flex items-center gap-1">{getModelBadges(model)}</div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                )
+              })}
 
               {/* No Results */}
               {filteredModels.length === 0 && (
