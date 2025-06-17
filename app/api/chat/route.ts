@@ -1713,7 +1713,7 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
           throw error
         }
 
-        // Create a custom data stream that filters out <think> tags during streaming
+        // Create a custom data stream that filters out <think> tags during streaming and sends real-time thinking
         const customStream = new ReadableStream({
           async start(controller) {
             const reader = result.toDataStream().getReader()
@@ -1723,6 +1723,9 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
             let textBuffer = ""
             let insideThinking = false
             let thinkingContent = ""
+            let hasStartedReasoning = false
+            let reasoningStartTime = 0
+            let lastThinkingLength = 0
 
             const safeEnqueue = (chunk: Uint8Array) => {
               try {
@@ -1743,7 +1746,21 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
             try {
               while (true) {
                 const { done, value } = await reader.read()
-                if (done) break
+                if (done) {
+                  // If we were in thinking mode when stream ended, send reasoning end
+                  if (hasStartedReasoning) {
+                    const reasoningEndTime = Date.now()
+                    const thinkingDuration = Math.round((reasoningEndTime - reasoningStartTime) / 1000)
+                    const reasoningEndChunk = `r:${JSON.stringify({ 
+                      type: 'reasoning-end', 
+                      duration: thinkingDuration,
+                      totalReasoning: thinkingContent 
+                    })}\n`
+                    safeEnqueue(encoder.encode(reasoningEndChunk))
+                    console.log(`🧠 Finished streaming OpenRouter reasoning to client (${thinkingDuration}s)`)
+                  }
+                  break
+                }
 
                 const chunk = decoder.decode(value)
                 
@@ -1767,6 +1784,15 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
                           processedText += textBuffer.substring(i, thinkStart)
                           insideThinking = true
                           i = thinkStart + 7 // Skip "<think>"
+                          
+                          // Send reasoning start marker if not already sent
+                          if (!hasStartedReasoning) {
+                            const reasoningStartChunk = `r:${JSON.stringify({ type: 'reasoning-start' })}\n`
+                            safeEnqueue(encoder.encode(reasoningStartChunk))
+                            hasStartedReasoning = true
+                            reasoningStartTime = Date.now()
+                            console.log("🧠 Started streaming OpenRouter reasoning to client")
+                          }
                         } else {
                           // No thinking tag found, add rest of buffer to output
                           processedText += textBuffer.substring(i)
@@ -1776,13 +1802,41 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
                         // Look for end of thinking
                         const thinkEnd = textBuffer.indexOf("</think>", i)
                         if (thinkEnd !== -1) {
-                          // Capture thinking content but don't add to output
-                          thinkingContent += textBuffer.substring(i, thinkEnd)
+                          // Capture thinking content and stream it to client
+                          const newThinkingContent = textBuffer.substring(i, thinkEnd)
+                          thinkingContent += newThinkingContent
+                          
+                          // Send thinking delta if we have new content
+                          if (newThinkingContent) {
+                            const reasoningChunk = `r:${JSON.stringify({ type: 'reasoning-delta', content: newThinkingContent })}\n`
+                            safeEnqueue(encoder.encode(reasoningChunk))
+                          }
+                          
+                          // End of thinking block - send reasoning end
+                          const reasoningEndTime = Date.now()
+                          const thinkingDuration = Math.round((reasoningEndTime - reasoningStartTime) / 1000)
+                          const reasoningEndChunk = `r:${JSON.stringify({ 
+                            type: 'reasoning-end', 
+                            duration: thinkingDuration,
+                            totalReasoning: thinkingContent 
+                          })}\n`
+                          safeEnqueue(encoder.encode(reasoningEndChunk))
+                          console.log(`🧠 Finished streaming OpenRouter reasoning block to client (${thinkingDuration}s)`)
+                          
                           insideThinking = false
+                          hasStartedReasoning = false // Reset for potential multiple thinking blocks
                           i = thinkEnd + 8 // Skip "</think>"
                         } else {
-                          // Still inside thinking, capture content but don't output
-                          thinkingContent += textBuffer.substring(i)
+                          // Still inside thinking, capture content and stream to client
+                          const newThinkingContent = textBuffer.substring(i)
+                          thinkingContent += newThinkingContent
+                          
+                          // Send thinking delta for real-time updates
+                          if (newThinkingContent) {
+                            const reasoningChunk = `r:${JSON.stringify({ type: 'reasoning-delta', content: newThinkingContent })}\n`
+                            safeEnqueue(encoder.encode(reasoningChunk))
+                          }
+                          
                           break
                         }
                       }
