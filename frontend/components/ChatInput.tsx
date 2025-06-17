@@ -78,6 +78,7 @@ import { CrossChatArtifactIndicator } from "./CrossChatArtifactIndicator"
 import { ProviderLogo } from "@/frontend/components/ProviderLogo"
 import { useSidebar } from "@/frontend/components/ui/sidebar"
 import { WorkflowBuilder } from "./WorkflowBuilder"
+import { ReasoningEffortSelector } from "./ReasoningEffortSelector"
 
 interface ChatMessagePart {
   type: "text" | "file_attachments" | "artifact_references"
@@ -145,6 +146,7 @@ function PureChatInput({ threadId, input, status, setInput, append, stop, onRefr
   const [editingPersona, setEditingPersona] = useState<Persona | null>(null)
   const [editingTemplate, setEditingTemplate] = useState<PromptTemplate | null>(null)
   const [workflowBuilderOpen, setWorkflowBuilderOpen] = useState(false)
+  const [reasoningEffort, setReasoningEffort] = useState<"low" | "medium" | "high">("medium")
 
   // Get sidebar state for responsive positioning
   const { state: sidebarState, isMobile } = useSidebar()
@@ -242,6 +244,12 @@ function PureChatInput({ threadId, input, status, setInput, append, stop, onRefr
   const currentModelSupportsSearch = useMemo(() => {
     const modelConfig = getModelConfig(selectedModel)
     return modelConfig.supportsSearch || false
+  }, [selectedModel])
+
+  // Check if current model is an OpenAI reasoning model
+  const isOpenAIReasoningModel = useMemo(() => {
+    const modelConfig = getModelConfig(selectedModel)
+    return modelConfig.provider === "openai" && modelConfig.supportsThinking
   }, [selectedModel])
 
   // Auto-disable web search when switching to a model that doesn't support it
@@ -576,6 +584,7 @@ function PureChatInput({ threadId, input, status, setInput, append, stop, onRefr
         experimental_attachments: experimentalAttachments.length > 0 ? experimentalAttachments : undefined,
         data: {
           userPreferences: userPrefsToSend,
+          ...(isOpenAIReasoningModel && { reasoningEffort }),
         },
       })
 
@@ -611,6 +620,8 @@ function PureChatInput({ threadId, input, status, setInput, append, stop, onRefr
     adjustHeight,
     currentPersona,
     userPreferences,
+    isOpenAIReasoningModel,
+    reasoningEffort,
   ])
 
   const handleClearInput = useCallback(() => {
@@ -851,6 +862,17 @@ function PureChatInput({ threadId, input, status, setInput, append, stop, onRefr
                   <div className="bg-muted/50 rounded-lg p-1 border border-border/50 flex-shrink-0">
                     <ChatModelDropdown />
                   </div>
+
+                  {/* Reasoning Effort Selector - only show for OpenAI reasoning models */}
+                  {isOpenAIReasoningModel && (
+                    <div className="flex-shrink-0">
+                      <ReasoningEffortSelector
+                        value={reasoningEffort}
+                        onChange={setReasoningEffort}
+                        disabled={status === "streaming" || status === "submitted"}
+                      />
+                    </div>
+                  )}
 
                   {/* Persona & Template Selector */}
                   <Popover>

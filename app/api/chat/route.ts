@@ -9,6 +9,7 @@ import { supabaseServer } from "@/lib/supabase/server"
 import { v4 as uuidv4 } from "uuid"
 import { CustomResumableStream } from "@/lib/resumable-streams-server"
 import { StreamProtection, StreamCircuitBreaker } from "@/lib/stream-protection"
+import type { GoogleGenerativeAIProviderOptions } from "@ai-sdk/google"
 
 // Artifact creation utilities
 interface ArtifactCandidate {
@@ -47,50 +48,40 @@ function extractArtifacts(content: string, messageId: string): ArtifactCandidate
     }
   }
 
-  // Extract structured documents (markdown with headers, lists, etc.)
-  if (content.includes("# ") || content.includes("## ") || content.includes("### ")) {
-    const hasSubstantialContent =
-      content.length > 500 && (content.includes("- ") || content.includes("1. ") || content.includes("| "))
-
-    if (hasSubstantialContent) {
-      const title = extractDocumentTitle(content)
+  // Extract display math ($$...$$)
+  const displayMathRegex = /\$\$([\s\S]*?)\$\$/g
+  while ((match = displayMathRegex.exec(content)) !== null) {
+    const mathContent = match[1].trim()
+    if (mathContent.length > 10) { // Only substantial math expressions
       artifacts.push({
         type: "document",
-        title,
-        content,
+        title: "Mathematical Expression",
+        content: `$$${mathContent}$$`,
+        language: "latex",
+        fileExtension: "tex",
+        description: "Generated mathematical expression",
+      })
+    }
+  }
+
+  // Extract markdown tables
+  const tableRegex = /(\|[^\n]*\|\n\|[-:\s|]*\|\n(?:\|[^\n]*\|\n?)*)/g
+  while ((match = tableRegex.exec(content)) !== null) {
+    const tableContent = match[1].trim()
+    const rows = tableContent.split('\n').filter(row => row.trim())
+    
+    // Only create artifacts for tables with at least 3 rows (header + separator + data)
+    if (rows.length >= 3) {
+      // Extract table title from surrounding context or use generic title
+      const tableTitle = extractTableTitle(content, match.index) || "Generated Table"
+      
+      artifacts.push({
+        type: "data",
+        title: tableTitle,
+        content: tableContent,
+        language: "markdown",
         fileExtension: "md",
-        description: "Generated documentation",
-      })
-    }
-  }
-
-  // Extract JSON/YAML data structures
-  const jsonRegex = /\`\`\`json\n([\s\S]*?)\`\`\`/g
-  while ((match = jsonRegex.exec(content)) !== null) {
-    const jsonContent = match[1].trim()
-    if (jsonContent.length > 50) {
-      artifacts.push({
-        type: "data",
-        title: "Generated JSON Data",
-        content: jsonContent,
-        language: "json",
-        fileExtension: "json",
-        description: "Generated JSON data structure",
-      })
-    }
-  }
-
-  const yamlRegex = /\`\`\`ya?ml\n([\s\S]*?)\`\`\`/g
-  while ((match = yamlRegex.exec(content)) !== null) {
-    const yamlContent = match[1].trim()
-    if (yamlContent.length > 50) {
-      artifacts.push({
-        type: "data",
-        title: "Generated YAML Configuration",
-        content: yamlContent,
-        language: "yaml",
-        fileExtension: "yml",
-        description: "Generated YAML configuration",
+        description: "Generated markdown table",
       })
     }
   }
@@ -272,6 +263,37 @@ function generateCodeTitle(code: string, language: string): string {
   }
 
   return smartDefaults[language.toLowerCase()] || `${language.charAt(0).toUpperCase() + language.slice(1)} Code`
+}
+
+function extractTableTitle(content: string, tableIndex: number): string | null {
+  // Look for a heading or descriptive text before the table
+  const beforeTable = content.substring(0, tableIndex)
+  const lines = beforeTable.split('\n').reverse()
+  
+  // Look for the closest heading or descriptive line
+  for (let i = 0; i < Math.min(lines.length, 5); i++) {
+    const line = lines[i].trim()
+    
+    // Skip empty lines
+    if (!line) continue
+    
+    // Check for markdown headings
+    const headingMatch = line.match(/^#+\s*(.+)$/)
+    if (headingMatch) {
+      return headingMatch[1].trim()
+    }
+    
+    // Check for lines that might describe the table
+    if (line.length > 5 && line.length < 100 && 
+        (line.toLowerCase().includes('table') || 
+         line.toLowerCase().includes('data') ||
+         line.toLowerCase().includes('comparison') ||
+         line.toLowerCase().includes('results'))) {
+      return line
+    }
+  }
+  
+  return null
 }
 
 function extractDocumentTitle(content: string): string {
@@ -609,6 +631,13 @@ export async function POST(req: NextRequest) {
         try {
           const openaiClient = createOpenAI({ apiKey: apiKey! })
           aiModel = openaiClient(modelConfig.modelId)
+          
+          // Check if web search is enabled and supported
+          if (webSearchEnabled && modelConfig.supportsSearch) {
+            console.log("🔍 OpenAI model supports web search")
+            modelSupportsSearch = true
+          }
+          
           console.log("✅ OpenAI model initialized successfully")
         } catch (error) {
           console.error("❌ Error initializing OpenAI model:", error)
@@ -681,7 +710,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Process messages - create AI-specific content with file data AND artifact data
-    const processedMessages = []
+    const processedMessages: any[] = []
 
     for (const msg of messages) {
       console.log(`🔄 Processing message role: ${msg.role}`)
@@ -853,6 +882,17 @@ export async function POST(req: NextRequest) {
         console.log("🔑 API Key present:", apiKey ? `${apiKey.substring(0, 10)}...` : "MISSING")
         console.log("🎯 Model ID:", modelConfig.modelId)
 
+        // Prepare tools for OpenAI reasoning models web search
+        let tools = undefined
+        if (webSearchEnabled && modelSupportsSearch) {
+          console.log("🔍 Adding OpenAI web search tool to reasoning model")
+          // For the Responses API, use the built-in web search tool
+          tools = [{
+            type: "web_search"
+          }]
+          console.log("✅ OpenAI reasoning model web search tool configured")
+        }
+
         const requestBody = {
           model: modelConfig.modelId,
           reasoning: { 
@@ -861,6 +901,7 @@ export async function POST(req: NextRequest) {
           },
           input: inputMessages,
           max_output_tokens: 25000, // Reserve space for reasoning as recommended
+          tools: tools,
         }
 
         console.log("📤 Request body:", JSON.stringify(requestBody, null, 2))
@@ -1056,10 +1097,53 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
           reasoningExplanation,
         )
 
-        // Return the result in the expected data stream format for the AI SDK
-        const dataStreamResponse = `0:${JSON.stringify(responseText)}\nd:{"finishReason":"stop"}\n`
+        // Create a streaming response that emits reasoning events first, then the text
+        // This ensures the MessageReasoning component appears immediately
+        const stream = new ReadableStream({
+          start(controller) {
+            try {
+              // First, emit reasoning start event
+              const reasoningStartEvent = `r:${JSON.stringify({ type: "reasoning-start" })}\n`
+              controller.enqueue(new TextEncoder().encode(reasoningStartEvent))
+              
+              // Then emit the reasoning content (if available)
+              if (reasoningExplanation) {
+                const reasoningDeltaEvent = `r:${JSON.stringify({ 
+                  type: "reasoning-delta", 
+                  content: reasoningExplanation 
+                })}\n`
+                controller.enqueue(new TextEncoder().encode(reasoningDeltaEvent))
+              }
+              
+              // Calculate reasoning duration (estimate based on reasoning tokens)
+              const reasoningTokens = responseData.usage?.output_tokens_details?.reasoning_tokens || 0
+              const estimatedDuration = Math.max(1, Math.floor(reasoningTokens / 100)) // Rough estimate
+              
+              // Emit reasoning end event
+              const reasoningEndEvent = `r:${JSON.stringify({ 
+                type: "reasoning-end", 
+                duration: estimatedDuration,
+                totalReasoning: reasoningExplanation || ""
+              })}\n`
+              controller.enqueue(new TextEncoder().encode(reasoningEndEvent))
+              
+              // Finally, emit the actual response text
+              const textChunk = `0:${JSON.stringify(responseText)}\n`
+              controller.enqueue(new TextEncoder().encode(textChunk))
+              
+              // Emit finish event
+              const finishChunk = `d:{"finishReason":"stop"}\n`
+              controller.enqueue(new TextEncoder().encode(finishChunk))
+              
+              controller.close()
+            } catch (error) {
+              console.error("❌ Error in OpenAI reasoning stream:", error)
+              controller.error(error)
+            }
+          }
+        })
         
-        return new Response(dataStreamResponse, {
+        return new Response(stream, {
           headers: {
             "Content-Type": "text/plain; charset=utf-8",
             "Cache-Control": "no-cache",
@@ -1329,8 +1413,8 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
         })
       })
     } else if (isThinkingModel && modelConfig.provider === "google") {
-      // Google thinking models - use proper thinking configuration based on official docs
-      console.log("🧠 Using Google thinking model processing for:", modelConfig.modelId)
+      // Google thinking models - use AI SDK with proper thinking configuration
+      console.log("🧠 Using Google thinking model processing with AI SDK for:", modelConfig.modelId)
       console.log("🤖 Model provider:", modelConfig.provider)
       console.log("🤖 Is thinking model:", isThinkingModel)
       
@@ -1339,47 +1423,59 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
         messages: processedMessages,
         system: systemPrompt,
         experimental_attachments: experimental_attachments || undefined,
-        // Proper Google thinking configuration based on official docs
-        experimental_providerOptions: {
+        // Proper Google thinking configuration using AI SDK
+        providerOptions: {
           google: {
             thinkingConfig: {
-              includeThoughts: true, // Enable thought summaries
+              includeThoughts: true,
+              // thinkingBudget: 2048, // Optional
             },
-          },
+          } satisfies GoogleGenerativeAIProviderOptions,
         },
-        onFinish: async ({ text, finishReason, usage, sources, providerMetadata }: any) => {
-          console.log("🏁 AI generation finished")
+        onFinish: async ({ text, finishReason, usage, sources, providerMetadata, reasoning, reasoningDetails }: any) => {
+          console.log("🏁 AI generation finished for Google thinking model")
+          console.log("🔍 Full response text:", text)
+          console.log("🔍 Response length:", text?.length)
+          console.log("🔍 Reasoning from AI SDK:", reasoning)
+          console.log("🔍 Reasoning details from AI SDK:", reasoningDetails)
           console.log("🔍 Provider metadata:", JSON.stringify(providerMetadata, null, 2))
           
-          // Extract reasoning from Google thinking model response
+          // Extract reasoning from AI SDK response
           let cleanedText = text
-          let reasoning = null
+          let extractedReasoning = reasoning || null
           
-          // Check if the response contains thinking parts based on official docs
-          if (providerMetadata?.parts) {
+          // If we have reasoning details, use that as well
+          if (reasoningDetails && !extractedReasoning) {
+            extractedReasoning = reasoningDetails
+          }
+          
+          // Also check provider metadata for additional reasoning
+          if (!extractedReasoning && providerMetadata?.parts) {
             console.log("🔍 Found parts in provider metadata:", providerMetadata.parts.length)
             const thoughtParts = providerMetadata.parts.filter((part: any) => part.thought)
-            console.log("🔍 Found thought parts:", thoughtParts.length)
             if (thoughtParts.length > 0) {
-              reasoning = thoughtParts.map((part: any) => part.thought).join('\n\n')
-              console.log("🧠 Extracted Google thinking reasoning:", reasoning.substring(0, 100) + "...")
+              extractedReasoning = thoughtParts.map((part: any) => part.thought).join('\n\n')
+              console.log("🧠 Extracted reasoning from provider metadata:", extractedReasoning.substring(0, 200) + "...")
             }
-          } else {
-            console.log("🔍 No parts found in provider metadata")
           }
           
           try {
-            await handleMessageSave(threadId, aiMessageId, user.id, cleanedText, sources, providerMetadata, modelConfig, apiKey!, reasoning)
-            console.log("✅ Message saved successfully")
+            await handleMessageSave(threadId, aiMessageId, user.id, cleanedText, sources, providerMetadata, modelConfig, apiKey!, extractedReasoning)
+            console.log("✅ Google thinking model message saved successfully")
+            if (extractedReasoning) {
+              console.log("✅ Reasoning was included in save")
+            } else {
+              console.log("⚠️ No reasoning was saved for Google thinking model")
+            }
           } catch (saveError) {
-            console.error("❌ Error saving message:", saveError)
+            console.error("❌ Error saving Google thinking model message:", saveError)
           }
         },
       }
 
-      console.log("🚀 Starting Google thinking model generation...")
+      console.log("🚀 Starting Google thinking model generation with AI SDK...")
       console.log("🤖 Final system prompt being sent to AI (Google thinking):", systemPrompt)
-      console.log("🔧 Google thinking config:", JSON.stringify(streamOptions.experimental_providerOptions, null, 2))
+      console.log("🔧 Google thinking config:", JSON.stringify(streamOptions.providerOptions, null, 2))
 
       // Wrap the stream creation in circuit breaker
       return await streamCircuitBreaker.execute(async () => {
@@ -1397,43 +1493,117 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
             } else if (error.message.includes("QUOTA_EXCEEDED") || error.message.includes("429")) {
               throw new Error("Google API quota exceeded. Please try again later.")
             } else if (error.message.includes("model not found") || error.message.includes("404")) {
-              throw new Error(`Model ${modelConfig.modelId} not found or not available.`)
+              throw new Error(`Google model '${modelConfig.modelId}' not found. Please check the model name.`)
             }
           }
           throw error
         }
 
-        // Use the AI SDK's built-in data stream response with error handling
-        return result.toDataStreamResponse({
+                 // Create a custom stream to handle reasoning parts during streaming
+         const customStream = new ReadableStream({
+           async start(controller) {
+             const reader = result.fullStream.getReader()
+             const encoder = new TextEncoder()
+             let reasoning = ""
+             let hasStartedReasoning = false
+             let hasFinishedReasoning = false
+             let reasoningStartTime = Date.now()
+
+             const safeEnqueue = (chunk: Uint8Array) => {
+               try {
+                 controller.enqueue(chunk)
+               } catch (error) {
+                 console.warn("⚠️ Failed to enqueue chunk:", error)
+               }
+             }
+
+             const safeClose = () => {
+               try {
+                 controller.close()
+               } catch (error) {
+                 console.warn("⚠️ Failed to close controller:", error)
+               }
+             }
+
+             try {
+               while (true) {
+                 const { done, value } = await reader.read()
+                 if (done) break
+
+                 if (value.type === 'reasoning') {
+                   // Handle reasoning parts during streaming - STREAM THEM TO CLIENT
+                   reasoning += value.textDelta
+                   console.log("🧠 Found reasoning during streaming:", value.textDelta.substring(0, 100))
+                   
+                   if (!hasStartedReasoning) {
+                     // Send reasoning start marker
+                     const reasoningStartChunk = `r:${JSON.stringify({ type: 'reasoning-start' })}\n`
+                     safeEnqueue(encoder.encode(reasoningStartChunk))
+                     hasStartedReasoning = true
+                     reasoningStartTime = Date.now()
+                     console.log("🧠 Started streaming reasoning to client")
+                   }
+                   
+                   // Stream reasoning content to client in real-time
+                   const reasoningChunk = `r:${JSON.stringify({ type: 'reasoning-delta', content: value.textDelta })}\n`
+                   safeEnqueue(encoder.encode(reasoningChunk))
+                   
+                 } else if (value.type === 'text-delta') {
+                   // If we were streaming reasoning and now we have text, mark reasoning as finished
+                   if (hasStartedReasoning && !hasFinishedReasoning) {
+                     const reasoningEndTime = Date.now()
+                     const thinkingDuration = Math.round((reasoningEndTime - reasoningStartTime) / 1000)
+                     const reasoningEndChunk = `r:${JSON.stringify({ 
+                       type: 'reasoning-end', 
+                       duration: thinkingDuration,
+                       totalReasoning: reasoning 
+                     })}\n`
+                     safeEnqueue(encoder.encode(reasoningEndChunk))
+                     hasFinishedReasoning = true
+                     console.log(`🧠 Finished streaming reasoning to client (${thinkingDuration}s)`)
+                   }
+                   
+                   // Stream text content to client
+                   const streamChunk = `0:${JSON.stringify(value.textDelta)}\n`
+                   safeEnqueue(encoder.encode(streamChunk))
+                 } else if (value.type === 'finish') {
+                   // If reasoning never finished (edge case), finish it now
+                   if (hasStartedReasoning && !hasFinishedReasoning) {
+                     const reasoningEndTime = Date.now()
+                     const thinkingDuration = Math.round((reasoningEndTime - reasoningStartTime) / 1000)
+                     const reasoningEndChunk = `r:${JSON.stringify({ 
+                       type: 'reasoning-end', 
+                       duration: thinkingDuration,
+                       totalReasoning: reasoning 
+                     })}\n`
+                     safeEnqueue(encoder.encode(reasoningEndChunk))
+                     console.log(`🧠 Finished reasoning on completion (${thinkingDuration}s)`)
+                   }
+                   
+                   // Send completion marker
+                   safeEnqueue(encoder.encode('d:{"finishReason":"stop"}\n'))
+                 }
+               }
+
+               safeClose()
+             } catch (error) {
+               console.error("❌ Error in Google thinking stream processing:", error)
+               safeClose()
+             }
+           }
+         })
+
+        return new Response(customStream, {
           headers: {
             "Content-Type": "text/plain; charset=utf-8",
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
           },
-          getErrorMessage: (error: unknown) => {
-            console.error("🚨 Google thinking model stream error:", error)
-            if (error == null) {
-              return 'Unknown error occurred'
-            }
-            if (typeof error === 'string') {
-              return error
-            }
-            if (error instanceof Error) {
-              console.error("🚨 Error details:", {
-                name: error.name,
-                message: error.message,
-                stack: error.stack,
-                cause: error.cause
-              })
-              return error.message
-            }
-            return JSON.stringify(error)
-          },
         })
       })
-    } else {
-      // Regular models - use standard processing with protection
-      console.log("🤖 Using standard model processing for:", modelConfig.modelId)
+    } else if (needsCustomThinkingProcessor) {
+      // OpenRouter thinking models - use custom thinking processor
+      console.log("🧠 Using custom thinking processor for OpenRouter model:", modelConfig.modelId)
       console.log("🤖 Model provider:", modelConfig.provider)
       console.log("🤖 Is thinking model:", isThinkingModel)
       
@@ -1443,7 +1613,248 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
         system: systemPrompt,
         experimental_attachments: experimental_attachments || undefined,
         onFinish: async ({ text, finishReason, usage, sources, providerMetadata }: any) => {
+          console.log("🏁 AI generation finished for thinking model")
+          console.log("🔍 Full response text:", text)
+          console.log("🔍 Response length:", text?.length)
+          console.log("🔍 Contains <think>:", text?.includes("<think>"))
+          console.log("🔍 Contains </think>:", text?.includes("</think>"))
+
+          // Parse thinking content from text for OpenRouter models
+          let cleanedText = text
+          let reasoning = null
+
+          if (text.includes("<think>") && text.includes("</think>")) {
+            console.log("🧠 Detected thinking content in OpenRouter response")
+
+            // Extract thinking content
+            const thinkMatches = text.match(/<think>([\s\S]*?)<\/think>/g)
+            if (thinkMatches) {
+              reasoning = thinkMatches.map((match: string) => 
+                match.replace(/<think>|<\/think>/g, "")
+              ).join('\n\n')
+              console.log("🧠 Extracted reasoning length:", reasoning.length)
+              console.log("🧠 Extracted reasoning preview:", reasoning.substring(0, 200) + "...")
+            }
+
+            // Remove thinking tags from the main content
+            cleanedText = text.replace(/<think>[\s\S]*?<\/think>/g, "").trim()
+            console.log("🧠 Cleaned text length:", cleanedText.length)
+            console.log("🧠 Cleaned text preview:", cleanedText.substring(0, 200) + "...")
+          } else {
+            console.log("🧠 No thinking tags found in response")
+            console.log("🔍 Response preview:", text?.substring(0, 500) + "...")
+          }
+
+          try {
+            await handleMessageSave(threadId, aiMessageId, user.id, cleanedText, sources, providerMetadata, modelConfig, apiKey!, reasoning)
+            console.log("✅ OpenRouter thinking model message saved successfully")
+            if (reasoning) {
+              console.log("✅ Reasoning was included in save")
+            } else {
+              console.log("⚠️ No reasoning was saved")
+            }
+          } catch (saveError) {
+            console.error("❌ Error saving OpenRouter thinking model message:", saveError)
+          }
+        },
+      }
+
+      console.log("🚀 Starting OpenRouter thinking model generation...")
+      console.log("🤖 Final system prompt being sent to AI (OpenRouter thinking):", systemPrompt)
+
+      // Wrap the stream creation in circuit breaker
+      return await streamCircuitBreaker.execute(async () => {
+        console.log("🔄 Executing streamText with OpenRouter thinking model")
+        let result
+        try {
+          result = streamText(streamOptions)
+          console.log("✅ streamText initialized successfully for OpenRouter thinking model")
+        } catch (error) {
+          console.error("❌ Error in streamText initialization for OpenRouter thinking model:", error)
+          throw error
+        }
+
+        // Create a custom data stream that filters out <think> tags during streaming
+        const customStream = new ReadableStream({
+          async start(controller) {
+            const reader = result.toDataStream().getReader()
+            const encoder = new TextEncoder()
+            const decoder = new TextDecoder()
+            
+            let textBuffer = ""
+            let insideThinking = false
+            let thinkingContent = ""
+
+            const safeEnqueue = (chunk: Uint8Array) => {
+              try {
+                controller.enqueue(chunk)
+              } catch (error) {
+                console.warn("⚠️ Failed to enqueue chunk:", error)
+              }
+            }
+
+            const safeClose = () => {
+              try {
+                controller.close()
+              } catch (error) {
+                console.warn("⚠️ Failed to close controller:", error)
+              }
+            }
+
+            try {
+              while (true) {
+                const { done, value } = await reader.read()
+                if (done) break
+
+                const chunk = decoder.decode(value)
+                
+                // Check if this is a text delta chunk
+                if (chunk.startsWith('0:')) {
+                  // Extract the text content from the data stream format
+                  const textMatch = chunk.match(/0:"([^"]*)"/)
+                  if (textMatch) {
+                    const textDelta = textMatch[1]
+                    textBuffer += textDelta
+                    
+                    let processedText = ""
+                    let i = 0
+
+                    while (i < textBuffer.length) {
+                      if (!insideThinking) {
+                        // Look for start of thinking
+                        const thinkStart = textBuffer.indexOf("<think>", i)
+                        if (thinkStart !== -1) {
+                          // Add content before thinking to output
+                          processedText += textBuffer.substring(i, thinkStart)
+                          insideThinking = true
+                          i = thinkStart + 7 // Skip "<think>"
+                        } else {
+                          // No thinking tag found, add rest of buffer to output
+                          processedText += textBuffer.substring(i)
+                          break
+                        }
+                      } else {
+                        // Look for end of thinking
+                        const thinkEnd = textBuffer.indexOf("</think>", i)
+                        if (thinkEnd !== -1) {
+                          // Capture thinking content but don't add to output
+                          thinkingContent += textBuffer.substring(i, thinkEnd)
+                          insideThinking = false
+                          i = thinkEnd + 8 // Skip "</think>"
+                        } else {
+                          // Still inside thinking, capture content but don't output
+                          thinkingContent += textBuffer.substring(i)
+                          break
+                        }
+                      }
+                    }
+
+                    // Send processed text delta (without thinking content) to client
+                    if (processedText) {
+                      const processedChunk = `0:"${processedText}"\n`
+                      safeEnqueue(encoder.encode(processedChunk))
+                    }
+
+                    // Update buffer to remaining unprocessed content
+                    textBuffer = textBuffer.substring(i)
+                  } else {
+                    // Pass through non-text chunks as-is
+                    safeEnqueue(value)
+                  }
+                } else {
+                  // Pass through non-text chunks (like finish reason, etc.)
+                  safeEnqueue(value)
+                }
+              }
+
+              safeClose()
+            } catch (error) {
+              console.error("❌ Error in OpenRouter thinking stream processing:", error)
+              safeClose()
+            }
+          }
+        })
+
+        return new Response(customStream, {
+          headers: {
+            "Content-Type": "text/plain; charset=utf-8",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+          },
+        })
+      })
+    } else {
+      // Regular models - use standard processing with protection
+      console.log("🤖 Using standard model processing for:", modelConfig.modelId)
+      console.log("🤖 Model provider:", modelConfig.provider)
+      console.log("🤖 Is thinking model:", isThinkingModel)
+      
+      // Prepare tools for OpenAI web search
+      let tools = undefined
+      let toolChoice = undefined
+      
+      console.log("🔍 Web search debug info:", {
+        provider: modelConfig.provider,
+        webSearchEnabled,
+        modelSupportsSearch,
+        shouldAddWebSearch: modelConfig.provider === "openai" && webSearchEnabled && modelSupportsSearch
+      })
+      
+      if (modelConfig.provider === "openai" && webSearchEnabled && modelSupportsSearch) {
+        console.log("🔍 Adding OpenAI web search tool")
+        try {
+          // For regular OpenAI models with streamText, we need to use the model with responses API
+          // Let's try using the openai.responses() model instead
+          console.log("🔍 Switching to OpenAI Responses API for web search support")
+          
+          // Update the model to use responses API
+          const openaiClient = createOpenAI({ apiKey: apiKey! })
+          aiModel = openaiClient.responses(modelConfig.modelId)
+          
+          tools = {
+            web_search_preview: openai.tools.webSearchPreview({
+              searchContextSize: 'high',
+              // Optional: Add user location if available
+              // userLocation: {
+              //   type: 'approximate',
+              //   city: 'San Francisco',
+              //   region: 'California',
+              // },
+            }),
+          }
+          
+          // Don't force web search tool - let the model decide when to use it
+          // toolChoice = { type: 'tool', toolName: 'web_search_preview' }
+          
+          console.log("✅ OpenAI web search tool configured successfully with Responses API")
+          console.log("🔍 Tools object:", JSON.stringify(tools, null, 2))
+        } catch (error) {
+          console.error("❌ Error configuring OpenAI web search tool:", error)
+          // Fallback to regular model without web search
+          const openaiClient = createOpenAI({ apiKey: apiKey! })
+          aiModel = openaiClient(modelConfig.modelId)
+        }
+      } else {
+        console.log("🚫 Web search tool not added - conditions not met")
+      }
+
+      const streamOptions = {
+        model: aiModel,
+        messages: processedMessages,
+        system: systemPrompt,
+        experimental_attachments: experimental_attachments || undefined,
+        tools: tools,
+        toolChoice: toolChoice,
+        onFinish: async ({ text, finishReason, usage, sources, providerMetadata }: any) => {
           console.log("🏁 AI generation finished")
+          console.log("🔍 Sources from web search:", sources)
+          console.log("🔍 Sources type:", typeof sources)
+          console.log("🔍 Sources length:", sources?.length)
+          console.log("🔍 Sources content:", JSON.stringify(sources, null, 2))
+          console.log("🔍 Finish reason:", finishReason)
+          console.log("🔍 Provider metadata:", providerMetadata)
+          console.log("🔍 Provider metadata type:", typeof providerMetadata)
+          console.log("🔍 Provider metadata content:", JSON.stringify(providerMetadata, null, 2))
           try {
           await handleMessageSave(threadId, aiMessageId, user.id, text, sources, providerMetadata, modelConfig, apiKey!)
             console.log("✅ Message saved successfully")
@@ -1452,6 +1863,14 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
           }
         },
       }
+
+      console.log("🔍 Stream options debug:", {
+        hasTools: !!tools,
+        toolsKeys: tools ? Object.keys(tools) : [],
+        hasToolChoice: !!toolChoice,
+        modelId: modelConfig.modelId,
+        messagesCount: processedMessages.length
+      })
 
       console.log("🚀 Starting AI generation...")
       console.log("🤖 Final system prompt being sent to AI (non-thinking):", systemPrompt)
@@ -2261,7 +2680,21 @@ async function handleMessageSave(
       const messageParts = [{ type: "text", text }]
 
       if (sources && sources.length > 0) {
+        console.log("💾 Adding sources to message parts:", {
+          sourcesCount: sources.length,
+          sourcesPreview: sources.slice(0, 2).map((s: any) => ({
+            url: s?.url,
+            title: s?.title,
+            snippet: s?.snippet?.substring(0, 100)
+          }))
+        })
         messageParts.push({ type: "sources", sources } as any)
+      } else {
+        console.log("💾 No sources to add to message parts:", {
+          hasSources: !!sources,
+          sourcesType: typeof sources,
+          sourcesLength: sources?.length
+        })
       }
 
       if (reasoning) {

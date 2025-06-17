@@ -140,13 +140,45 @@ function PureMessage({
     (() => {
       // Also check if thinking content is embedded in text parts
       const textPart = actualCurrentMessage.parts?.find((part) => part.type === "text")
-      if (textPart?.text?.includes("<Thinking>") && textPart?.text?.includes("</Thinking>")) {
-        const thinkMatch = textPart.text.match(/<Thinking>([\s\S]*?)<\/Thinking>/)
-        return thinkMatch ? thinkMatch[1].trim() : null
+      if (textPart?.text) {
+        // For streaming thinking models, extract both complete and partial thinking content
+        if (textPart.text.includes("<think>")) {
+          // Handle both complete and partial thinking blocks
+          if (textPart.text.includes("</think>")) {
+            // Complete thinking blocks
+            const thinkMatches = textPart.text.match(/<think>([\s\S]*?)<\/think>/g)
+            if (thinkMatches) {
+              return thinkMatches.map(match => 
+                match.replace(/<think>|<\/think>/g, "")
+              ).join('\n\n')
+            }
+          } else {
+            // Partial thinking block (streaming in progress)
+            const partialMatch = textPart.text.match(/<think>([\s\S]*)$/)
+            if (partialMatch) {
+              return partialMatch[1]
+            }
+          }
+        }
+        
+        // Legacy support for <Thinking> tags
+        if (textPart.text.includes("<Thinking>") && textPart.text.includes("</Thinking>")) {
+          const thinkMatch = textPart.text.match(/<Thinking>([\s\S]*?)<\/Thinking>/)
+          return thinkMatch ? thinkMatch[1].trim() : null
+        }
       }
       return null
-      
     })()
+
+  // Debug reasoning extraction
+  console.log("🧠 Message reasoning debug:", {
+    messageId: message.id,
+    hasDirectReasoning: !!actualCurrentMessage.reasoning,
+    hasReasoningParts: !!actualCurrentMessage.parts?.find((part) => part.type === "reasoning"),
+    extractedReasoning: !!reasoning,
+    reasoningLength: reasoning?.length || 0,
+    reasoningPreview: reasoning?.substring(0, 100) || "none"
+  })
 
   // Refresh artifacts when streaming stops to catch auto-generated artifacts
   useEffect(() => {
@@ -475,16 +507,41 @@ const isSelectionInThisMessage = useCallback(() => {
           const orderedParts = [...reasoningParts, ...textParts]
 
           // If we have reasoning but no reasoning parts, add it as a virtual part
+          // For thinking models, always show reasoning if available, even during streaming
           if (reasoning && reasoningParts.length === 0) {
+            console.log("🧠 Adding virtual reasoning part:", {
+              messageId: message.id,
+              reasoningLength: reasoning.length,
+              reasoningPreview: reasoning.substring(0, 100)
+            })
             orderedParts.unshift({ type: "reasoning", reasoning } as any)
+          } else if (isThinkingModel && isStreaming && reasoningParts.length === 0) {
+            // For streaming thinking models without reasoning yet, show placeholder
+            console.log("🧠 Adding thinking placeholder for streaming model:", message.id)
+            orderedParts.unshift({ type: "reasoning", reasoning: "Thinking..." } as any)
           }
+
+          console.log("🧠 Final ordered parts for message:", {
+            messageId: message.id,
+            totalParts: orderedParts.length,
+            reasoningParts: orderedParts.filter(p => p.type === "reasoning").length,
+            textParts: orderedParts.filter(p => p.type === "text").length,
+            isThinkingModel,
+            hasReasoning: !!reasoning
+          })
 
           return orderedParts.map((part, index) => {
             const { type } = part
             const key = `message-${message.id}-part-${index}`
 
             if (type === "reasoning") {
-              return <MessageReasoning key={key} reasoning={part.reasoning} id={message.id} />
+              return <MessageReasoning 
+                key={key} 
+                reasoning={part.reasoning} 
+                id={message.id} 
+                isStreaming={isStreaming}
+                autoExpand={isThinkingModel}
+              />
             }
 
             if (type === "text") {
@@ -621,7 +678,13 @@ const isSelectionInThisMessage = useCallback(() => {
           const key = `message-${message.id}-part-${index}`
 
           if (type === "reasoning") {
-            return <MessageReasoning key={key} reasoning={part.reasoning} id={message.id} />
+            return <MessageReasoning 
+              key={key} 
+              reasoning={part.reasoning} 
+              id={message.id} 
+              isStreaming={isStreaming}
+              autoExpand={isThinkingModel}
+            />
           }
 
           if (type === "text") {

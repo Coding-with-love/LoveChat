@@ -398,7 +398,7 @@ export interface Database {
           user_id: string
           original_code: string
           converted_code: string
-          source_language: string
+          original_language: string
           target_language: string
           created_at: string
         }
@@ -409,7 +409,7 @@ export interface Database {
           user_id: string
           original_code: string
           converted_code: string
-          source_language: string
+          original_language: string
           target_language: string
           created_at?: string
         }
@@ -420,7 +420,7 @@ export interface Database {
           message_id?: string
           original_code?: string
           converted_code?: string
-          source_language?: string
+          original_language?: string
           target_language?: string
           created_at?: string
         }

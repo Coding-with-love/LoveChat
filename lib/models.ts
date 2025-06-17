@@ -94,7 +94,7 @@ export function getModelConfig(model: AIModel): ModelConfig {
         modelId: "gpt-4o",
         name: "gpt-4o",
         headerKey: "X-OpenAI-API-Key",
-        supportsSearch: false,
+        supportsSearch: true,
         supportsThinking: false,
       }
     case "gpt-4o-mini":
@@ -103,7 +103,7 @@ export function getModelConfig(model: AIModel): ModelConfig {
         modelId: "gpt-4o-mini",
         name: "gpt-4o-mini",
         headerKey: "X-OpenAI-API-Key",
-        supportsSearch: false,
+        supportsSearch: true,
         supportsThinking: false,
       }
     case "gpt-4-turbo":
@@ -112,7 +112,7 @@ export function getModelConfig(model: AIModel): ModelConfig {
         modelId: "gpt-4-turbo",
         name: "gpt-4-turbo",
         headerKey: "X-OpenAI-API-Key",
-        supportsSearch: false,
+        supportsSearch: true,
         supportsThinking: false,
       }
     case "o1-preview":

@@ -22,8 +22,17 @@ export async function POST(request: NextRequest) {
 
     console.log("✅ User authenticated:", user.id)
 
-    // Get Google API key from headers
-    const googleApiKey = request.headers.get("X-Google-API-Key")
+    // Get Google API key from headers or use server fallback
+    let googleApiKey = request.headers.get("X-Google-API-Key")
+    
+    // If no user-provided key, try server fallback
+    if (!googleApiKey) {
+      googleApiKey = process.env.GOOGLE_API_KEY || null
+      console.log("🔑 Using server fallback Google API key:", !!googleApiKey)
+    } else {
+      console.log("🔑 Using user-provided Google API key")
+    }
+
     console.log("🔑 API Key Debug:", {
       hasKey: !!googleApiKey,
       keyLength: googleApiKey?.length,
@@ -31,8 +40,8 @@ export async function POST(request: NextRequest) {
     })
 
     if (!googleApiKey) {
-      console.error("❌ No Google API key in headers")
-      return NextResponse.json({ error: "Google API key required" }, { status: 400 })
+      console.error("❌ No Google API key available (neither user-provided nor server fallback)")
+      return NextResponse.json({ error: "Google API key required. Please add one in Settings or contact administrator." }, { status: 400 })
     }
 
     const body = await request.json()
@@ -188,6 +197,17 @@ Converted ${toDescription} code:`
         created_at: new Date().toISOString()
       }
 
+      console.log("💾 About to insert conversion data:", {
+        id: conversionId,
+        thread_id: threadId,
+        message_id: messageId,
+        user_id: user.id,
+        original_language: fromLanguage,
+        target_language: target.label,
+        original_code_length: code.length,
+        converted_code_length: finalCode.length
+      })
+
       const { error: saveError } = await supabaseServer
         .from("code_conversions")
         .insert(conversionData)
@@ -211,14 +231,14 @@ Converted ${toDescription} code:`
         // Double-check that the conversion was saved
         const { data: checkData, error: checkError } = await supabaseServer
           .from("code_conversions")
-          .select("id")
+          .select("id, original_language, target_language")
           .eq("id", conversionId)
           .single()
           
         if (checkError) {
           console.error("❌ Error verifying saved conversion:", checkError)
         } else {
-          console.log("✅ Verified conversion saved with ID:", checkData.id)
+          console.log("✅ Verified conversion saved with ID:", checkData.id, "from", checkData.original_language, "to", checkData.target_language)
         }
       }
     }

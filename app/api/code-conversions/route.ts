@@ -5,6 +5,8 @@ import { supabaseServer } from "@/lib/supabase/server"
 export async function GET(request: NextRequest) {
   try {
     console.log("🔍 Code conversions API called")
+    console.log("🔍 Request URL:", request.url)
+    console.log("🔍 Request headers:", Object.fromEntries(request.headers.entries()))
 
     // Check authentication
     const authHeader = request.headers.get("authorization")
@@ -25,7 +27,10 @@ export async function GET(request: NextRequest) {
     const threadId = request.nextUrl.searchParams.get("threadId")
     const messageId = request.nextUrl.searchParams.get("messageId")
 
+    console.log("🔍 Query parameters:", { threadId, messageId })
+
     if (!threadId || !messageId) {
+      console.error("❌ Missing required parameters:", { threadId, messageId })
       return NextResponse.json({ error: "threadId and messageId are required" }, { status: 400 })
     }
 

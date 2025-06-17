@@ -235,22 +235,23 @@ export default function APIKeyForm() {
 
   return (
     <div className="space-y-6">
-      {/* Information about default keys */}
-      <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+      {/* Information about API key requirements */}
+      <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
         <div className="flex items-start gap-3">
-          <div className="flex-shrink-0 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center mt-0.5">
+          <div className="flex-shrink-0 w-5 h-5 bg-amber-500 rounded-full flex items-center justify-center mt-0.5">
             <Check className="h-3 w-3 text-white" />
           </div>
           <div className="space-y-2">
-            <h4 className="text-sm font-medium text-blue-900 dark:text-blue-100">
-              No API Keys Required!
+            <h4 className="text-sm font-medium text-amber-900 dark:text-amber-100">
+              API Key Requirements
             </h4>
-            <p className="text-xs text-blue-700 dark:text-blue-200">
-              This app provides default API keys so you can start chatting immediately. 
-              You can optionally add your own API keys below to override the defaults and use your own usage quotas.
-            </p>
-            <p className="text-xs text-blue-600 dark:text-blue-300 font-medium">
-              💡 Models with "Using default key" badges are ready to use without any setup!
+            <div className="text-xs text-amber-700 dark:text-amber-200 space-y-1">
+              <p><strong>Required:</strong> OpenAI and OpenRouter models need your own API keys</p>
+              <p><strong>Optional:</strong> Google Gemini models can use server fallback keys</p>
+              <p><strong>No keys needed:</strong> Ollama models run locally</p>
+            </div>
+            <p className="text-xs text-amber-600 dark:text-amber-300 font-medium">
+              💡 Add your own keys to use your quotas and access all features!
             </p>
           </div>
         </div>
@@ -262,7 +263,7 @@ export default function APIKeyForm() {
           <Label htmlFor="openai-key" className="text-sm font-medium">
             OpenAI API Key
           </Label>
-          <span className="text-xs text-muted-foreground">Optional override for GPT-4o, GPT-4-turbo models</span>
+          <span className="text-xs text-red-600 dark:text-red-400 font-medium">Required for GPT models</span>
         </div>
         <div className="relative">
           <Input
@@ -300,9 +301,9 @@ export default function APIKeyForm() {
         </div>
         <div className="flex items-center gap-2 text-xs">
           <span
-            className={cn("flex h-2 w-2 rounded-full", openaiKey ? "bg-green-500" : "bg-green-400")}
+            className={cn("flex h-2 w-2 rounded-full", openaiKey ? "bg-green-500" : "bg-red-500")}
           />
-          <span className="text-muted-foreground">{openaiKey ? "Using your API key" : "Using default API key"}</span>
+          <span className="text-muted-foreground">{openaiKey ? "Using your API key" : "API key required"}</span>
         </div>
       </div>
 
@@ -312,7 +313,7 @@ export default function APIKeyForm() {
           <Label htmlFor="google-key" className="text-sm font-medium">
             Google API Key
           </Label>
-          <span className="text-xs text-muted-foreground">Optional override for Gemini models</span>
+          <span className="text-xs text-green-600 dark:text-green-400 font-medium">Optional - server fallback available</span>
         </div>
         <div className="relative">
           <Input
@@ -362,7 +363,7 @@ export default function APIKeyForm() {
           <Label htmlFor="openrouter-key" className="text-sm font-medium">
             OpenRouter API Key
           </Label>
-          <span className="text-xs text-muted-foreground">Optional override for Claude and other models</span>
+          <span className="text-xs text-red-600 dark:text-red-400 font-medium">Required for Claude and other models</span>
         </div>
         <div className="relative">
           <Input
@@ -400,9 +401,9 @@ export default function APIKeyForm() {
         </div>
         <div className="flex items-center gap-2 text-xs">
           <span
-            className={cn("flex h-2 w-2 rounded-full", openrouterKey ? "bg-green-500" : "bg-green-400")}
+            className={cn("flex h-2 w-2 rounded-full", openrouterKey ? "bg-green-500" : "bg-red-500")}
           />
-          <span className="text-muted-foreground">{openrouterKey ? "Using your API key" : "Using default API key"}</span>
+          <span className="text-muted-foreground">{openrouterKey ? "Using your API key" : "API key required"}</span>
         </div>
       </div>
 
