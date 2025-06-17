@@ -5,13 +5,7 @@ import { memo, useCallback, useMemo, useState, useEffect } from "react"
 import { Textarea } from "@/frontend/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import { Button } from "@/frontend/components/ui/button"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-} from "@/frontend/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/frontend/components/ui/dropdown-menu"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/frontend/components/ui/tooltip"
 import useAutoResizeTextarea from "@/hooks/useAutoResizeTextArea"
 import type { UseChatHelpers } from "@ai-sdk/react"
@@ -21,7 +15,7 @@ import { createMessage, createThread } from "@/lib/supabase/queries"
 import { useAPIKeyStore } from "@/frontend/stores/APIKeyStore"
 import { useModelStore } from "@/frontend/stores/ModelStore"
 import { useWebSearchStore } from "@/frontend/stores/WebSearchStore"
-import { AI_MODELS, type AIModel, getModelConfig } from "@/lib/models"
+import { type AIModel, getModelConfig } from "@/lib/models"
 import KeyPrompt from "@/frontend/components/KeyPrompt"
 import type { UIMessage } from "ai"
 import { v4 as uuidv4 } from "uuid"
@@ -33,7 +27,6 @@ import FileUpload, { FilePreviewList } from "./FileUpload"
 import type { FileUploadResult } from "@/lib/supabase/file-upload"
 import {
   ChevronDown,
-  Check,
   ArrowUpIcon,
   Search,
   Info,
@@ -1054,7 +1047,12 @@ function PureChatInput({ threadId, input, status, setInput, append, stop, onRefr
       </div>
 
       {/* Workflow Builder */}
-      <WorkflowBuilder open={workflowBuilderOpen} onOpenChange={setWorkflowBuilderOpen} threadId={threadId} onRefreshMessages={onRefreshMessages} />
+      <WorkflowBuilder
+        open={workflowBuilderOpen}
+        onOpenChange={setWorkflowBuilderOpen}
+        threadId={threadId}
+        onRefreshMessages={onRefreshMessages}
+      />
 
       {/* Enhanced Web Search Status Indicator */}
       {searchStatusMessage && (
@@ -1139,8 +1137,11 @@ const ChatInput = memo(PureChatInput, (prevProps, nextProps) => {
 
 const PureChatModelDropdown = () => {
   const getKey = useAPIKeyStore((state) => state.getKey)
-  const { selectedModel, setModel, getEnabledModels, ensureValidSelectedModel } = useModelStore()
+  const { selectedModel, setModel, getEnabledModels, ensureValidSelectedModel, favoriteModels, toggleFavoriteModel } =
+    useModelStore()
   const navigate = useNavigate()
+  const [searchQuery, setSearchQuery] = useState("")
+  const [showFavorites, setShowFavorites] = useState(true)
 
   // Ensure valid model selection on mount
   useEffect(() => {
@@ -1165,12 +1166,38 @@ const PureChatModelDropdown = () => {
     const modelConfig = getModelConfig(model)
     const badges = []
 
+    if (modelConfig.supportsVision) {
+      badges.push(
+        <div key="vision" className="w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center">
+          <div className="w-3 h-3 rounded-full bg-green-500 flex items-center justify-center">
+            <div className="w-1.5 h-1.5 rounded-full bg-white" />
+          </div>
+        </div>,
+      )
+    }
+
     if (modelConfig.supportsSearch) {
-      badges.push(<Search key="search" className="w-3 h-3 text-blue-500" />)
+      badges.push(
+        <div key="search" className="w-6 h-6 rounded-full bg-blue-500/20 flex items-center justify-center">
+          <Search className="w-3 h-3 text-blue-400" />
+        </div>,
+      )
+    }
+
+    if (modelConfig.supportsFiles) {
+      badges.push(
+        <div key="files" className="w-6 h-6 rounded-full bg-purple-500/20 flex items-center justify-center">
+          <FileText className="w-3 h-3 text-purple-400" />
+        </div>,
+      )
     }
 
     if (modelConfig.supportsThinking) {
-      badges.push(<Sparkles key="thinking" className="w-3 h-3 text-purple-500" />)
+      badges.push(
+        <div key="thinking" className="w-6 h-6 rounded-full bg-pink-500/20 flex items-center justify-center">
+          <Sparkles className="w-3 h-3 text-pink-400" />
+        </div>,
+      )
     }
 
     return badges
@@ -1192,20 +1219,28 @@ const PureChatModelDropdown = () => {
     }
   }, [])
 
-  // Group models by provider
-  const groupedModels = useMemo(() => {
-    const groups: Record<string, AIModel[]> = {}
+  // Filter models based on search
+  const filteredModels = useMemo(() => {
+    if (!searchQuery) return availableModels
+    return availableModels.filter(
+      (model) =>
+        model.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        getProviderName(model).toLowerCase().includes(searchQuery.toLowerCase()),
+    )
+  }, [availableModels, searchQuery, getProviderName])
 
-    availableModels.forEach((model) => {
-      const provider = getProviderName(model)
-      if (!groups[provider]) {
-        groups[provider] = []
-      }
-      groups[provider].push(model)
-    })
+  const filteredFavorites = useMemo(() => {
+    if (!searchQuery) return favoriteModels
+    return favoriteModels.filter(
+      (model) =>
+        model.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        getProviderName(model).toLowerCase().includes(searchQuery.toLowerCase()),
+    )
+  }, [favoriteModels, searchQuery, getProviderName])
 
-    return groups
-  }, [availableModels, getProviderName])
+  const otherModels = useMemo(() => {
+    return filteredModels.filter((model) => !favoriteModels.includes(model))
+  }, [filteredModels, favoriteModels])
 
   if (availableModels.length === 0) {
     return (
@@ -1238,46 +1273,111 @@ const PureChatModelDropdown = () => {
             </div>
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent className="min-w-[280px] max-h-[400px] overflow-y-auto">
-          {Object.entries(groupedModels).map(([provider, models], groupIndex) => (
-            <div key={provider}>
-              {groupIndex > 0 && <DropdownMenuSeparator />}
-              <div className="px-2 py-1.5">
-                <div className="text-xs font-medium text-muted-foreground flex items-center gap-2">
-                  <ProviderLogo
-                    provider={provider.toLowerCase() as "openai" | "google" | "openrouter" | "ollama"}
-                    size="sm"
-                  />
-                  {provider}
-                </div>
+        <DropdownMenuContent className="w-[480px] max-h-[600px] overflow-hidden p-0" align="start">
+          <div className="bg-background border-0">
+            {/* Search Header */}
+            <div className="p-4 border-b border-border/50">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <input
+                  type="text"
+                  placeholder="Search models..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 bg-muted/50 border border-border/50 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50"
+                />
               </div>
-              {models.map((model) => (
-                <DropdownMenuItem
-                  key={model}
-                  onSelect={() => setModel(model)}
-                  className="flex items-center justify-between gap-2 cursor-pointer px-3 py-2"
-                >
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <span className="truncate">{model.replace("ollama:", "")}</span>
-                    <div className="flex items-center gap-1">{getModelBadges(model)}</div>
-                  </div>
-                  {selectedModel === model && <Check className="w-4 h-4 text-primary flex-shrink-0" />}
-                </DropdownMenuItem>
-              ))}
             </div>
-          ))}
 
-          {availableModels.length < AI_MODELS.length && (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem className="cursor-pointer" onSelect={() => navigate("/settings")}>
-                <div className="flex items-center gap-2">
-                  <Settings className="w-3 h-3" />
-                  <span>Manage models in Settings</span>
+            <div className="max-h-[500px] overflow-y-auto">
+              {/* Favorites Section */}
+              {filteredFavorites.length > 0 && (
+                <div className="p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Sparkles className="w-4 h-4 text-pink-500" />
+                    <span className="text-sm font-medium text-pink-500">Favorites</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    {filteredFavorites.map((model) => (
+                      <div
+                        key={model}
+                        onClick={() => setModel(model)}
+                        className={cn(
+                          "p-3 rounded-lg border cursor-pointer transition-all duration-200 hover:bg-muted/50",
+                          selectedModel === model
+                            ? "border-primary bg-primary/5 ring-1 ring-primary/20"
+                            : "border-border/50 hover:border-border",
+                        )}
+                      >
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            {getModelIcon(model)}
+                            {selectedModel === model && <div className="w-2 h-2 rounded-full bg-primary" />}
+                          </div>
+                          <div className="flex items-center gap-1">{getModelBadges(model)}</div>
+                        </div>
+                        <div className="text-sm font-medium text-foreground mb-1">
+                          {model.replace("ollama:", "").split(" ").slice(0, 2).join(" ")}
+                        </div>
+                        <div className="text-xs text-muted-foreground">{getProviderName(model)}</div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </DropdownMenuItem>
-            </>
-          )}
+              )}
+
+              {/* Others Section */}
+              {otherModels.length > 0 && (
+                <div className="p-4 border-t border-border/50">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-sm font-medium text-muted-foreground">Others</span>
+                  </div>
+                  <div className="space-y-1">
+                    {otherModels.map((model) => (
+                      <div
+                        key={model}
+                        onClick={() => setModel(model)}
+                        className={cn(
+                          "flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all duration-200 hover:bg-muted/50",
+                          selectedModel === model ? "bg-primary/5 border border-primary/20" : "hover:bg-muted/30",
+                        )}
+                      >
+                        <div className="flex items-center gap-3">
+                          {getModelIcon(model)}
+                          <div>
+                            <div className="text-sm font-medium text-foreground">{model.replace("ollama:", "")}</div>
+                            <div className="text-xs text-muted-foreground">{getProviderName(model)}</div>
+                          </div>
+                          {selectedModel === model && <div className="w-2 h-2 rounded-full bg-primary ml-2" />}
+                        </div>
+                        <div className="flex items-center gap-1">{getModelBadges(model)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* No Results */}
+              {filteredModels.length === 0 && (
+                <div className="p-8 text-center">
+                  <Search className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">No models found</p>
+                  <p className="text-xs text-muted-foreground mt-1">Try adjusting your search</p>
+                </div>
+              )}
+
+              {/* Settings Link */}
+              <div className="p-4 border-t border-border/50">
+                <button
+                  onClick={() => navigate("/settings")}
+                  className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors w-full"
+                >
+                  <Settings className="w-4 h-4" />
+                  <span>Manage models in Settings</span>
+                </button>
+              </div>
+            </div>
+          </div>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

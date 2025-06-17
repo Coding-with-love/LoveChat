@@ -22,6 +22,8 @@ interface ModelState {
   loadFromDatabase: () => Promise<void>
   saveToDatabase: () => Promise<void>
   hasLoadedFromDB: boolean
+  favoriteModels: AIModel[]
+  toggleFavoriteModel: (model: AIModel) => void
 }
 
 const DEFAULT_MODEL = "gemini-2.0-flash-exp" as const
@@ -50,28 +52,29 @@ export const useModelStore = create<ModelState>()(
       enabledModels: DEFAULT_ENABLED_MODELS,
       customModels: [] as OllamaModel[],
       hasLoadedFromDB: false,
-      
+      favoriteModels: [],
+
       setModel: (model: AIModel) => {
         set({ selectedModel: model })
         if (get().hasLoadedFromDB) {
           debouncedSave(() => get().saveToDatabase())
         }
       },
-      
+
       toggleModel: (model: AIModel) => {
         set((state) => {
           const isEnabled = state.enabledModels.includes(model)
           const newEnabledModels = isEnabled
-            ? state.enabledModels.filter(m => m !== model)
+            ? state.enabledModels.filter((m) => m !== model)
             : [...state.enabledModels, model]
-          
+
           // If we're disabling the currently selected model, switch to first available
           let newSelectedModel = state.selectedModel
           if (isEnabled && state.selectedModel === model) {
             const ollamaStore = useOllamaStore.getState()
             const isOllamaConnected = ollamaStore.isConnected
-            
-            const availableModels = newEnabledModels.filter(m => {
+
+            const availableModels = newEnabledModels.filter((m) => {
               try {
                 const modelConfig = getModelConfig(m)
                 if (modelConfig.provider === "ollama") {
@@ -94,26 +97,26 @@ export const useModelStore = create<ModelState>()(
               newSelectedModel = availableModels[0]
             }
           }
-          
-          return { 
+
+          return {
             enabledModels: newEnabledModels,
-            selectedModel: newSelectedModel
+            selectedModel: newSelectedModel,
           }
         })
-        
+
         if (get().hasLoadedFromDB) {
           debouncedSave(() => get().saveToDatabase())
         }
       },
-      
+
       getModelConfig: () => getModelConfig(get().selectedModel),
-      
+
       addCustomModel: (model: OllamaModel) => {
         set((state) => ({
           customModels: [...state.customModels, model],
         }))
       },
-      
+
       removeCustomModel: (model: OllamaModel) => {
         set((state) => ({
           customModels: state.customModels.filter((m) => m !== model),
@@ -121,7 +124,7 @@ export const useModelStore = create<ModelState>()(
           selectedModel: state.selectedModel === model ? get().findFirstAvailableModel() : state.selectedModel,
         }))
       },
-      
+
       getEnabledModels: () => {
         const state = get()
         const apiKeyStore = useAPIKeyStore.getState()
@@ -129,22 +132,22 @@ export const useModelStore = create<ModelState>()(
         const getKey = apiKeyStore.getKey
         const isLoading = apiKeyStore.isLoading
         const isOllamaConnected = ollamaStore.isConnected
-        
-        const filteredModels = [...state.enabledModels, ...state.customModels].filter(model => {
+
+        const filteredModels = [...state.enabledModels, ...state.customModels].filter((model) => {
           try {
             const modelConfig = getModelConfig(model)
             if (modelConfig.provider === "ollama") {
               // For production, be more lenient with Ollama models
-              // Allow them even if connection test failed, as the user might have a working ngrok setup
+              // Allow them even if connection test failed, but allowing model for production use:", model)
               if (!isOllamaConnected) {
                 console.log("🦙 Ollama connection test failed, but allowing model for production use:", model)
               }
               return true // Always allow Ollama models - let the chat endpoint handle connection issues
             }
-            
+
             // Check if user has provided their own API key
             const hasUserKey = !!getKey(modelConfig.provider)
-            
+
             // Provider-specific API key requirements
             if (modelConfig.provider === "openai") {
               // OpenAI models require user-provided API key
@@ -197,28 +200,28 @@ export const useModelStore = create<ModelState>()(
             return false
           }
         })
-        
+
         console.log("🔄 Available models after filtering:", {
           total: filteredModels.length,
           ollamaConnected: isOllamaConnected,
-          models: filteredModels.map(m => m.replace("ollama:", ""))
+          models: filteredModels.map((m) => m.replace("ollama:", "")),
         })
-        
+
         return filteredModels
       },
-      
+
       findFirstAvailableModel: () => {
         const state = get()
         const enabledModels = state.getEnabledModels()
-        
+
         if (enabledModels.length > 0) {
           return enabledModels[0]
         }
-        
+
         // Fallback to any available model
         const getKey = useAPIKeyStore.getState().getKey
         const isOllamaConnected = useOllamaStore.getState().isConnected
-        
+
         for (const model of AI_MODELS) {
           try {
             const modelConfig = getModelConfig(model)
@@ -237,7 +240,7 @@ export const useModelStore = create<ModelState>()(
             continue
           }
         }
-        
+
         return DEFAULT_MODEL
       },
 
@@ -248,21 +251,26 @@ export const useModelStore = create<ModelState>()(
         const isLoading = apiKeyStore.isLoading
         const isOllamaConnected = ollamaStore.isConnected
         const enabledModels = state.getEnabledModels()
-        
+
         // Check if current selected model is available
         const isCurrentModelAvailable = enabledModels.includes(state.selectedModel)
-        
+
         // Special check for Ollama models - be more lenient in production
         const isCurrentModelOllama = state.selectedModel.startsWith("ollama:")
         if (isCurrentModelOllama && !isOllamaConnected) {
           console.log("🦙 Current model is Ollama and connection test failed, but keeping model for production")
         }
-        
+
         // If the model is not available and we're not currently loading API keys,
         // then it's safe to switch to another model
         if (!isCurrentModelAvailable && !isLoading && enabledModels.length > 0) {
-          console.log("🔄 Model validation: switching from", state.selectedModel, "to", enabledModels[0], 
-                     isCurrentModelOllama ? "(Ollama disconnected)" : "(no API key)")
+          console.log(
+            "🔄 Model validation: switching from",
+            state.selectedModel,
+            "to",
+            enabledModels[0],
+            isCurrentModelOllama ? "(Ollama disconnected)" : "(no API key)",
+          )
           set({ selectedModel: enabledModels[0] })
         } else if (!isCurrentModelAvailable && isLoading) {
           console.log("🔄 Model validation: API keys loading, preserving current model", state.selectedModel)
@@ -271,15 +279,28 @@ export const useModelStore = create<ModelState>()(
           console.log("🔄 Model validation: current model", state.selectedModel, "is still available")
         }
       },
-
+      toggleFavoriteModel: (model: AIModel) => {
+        set((state) => {
+          const isFavorite = state.favoriteModels.includes(model)
+          const newFavoriteModels = isFavorite
+            ? state.favoriteModels.filter((m) => m !== model)
+            : [...state.favoriteModels, model]
+          return { favoriteModels: newFavoriteModels }
+        })
+        if (get().hasLoadedFromDB) {
+          debouncedSave(() => get().saveToDatabase())
+        }
+      },
       loadFromDatabase: async () => {
         try {
-          const { data: { user } } = await supabase.auth.getUser()
+          const {
+            data: { user },
+          } = await supabase.auth.getUser()
           if (!user) return
 
           const { data, error } = await supabase
             .from("user_preferences")
-            .select("selected_model, enabled_models")
+            .select("selected_model, enabled_models, favorite_models")
             .eq("user_id", user.id)
             .single()
 
@@ -294,6 +315,7 @@ export const useModelStore = create<ModelState>()(
             set({
               selectedModel: (data.selected_model as AIModel) || get().selectedModel,
               enabledModels: (data.enabled_models as AIModel[]) || get().enabledModels,
+              favoriteModels: (data.favorite_models as AIModel[]) || [],
               hasLoadedFromDB: true,
             })
           } else {
@@ -308,13 +330,16 @@ export const useModelStore = create<ModelState>()(
 
       saveToDatabase: async () => {
         try {
-          const { data: { user } } = await supabase.auth.getUser()
+          const {
+            data: { user },
+          } = await supabase.auth.getUser()
           if (!user) return
 
           const state = get()
           const preferences = {
             selected_model: state.selectedModel,
             enabled_models: state.enabledModels,
+            favorite_models: state.favoriteModels,
           }
 
           // Check if preferences already exist
@@ -337,12 +362,10 @@ export const useModelStore = create<ModelState>()(
             if (error) throw error
           } else {
             // Insert new preferences
-            const { error } = await supabase
-              .from("user_preferences")
-              .insert({
-                user_id: user.id,
-                ...preferences,
-              })
+            const { error } = await supabase.from("user_preferences").insert({
+              user_id: user.id,
+              ...preferences,
+            })
 
             if (error) throw error
           }
@@ -351,7 +374,7 @@ export const useModelStore = create<ModelState>()(
         } catch (error) {
           console.error("Failed to save model preferences to database:", error)
         }
-      }
+      },
     }),
     {
       name: "model-settings",

@@ -1,24 +1,35 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
+import type React from "react"
+
+import { useState } from "react"
 import { Button } from "./ui/button"
 import { Badge } from "./ui/badge"
 import { Switch } from "./ui/switch"
 import { Input } from "./ui/input"
-// import { Checkbox } from "./ui/checkbox"
-import { useAPIKeyStore } from "@/frontend/stores/APIKeyStore"
 import { useModelStore } from "@/frontend/stores/ModelStore"
 import { AI_MODELS, getModelConfig, type AIModel } from "@/lib/models"
 import { ProviderLogo } from "./ProviderLogo"
-import { Bot, Key, Globe, Zap, Brain, Search, Sparkles, Eye, FileText, Lightbulb, Filter, CheckSquare, Square, SlidersHorizontal, X, Shield, ChevronDown } from 'lucide-react'
+import {
+  Key,
+  Globe,
+  Zap,
+  Search,
+  Sparkles,
+  Eye,
+  FileText,
+  Lightbulb,
+  CheckSquare,
+  Square,
+  SlidersHorizontal,
+  X,
+  Shield,
+  ChevronDown,
+  Star,
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "./ui/popover"
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover"
 
 interface ModelInfo {
   model: AIModel
@@ -42,17 +53,22 @@ interface FilterState {
   features: string[]
   capabilities: string[]
   showOnlyAvailable: boolean
+  showOnlyFavorites: boolean
 }
+
+import { useAPIKeyStore } from "@/frontend/stores/APIKeyStore"
 
 export function ModelManager() {
   const { getKey } = useAPIKeyStore()
-  const { selectedModel, setModel, enabledModels, toggleModel, customModels } = useModelStore()
+  const { selectedModel, setModel, enabledModels, toggleModel, customModels, favoriteModels, toggleFavoriteModel } =
+    useModelStore()
   const [searchQuery, setSearchQuery] = useState("")
   const [filters, setFilters] = useState<FilterState>({
     providers: [],
     features: [],
     capabilities: [],
-    showOnlyAvailable: false
+    showOnlyAvailable: false,
+    showOnlyFavorites: false,
   })
 
   // Available filter options
@@ -75,28 +91,28 @@ export function ModelManager() {
       { value: "latest", label: "Latest Models" },
       { value: "flagship", label: "Flagship Models" },
       { value: "experimental", label: "Experimental" },
-    ]
+    ],
   }
 
   // Get model info with descriptions and features
   const getModelInfo = (model: AIModel): ModelInfo => {
     const config = getModelConfig(model)
     const features = []
-    
+
     // Add feature badges based on model capabilities
     if (config.supportsSearch) {
       features.push({
         icon: <Search className="h-3 w-3" />,
         label: "Search",
-        color: "bg-blue-500/10 text-blue-600 border-blue-500/20"
+        color: "bg-blue-500/10 text-blue-600 border-blue-500/20",
       })
     }
-    
+
     if (config.supportsThinking) {
       features.push({
         icon: <Sparkles className="h-3 w-3" />,
         label: "Thinking",
-        color: "bg-purple-500/10 text-purple-600 border-purple-500/20"
+        color: "bg-purple-500/10 text-purple-600 border-purple-500/20",
       })
     }
 
@@ -105,7 +121,7 @@ export function ModelManager() {
       features.push({
         icon: <Eye className="h-3 w-3" />,
         label: "Vision",
-        color: "bg-green-500/10 text-green-600 border-green-500/20"
+        color: "bg-green-500/10 text-green-600 border-green-500/20",
       })
     }
 
@@ -114,7 +130,7 @@ export function ModelManager() {
       features.push({
         icon: <FileText className="h-3 w-3" />,
         label: "PDFs",
-        color: "bg-indigo-500/10 text-indigo-600 border-indigo-500/20"
+        color: "bg-indigo-500/10 text-indigo-600 border-indigo-500/20",
       })
     }
 
@@ -123,7 +139,7 @@ export function ModelManager() {
       features.push({
         icon: <Zap className="h-3 w-3" />,
         label: "Fast",
-        color: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20"
+        color: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20",
       })
     }
 
@@ -132,7 +148,7 @@ export function ModelManager() {
       features.push({
         icon: <Lightbulb className="h-3 w-3" />,
         label: "Reasoning",
-        color: "bg-orange-500/10 text-orange-600 border-orange-500/20"
+        color: "bg-orange-500/10 text-orange-600 border-orange-500/20",
       })
     }
 
@@ -143,7 +159,7 @@ export function ModelManager() {
     switch (config.provider) {
       case "openai":
         providerName = "OpenAI"
-        
+
         // OpenAI model descriptions
         if (model.includes("o3")) {
           description = "OpenAI's most advanced reasoning model, excelling at complex problem-solving."
@@ -160,7 +176,7 @@ export function ModelManager() {
 
       case "google":
         providerName = "Google"
-        
+
         // Google model descriptions
         if (model.includes("2.5")) {
           if (model.includes("thinking")) {
@@ -179,7 +195,7 @@ export function ModelManager() {
         } else {
           description = "Advanced language model from Google."
         }
-        
+
         searchUrl = "https://gemini.google.com"
         break
 
@@ -203,7 +219,7 @@ export function ModelManager() {
 
     const hasUserKey = !!getKey(config.provider)
     let hasApiKey = false
-    
+
     // Determine if model has required API keys based on provider requirements
     if (config.provider === "ollama") {
       hasApiKey = true // Ollama doesn't need API keys
@@ -225,7 +241,7 @@ export function ModelManager() {
       isEnabled: enabledModels.includes(model),
       hasApiKey,
       isUsingDefaultKey: config.provider !== "ollama" && !hasUserKey,
-      searchUrl
+      searchUrl,
     }
   }
 
@@ -233,16 +249,14 @@ export function ModelManager() {
   const modelMatchesFilters = (modelInfo: ModelInfo): boolean => {
     // Provider filter
     if (filters.providers.length > 0) {
-      const providerMatch = filters.providers.some(provider => 
-        modelInfo.provider.toLowerCase() === provider
-      )
+      const providerMatch = filters.providers.some((provider) => modelInfo.provider.toLowerCase() === provider)
       if (!providerMatch) return false
     }
 
     // Features filter
     if (filters.features.length > 0) {
-      const modelFeatures = modelInfo.features.map(f => f.label.toLowerCase())
-      const featureMatch = filters.features.some(feature => {
+      const modelFeatures = modelInfo.features.map((f) => f.label.toLowerCase())
+      const featureMatch = filters.features.some((feature) => {
         switch (feature) {
           case "search":
             return modelFeatures.includes("search")
@@ -265,14 +279,22 @@ export function ModelManager() {
 
     // Capabilities filter
     if (filters.capabilities.length > 0) {
-      const capabilityMatch = filters.capabilities.some(capability => {
+      const capabilityMatch = filters.capabilities.some((capability) => {
         switch (capability) {
           case "latest":
             return modelInfo.model.includes("2.5") || modelInfo.model.includes("o3") || modelInfo.model.includes("2.0")
           case "flagship":
-            return modelInfo.model.includes("gpt-4o") || modelInfo.model.includes("gemini-2.5-pro") || modelInfo.model.includes("claude-3-5-sonnet")
+            return (
+              modelInfo.model.includes("gpt-4o") ||
+              modelInfo.model.includes("gemini-2.5-pro") ||
+              modelInfo.model.includes("claude-3-5-sonnet")
+            )
           case "experimental":
-            return modelInfo.model.includes("exp") || modelInfo.model.includes("preview") || modelInfo.model.includes("thinking")
+            return (
+              modelInfo.model.includes("exp") ||
+              modelInfo.model.includes("preview") ||
+              modelInfo.model.includes("thinking")
+            )
           default:
             return false
         }
@@ -285,27 +307,36 @@ export function ModelManager() {
       return false
     }
 
+    // Show only favorites filter
+    if (filters.showOnlyFavorites && !favoriteModels.includes(modelInfo.model)) {
+      return false
+    }
+
     return true
   }
 
   // Get all available models
   const allModels = [...AI_MODELS, ...customModels]
-  
+
   // Filter and search models
-  const filteredModels = allModels
-    .map(getModelInfo)
-    .filter(modelInfo => {
-      const matchesSearch = modelInfo.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                           modelInfo.provider.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                           modelInfo.description.toLowerCase().includes(searchQuery.toLowerCase())
-      
-      return matchesSearch && modelMatchesFilters(modelInfo)
-    })
+  const filteredModels = allModels.map(getModelInfo).filter((modelInfo) => {
+    const matchesSearch =
+      modelInfo.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      modelInfo.provider.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      modelInfo.description.toLowerCase().includes(searchQuery.toLowerCase())
+
+    return matchesSearch && modelMatchesFilters(modelInfo)
+  })
 
   // Sort models - by provider when no filters, by relevance when filtered
-  const hasActiveFilters = filters.providers.length > 0 || filters.features.length > 0 || filters.capabilities.length > 0 || filters.showOnlyAvailable
-  
-  const sortedModels = hasActiveFilters 
+  const hasActiveFilters =
+    filters.providers.length > 0 ||
+    filters.features.length > 0 ||
+    filters.capabilities.length > 0 ||
+    filters.showOnlyAvailable ||
+    filters.showOnlyFavorites
+
+  const sortedModels = hasActiveFilters
     ? filteredModels.sort((a, b) => {
         // Sort by enabled status first, then alphabetically
         if (a.isEnabled !== b.isEnabled) {
@@ -323,24 +354,29 @@ export function ModelManager() {
       })
 
   // Group by provider for display when no filters
-  const groupedModels = hasActiveFilters ? null : sortedModels.reduce((groups, modelInfo) => {
-    const provider = modelInfo.provider
-    if (!groups[provider]) {
-      groups[provider] = []
-    }
-    groups[provider].push(modelInfo)
-    return groups
-  }, {} as Record<string, ModelInfo[]>)
+  const groupedModels = hasActiveFilters
+    ? null
+    : sortedModels.reduce(
+        (groups, modelInfo) => {
+          const provider = modelInfo.provider
+          if (!groups[provider]) {
+            groups[provider] = []
+          }
+          groups[provider].push(modelInfo)
+          return groups
+        },
+        {} as Record<string, ModelInfo[]>,
+      )
 
   // Filter management functions
   const updateFilter = (type: keyof FilterState, value: string | boolean) => {
-    setFilters(prev => {
-      if (type === 'showOnlyAvailable') {
+    setFilters((prev) => {
+      if (type === "showOnlyAvailable" || type === "showOnlyFavorites") {
         return { ...prev, [type]: value as boolean }
       } else {
         const currentValues = prev[type] as string[]
         const newValues = currentValues.includes(value as string)
-          ? currentValues.filter(v => v !== value)
+          ? currentValues.filter((v) => v !== value)
           : [...currentValues, value as string]
         return { ...prev, [type]: newValues }
       }
@@ -352,34 +388,39 @@ export function ModelManager() {
       providers: [],
       features: [],
       capabilities: [],
-      showOnlyAvailable: false
+      showOnlyAvailable: false,
+      showOnlyFavorites: false,
     })
   }
 
   const getActiveFilterCount = () => {
-    return filters.providers.length + filters.features.length + filters.capabilities.length + (filters.showOnlyAvailable ? 1 : 0)
+    return (
+      filters.providers.length +
+      filters.features.length +
+      filters.capabilities.length +
+      (filters.showOnlyAvailable ? 1 : 0) +
+      (filters.showOnlyFavorites ? 1 : 0)
+    )
   }
 
   // Group by provider for recommended models section
-  const recommendedModels = sortedModels.filter(info => 
-    info.hasApiKey && (
-      info.model.includes("gpt-4o") || 
-      info.model.includes("gemini-2") || 
-      info.model.includes("o1") ||
-      info.model.includes("claude")
-    )
+  const recommendedModels = sortedModels.filter(
+    (info) =>
+      info.hasApiKey &&
+      (info.model.includes("gpt-4o") ||
+        info.model.includes("gemini-2") ||
+        info.model.includes("o1") ||
+        info.model.includes("claude")),
   )
 
   const handleToggleModel = (model: AIModel) => {
     toggleModel(model)
     const isEnabled = enabledModels.includes(model)
-    toast.success(
-      isEnabled ? `${model} removed from quick access` : `${model} added to quick access`
-    )
+    toast.success(isEnabled ? `${model} removed from quick access` : `${model} added to quick access`)
   }
 
   const handleSelectRecommended = () => {
-    recommendedModels.forEach(info => {
+    recommendedModels.forEach((info) => {
       if (!info.isEnabled) {
         toggleModel(info.model)
       }
@@ -388,10 +429,16 @@ export function ModelManager() {
   }
 
   const handleUnselectAll = () => {
-    enabledModels.forEach(model => {
+    enabledModels.forEach((model) => {
       toggleModel(model)
     })
     toast.success("Unselected all models")
+  }
+
+  const handleToggleFavorite = (model: AIModel) => {
+    toggleFavoriteModel(model)
+    const isFavorite = favoriteModels.includes(model)
+    toast.success(isFavorite ? `${model} removed from favorites` : `${model} added to favorites`)
   }
 
   return (
@@ -404,7 +451,7 @@ export function ModelManager() {
             Choose which models appear in your model selector. This won't affect existing conversations.
           </p>
         </div>
-        
+
         {/* Search */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -425,11 +472,7 @@ export function ModelManager() {
               {/* Filter Popover */}
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-2 hover:scale-105 transition-transform"
-                  >
+                  <Button variant="outline" size="sm" className="gap-2 hover:scale-105 transition-transform">
                     <SlidersHorizontal className="h-4 w-4" />
                     Advanced Filters
                     {getActiveFilterCount() > 0 && (
@@ -459,23 +502,23 @@ export function ModelManager() {
                     <div>
                       <h5 className="text-xs font-medium text-muted-foreground mb-2">Providers</h5>
                       <div className="space-y-2">
-                                               {filterOptions.providers.map((provider) => (
-                           <div key={provider.value} className="flex items-center space-x-2">
-                             <Switch
-                               id={`provider-${provider.value}`}
-                               checked={filters.providers.includes(provider.value)}
-                               onCheckedChange={() => updateFilter('providers', provider.value)}
-                               className="scale-75"
-                             />
-                             <label
-                               htmlFor={`provider-${provider.value}`}
-                               className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center gap-2 cursor-pointer"
-                             >
-                               {provider.icon}
-                               {provider.label}
-                             </label>
-                           </div>
-                         ))}
+                        {filterOptions.providers.map((provider) => (
+                          <div key={provider.value} className="flex items-center space-x-2">
+                            <Switch
+                              id={`provider-${provider.value}`}
+                              checked={filters.providers.includes(provider.value)}
+                              onCheckedChange={() => updateFilter("providers", provider.value)}
+                              className="scale-75"
+                            />
+                            <label
+                              htmlFor={`provider-${provider.value}`}
+                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center gap-2 cursor-pointer"
+                            >
+                              {provider.icon}
+                              {provider.label}
+                            </label>
+                          </div>
+                        ))}
                       </div>
                     </div>
 
@@ -483,23 +526,23 @@ export function ModelManager() {
                     <div>
                       <h5 className="text-xs font-medium text-muted-foreground mb-2">Features</h5>
                       <div className="space-y-2">
-                                               {filterOptions.features.map((feature) => (
-                           <div key={feature.value} className="flex items-center space-x-2">
-                             <Switch
-                               id={`feature-${feature.value}`}
-                               checked={filters.features.includes(feature.value)}
-                               onCheckedChange={() => updateFilter('features', feature.value)}
-                               className="scale-75"
-                             />
-                             <label
-                               htmlFor={`feature-${feature.value}`}
-                               className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center gap-2 cursor-pointer"
-                             >
-                               <span className={feature.color}>{feature.icon}</span>
-                               {feature.label}
-                             </label>
-                           </div>
-                         ))}
+                        {filterOptions.features.map((feature) => (
+                          <div key={feature.value} className="flex items-center space-x-2">
+                            <Switch
+                              id={`feature-${feature.value}`}
+                              checked={filters.features.includes(feature.value)}
+                              onCheckedChange={() => updateFilter("features", feature.value)}
+                              className="scale-75"
+                            />
+                            <label
+                              htmlFor={`feature-${feature.value}`}
+                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center gap-2 cursor-pointer"
+                            >
+                              <span className={feature.color}>{feature.icon}</span>
+                              {feature.label}
+                            </label>
+                          </div>
+                        ))}
                       </div>
                     </div>
 
@@ -507,41 +550,59 @@ export function ModelManager() {
                     <div>
                       <h5 className="text-xs font-medium text-muted-foreground mb-2">Capabilities</h5>
                       <div className="space-y-2">
-                                               {filterOptions.capabilities.map((capability) => (
-                           <div key={capability.value} className="flex items-center space-x-2">
-                             <Switch
-                               id={`capability-${capability.value}`}
-                               checked={filters.capabilities.includes(capability.value)}
-                               onCheckedChange={() => updateFilter('capabilities', capability.value)}
-                               className="scale-75"
-                             />
-                             <label
-                               htmlFor={`capability-${capability.value}`}
-                               className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                             >
-                               {capability.label}
-                             </label>
-                           </div>
-                         ))}
+                        {filterOptions.capabilities.map((capability) => (
+                          <div key={capability.value} className="flex items-center space-x-2">
+                            <Switch
+                              id={`capability-${capability.value}`}
+                              checked={filters.capabilities.includes(capability.value)}
+                              onCheckedChange={() => updateFilter("capabilities", capability.value)}
+                              className="scale-75"
+                            />
+                            <label
+                              htmlFor={`capability-${capability.value}`}
+                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                            >
+                              {capability.label}
+                            </label>
+                          </div>
+                        ))}
                       </div>
                     </div>
 
                     {/* Show Only Available */}
                     <div className="pt-2 border-t">
-                                           <div className="flex items-center space-x-2">
-                         <Switch
-                           id="show-only-available"
-                           checked={filters.showOnlyAvailable}
-                           onCheckedChange={() => updateFilter('showOnlyAvailable', !filters.showOnlyAvailable)}
-                           className="scale-75"
-                         />
-                         <label
-                           htmlFor="show-only-available"
-                           className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                         >
-                           Show only available models
-                         </label>
-                       </div>
+                      <div className="flex items-center space-x-2">
+                        <Switch
+                          id="show-only-available"
+                          checked={filters.showOnlyAvailable}
+                          onCheckedChange={() => updateFilter("showOnlyAvailable", !filters.showOnlyAvailable)}
+                          className="scale-75"
+                        />
+                        <label
+                          htmlFor="show-only-available"
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                        >
+                          Show only available models
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Show Only Favorites */}
+                    <div className="pt-2 border-t">
+                      <div className="flex items-center space-x-2">
+                        <Switch
+                          id="show-only-favorites"
+                          checked={filters.showOnlyFavorites}
+                          onCheckedChange={() => updateFilter("showOnlyFavorites", !filters.showOnlyFavorites)}
+                          className="scale-75"
+                        />
+                        <label
+                          htmlFor="show-only-favorites"
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                        >
+                          Show only favorite models
+                        </label>
+                      </div>
                     </div>
                   </div>
                 </PopoverContent>
@@ -574,45 +635,33 @@ export function ModelManager() {
             {getActiveFilterCount() > 0 && (
               <div className="flex items-center gap-2 flex-wrap bg-background/50 rounded-md p-2 border">
                 <span className="text-xs text-muted-foreground font-medium">Active:</span>
-                {filters.providers.map(provider => (
-                  <Badge
-                    key={provider}
-                    variant="secondary"
-                    className="text-xs gap-1"
-                  >
-                    {filterOptions.providers.find(p => p.value === provider)?.label}
+                {filters.providers.map((provider) => (
+                  <Badge key={provider} variant="secondary" className="text-xs gap-1">
+                    {filterOptions.providers.find((p) => p.value === provider)?.label}
                     <button
-                      onClick={() => updateFilter('providers', provider)}
+                      onClick={() => updateFilter("providers", provider)}
                       className="ml-1 hover:bg-muted-foreground/20 rounded-full p-0.5"
                     >
                       <X className="h-2 w-2" />
                     </button>
                   </Badge>
                 ))}
-                {filters.features.map(feature => (
-                  <Badge
-                    key={feature}
-                    variant="secondary"
-                    className="text-xs gap-1"
-                  >
-                    {filterOptions.features.find(f => f.value === feature)?.label}
+                {filters.features.map((feature) => (
+                  <Badge key={feature} variant="secondary" className="text-xs gap-1">
+                    {filterOptions.features.find((f) => f.value === feature)?.label}
                     <button
-                      onClick={() => updateFilter('features', feature)}
+                      onClick={() => updateFilter("features", feature)}
                       className="ml-1 hover:bg-muted-foreground/20 rounded-full p-0.5"
                     >
                       <X className="h-2 w-2" />
                     </button>
                   </Badge>
                 ))}
-                {filters.capabilities.map(capability => (
-                  <Badge
-                    key={capability}
-                    variant="secondary"
-                    className="text-xs gap-1"
-                  >
-                    {filterOptions.capabilities.find(c => c.value === capability)?.label}
+                {filters.capabilities.map((capability) => (
+                  <Badge key={capability} variant="secondary" className="text-xs gap-1">
+                    {filterOptions.capabilities.find((c) => c.value === capability)?.label}
                     <button
-                      onClick={() => updateFilter('capabilities', capability)}
+                      onClick={() => updateFilter("capabilities", capability)}
                       className="ml-1 hover:bg-muted-foreground/20 rounded-full p-0.5"
                     >
                       <X className="h-2 w-2" />
@@ -620,13 +669,21 @@ export function ModelManager() {
                   </Badge>
                 ))}
                 {filters.showOnlyAvailable && (
-                  <Badge
-                    variant="secondary"
-                    className="text-xs gap-1"
-                  >
+                  <Badge variant="secondary" className="text-xs gap-1">
                     Available only
                     <button
-                      onClick={() => updateFilter('showOnlyAvailable', false)}
+                      onClick={() => updateFilter("showOnlyAvailable", false)}
+                      className="ml-1 hover:bg-muted-foreground/20 rounded-full p-0.5"
+                    >
+                      <X className="h-2 w-2" />
+                    </button>
+                  </Badge>
+                )}
+                {filters.showOnlyFavorites && (
+                  <Badge variant="secondary" className="text-xs gap-1">
+                    Favorites only
+                    <button
+                      onClick={() => updateFilter("showOnlyFavorites", false)}
                       className="ml-1 hover:bg-muted-foreground/20 rounded-full p-0.5"
                     >
                       <X className="h-2 w-2" />
@@ -645,32 +702,30 @@ export function ModelManager() {
           // Grouped by provider when no filters
           Object.entries(groupedModels).map(([provider, models]) => (
             <div key={provider} className="space-y-4">
-              <div className={cn(
-                "flex items-center gap-3 p-4 rounded-lg transition-all duration-200",
-                models.some(m => m.isEnabled) && "bg-primary/5 border border-primary/20"
-              )}>
-                <ProviderLogo 
-                  provider={provider.toLowerCase() as "openai" | "google" | "openrouter" | "ollama"} 
-                  size="md" 
+              <div
+                className={cn(
+                  "flex items-center gap-3 p-4 rounded-lg transition-all duration-200",
+                  models.some((m) => m.isEnabled) && "bg-primary/5 border border-primary/20",
+                )}
+              >
+                <ProviderLogo
+                  provider={provider.toLowerCase() as "openai" | "google" | "openrouter" | "ollama"}
+                  size="md"
                 />
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
                     <h4 className="text-lg font-semibold">{provider}</h4>
-                    {models.some(m => m.isEnabled) && (
+                    {models.some((m) => m.isEnabled) && (
                       <Badge variant="secondary" className="text-xs bg-primary/10 text-primary">
-                        {models.filter(m => m.isEnabled).length} active
+                        {models.filter((m) => m.isEnabled).length} active
                       </Badge>
                     )}
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    {models.length} model{models.length !== 1 ? 's' : ''} available • Last updated: January 2025
+                    {models.length} model{models.length !== 1 ? "s" : ""} available • Last updated: January 2025
                   </p>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="opacity-60 hover:opacity-100"
-                >
+                <Button variant="ghost" size="sm" className="opacity-60 hover:opacity-100">
                   <ChevronDown className="h-4 w-4" />
                 </Button>
               </div>
@@ -681,7 +736,7 @@ export function ModelManager() {
                     className={cn(
                       "group relative overflow-hidden rounded-xl border bg-gradient-to-r from-card to-card/50 p-6 transition-all duration-300",
                       modelInfo.isEnabled && "ring-2 ring-primary/20 bg-primary/5",
-                      "hover:shadow-lg hover:border-primary/20"
+                      "hover:shadow-lg hover:border-primary/20",
                     )}
                   >
                     <div className="flex items-start justify-between">
@@ -691,12 +746,22 @@ export function ModelManager() {
                         <div className="flex-1 min-w-0 space-y-3">
                           <div className="space-y-1">
                             <div className="flex items-center gap-3">
-                              <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">
-                                <Bot className="h-4 w-4 text-primary" />
-                              </div>
-                              <h4 className="text-xl font-bold text-foreground truncate">
-                                {modelInfo.name}
-                              </h4>
+                              <ProviderLogo
+                                provider={
+                                  modelInfo.provider.toLowerCase() as "openai" | "google" | "openrouter" | "ollama"
+                                }
+                                size="md"
+                              />
+                              <h4 className="text-xl font-bold text-foreground truncate">{modelInfo.name}</h4>
+                              {favoriteModels.includes(modelInfo.model) && (
+                                <Badge
+                                  variant="secondary"
+                                  className="text-xs gap-1 bg-yellow-500/10 text-yellow-600 border-yellow-500/20"
+                                >
+                                  <Star className="h-3 w-3 fill-current" />
+                                  Favorite
+                                </Badge>
+                              )}
                               {modelInfo.name.includes("🔺") && (
                                 <Badge variant="secondary" className="text-xs">
                                   Delta
@@ -704,45 +769,43 @@ export function ModelManager() {
                               )}
                             </div>
                             <div className="ml-12 space-y-2">
-                              <p className="text-sm text-muted-foreground leading-relaxed">
-                                {modelInfo.description}
-                              </p>
+                              <p className="text-sm text-muted-foreground leading-relaxed">{modelInfo.description}</p>
                               <button className="text-xs text-primary hover:text-primary/80 transition-colors font-medium">
                                 Show more details →
                               </button>
                             </div>
                           </div>
-                          
+
                           {/* Features */}
                           <div className="flex items-center gap-3 flex-wrap ml-12">
                             {/* Core Features */}
                             <div className="flex items-center gap-1">
-                              {modelInfo.features.filter(f => ['Search', 'Vision', 'PDFs'].includes(f.label)).map((feature, index) => (
-                                <Badge
-                                  key={index}
-                                  variant="secondary"
-                                  className={cn("text-xs gap-1 font-medium", feature.color)}
-                                >
-                                  {feature.icon}
-                                  {feature.label}
-                                </Badge>
-                              ))}
+                              {modelInfo.features
+                                .filter((f) => ["Search", "Vision", "PDFs"].includes(f.label))
+                                .map((feature, index) => (
+                                  <Badge
+                                    key={index}
+                                    variant="secondary"
+                                    className={cn("text-xs gap-1 font-medium", feature.color)}
+                                  >
+                                    {feature.icon}
+                                    {feature.label}
+                                  </Badge>
+                                ))}
                             </div>
-                            
+
                             {/* Performance Features */}
                             <div className="flex items-center gap-1">
-                              {modelInfo.features.filter(f => ['Fast', 'Thinking', 'Reasoning'].includes(f.label)).map((feature, index) => (
-                                <Badge
-                                  key={index}
-                                  variant="outline"
-                                  className={cn("text-xs gap-1", feature.color)}
-                                >
-                                  {feature.icon}
-                                  {feature.label}
-                                </Badge>
-                              ))}
+                              {modelInfo.features
+                                .filter((f) => ["Fast", "Thinking", "Reasoning"].includes(f.label))
+                                .map((feature, index) => (
+                                  <Badge key={index} variant="outline" className={cn("text-xs gap-1", feature.color)}>
+                                    {feature.icon}
+                                    {feature.label}
+                                  </Badge>
+                                ))}
                             </div>
-                            
+
                             {/* Status Indicators */}
                             {modelInfo.isUsingDefaultKey && (
                               <Badge
@@ -756,7 +819,7 @@ export function ModelManager() {
                           </div>
                         </div>
                       </div>
-                      
+
                       {/* Actions */}
                       <div className="flex items-center gap-3">
                         {modelInfo.searchUrl && (
@@ -772,7 +835,30 @@ export function ModelManager() {
                             </a>
                           </Button>
                         )}
-                        
+
+                        {/* Favorite Button */}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleToggleFavorite(modelInfo.model)}
+                          className={cn(
+                            "gap-2 transition-all duration-200",
+                            favoriteModels.includes(modelInfo.model)
+                              ? "text-yellow-500 hover:text-yellow-600"
+                              : "text-muted-foreground hover:text-yellow-500",
+                          )}
+                          aria-label={
+                            favoriteModels.includes(modelInfo.model) ? "Remove from favorites" : "Add to favorites"
+                          }
+                        >
+                          <Star
+                            className={cn(
+                              "h-4 w-4 transition-all duration-200",
+                              favoriteModels.includes(modelInfo.model) && "fill-current",
+                            )}
+                          />
+                        </Button>
+
                         <Switch
                           checked={modelInfo.isEnabled}
                           onCheckedChange={() => handleToggleModel(modelInfo.model)}
@@ -780,7 +866,7 @@ export function ModelManager() {
                         />
                       </div>
                     </div>
-                    
+
                     {/* API Key Required Overlay */}
                     {!modelInfo.hasApiKey && (
                       <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center">
@@ -807,7 +893,7 @@ export function ModelManager() {
                 className={cn(
                   "group relative overflow-hidden rounded-xl border bg-gradient-to-r from-card to-card/50 p-6 transition-all duration-300",
                   modelInfo.isEnabled && "ring-2 ring-primary/20 bg-primary/5",
-                  "hover:shadow-lg hover:border-primary/20"
+                  "hover:shadow-lg hover:border-primary/20",
                 )}
               >
                 <div className="flex items-start justify-between">
@@ -817,12 +903,20 @@ export function ModelManager() {
                     <div className="flex-1 min-w-0 space-y-3">
                       <div className="space-y-1">
                         <div className="flex items-center gap-3">
-                          <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">
-                            <Bot className="h-4 w-4 text-primary" />
-                          </div>
-                          <h4 className="text-xl font-bold text-foreground truncate">
-                            {modelInfo.name}
-                          </h4>
+                          <ProviderLogo
+                            provider={modelInfo.provider.toLowerCase() as "openai" | "google" | "openrouter" | "ollama"}
+                            size="md"
+                          />
+                          <h4 className="text-xl font-bold text-foreground truncate">{modelInfo.name}</h4>
+                          {favoriteModels.includes(modelInfo.model) && (
+                            <Badge
+                              variant="secondary"
+                              className="text-xs gap-1 bg-yellow-500/10 text-yellow-600 border-yellow-500/20"
+                            >
+                              <Star className="h-3 w-3 fill-current" />
+                              Favorite
+                            </Badge>
+                          )}
                           <Badge variant="outline" className="text-xs">
                             {modelInfo.provider}
                           </Badge>
@@ -833,45 +927,43 @@ export function ModelManager() {
                           )}
                         </div>
                         <div className="ml-12 space-y-2">
-                          <p className="text-sm text-muted-foreground leading-relaxed">
-                            {modelInfo.description}
-                          </p>
+                          <p className="text-sm text-muted-foreground leading-relaxed">{modelInfo.description}</p>
                           <button className="text-xs text-primary hover:text-primary/80 transition-colors font-medium">
                             Show more details →
                           </button>
                         </div>
                       </div>
-                      
+
                       {/* Features */}
                       <div className="flex items-center gap-3 flex-wrap ml-12">
                         {/* Core Features */}
                         <div className="flex items-center gap-1">
-                          {modelInfo.features.filter(f => ['Search', 'Vision', 'PDFs'].includes(f.label)).map((feature, index) => (
-                            <Badge
-                              key={index}
-                              variant="secondary"
-                              className={cn("text-xs gap-1 font-medium", feature.color)}
-                            >
-                              {feature.icon}
-                              {feature.label}
-                            </Badge>
-                          ))}
+                          {modelInfo.features
+                            .filter((f) => ["Search", "Vision", "PDFs"].includes(f.label))
+                            .map((feature, index) => (
+                              <Badge
+                                key={index}
+                                variant="secondary"
+                                className={cn("text-xs gap-1 font-medium", feature.color)}
+                              >
+                                {feature.icon}
+                                {feature.label}
+                              </Badge>
+                            ))}
                         </div>
-                        
+
                         {/* Performance Features */}
                         <div className="flex items-center gap-1">
-                          {modelInfo.features.filter(f => ['Fast', 'Thinking', 'Reasoning'].includes(f.label)).map((feature, index) => (
-                            <Badge
-                              key={index}
-                              variant="outline"
-                              className={cn("text-xs gap-1", feature.color)}
-                            >
-                              {feature.icon}
-                              {feature.label}
-                            </Badge>
-                          ))}
+                          {modelInfo.features
+                            .filter((f) => ["Fast", "Thinking", "Reasoning"].includes(f.label))
+                            .map((feature, index) => (
+                              <Badge key={index} variant="outline" className={cn("text-xs gap-1", feature.color)}>
+                                {feature.icon}
+                                {feature.label}
+                              </Badge>
+                            ))}
                         </div>
-                        
+
                         {/* Status Indicators */}
                         {modelInfo.isUsingDefaultKey && (
                           <Badge
@@ -885,7 +977,7 @@ export function ModelManager() {
                       </div>
                     </div>
                   </div>
-                  
+
                   {/* Actions */}
                   <div className="flex items-center gap-3">
                     {modelInfo.searchUrl && (
@@ -901,7 +993,30 @@ export function ModelManager() {
                         </a>
                       </Button>
                     )}
-                    
+
+                    {/* Favorite Button */}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleToggleFavorite(modelInfo.model)}
+                      className={cn(
+                        "gap-2 transition-all duration-200",
+                        favoriteModels.includes(modelInfo.model)
+                          ? "text-yellow-500 hover:text-yellow-600"
+                          : "text-muted-foreground hover:text-yellow-500",
+                      )}
+                      aria-label={
+                        favoriteModels.includes(modelInfo.model) ? "Remove from favorites" : "Add to favorites"
+                      }
+                    >
+                      <Star
+                        className={cn(
+                          "h-4 w-4 transition-all duration-200",
+                          favoriteModels.includes(modelInfo.model) && "fill-current",
+                        )}
+                      />
+                    </Button>
+
                     <Switch
                       checked={modelInfo.isEnabled}
                       onCheckedChange={() => handleToggleModel(modelInfo.model)}
@@ -909,7 +1024,7 @@ export function ModelManager() {
                     />
                   </div>
                 </div>
-                
+
                 {/* API Key Required Overlay */}
                 {!modelInfo.hasApiKey && (
                   <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center">
@@ -932,9 +1047,7 @@ export function ModelManager() {
         <div className="text-center py-12">
           <Search className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
           <h3 className="text-lg font-medium mb-2">No models found</h3>
-          <p className="text-sm text-muted-foreground">
-            Try adjusting your search or filters to find more models
-          </p>
+          <p className="text-sm text-muted-foreground">Try adjusting your search or filters to find more models</p>
         </div>
       )}
     </div>

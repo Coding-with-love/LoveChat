@@ -19,6 +19,7 @@ interface WorkflowStore {
   executeWorkflow: (workflowId: string, inputData: Record<string, any>, threadId?: string) => Promise<WorkflowExecution>
   executeWorkflowInChat: (workflowId: string, inputData: Record<string, any>, threadId: string, selectedModel: string, webSearchEnabled: boolean, onRefresh?: () => void) => Promise<{ message: string, executionData: any }>
   cancelExecution: (executionId: string) => Promise<void>
+  generateWorkflow: (description: string, selectedModel: string) => Promise<Omit<Workflow, 'id' | 'user_id' | 'created_at' | 'updated_at'>>
   
   // UI State
   selectedWorkflow: Workflow | null
@@ -232,6 +233,22 @@ Begin execution now.`
             e.id === executionId ? { ...e, status: 'cancelled' as const } : e
           )
         }))
+      },
+
+      generateWorkflow: async (description, selectedModel) => {
+        const headers = await getAuthHeaders()
+        const response = await fetch('/api/workflows/generate', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ description, selectedModel })
+        })
+        
+        if (!response.ok) {
+          const error = await response.json()
+          throw new Error(error.error || 'Failed to generate workflow')
+        }
+        
+        return await response.json()
       }
     }),
     {
