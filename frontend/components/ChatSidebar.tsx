@@ -1,5 +1,7 @@
 "use client"
 
+import type React from "react"
+
 import {
   Sidebar,
   SidebarContent,
@@ -19,17 +21,18 @@ import {
   deleteProject,
   getSharedThreadByThreadId,
   toggleThreadArchived,
-  updateUserProfile,
 } from "@/lib/supabase/queries"
+import { useModelStore } from "@/frontend/stores/ModelStore"
+import { getModelConfig } from "@/lib/models"
 import { supabase } from "@/lib/supabase/client"
 import { useEffect, useState, useCallback } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 import { useTabVisibility } from "@/frontend/hooks/useTabVisibility"
+import { formatDistanceToNow } from "date-fns"
 import {
   User,
   LogOut,
   Share2,
-  FolderOpen,
   Folder,
   Plus,
   MoreHorizontal,
@@ -45,8 +48,10 @@ import {
   Info,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Archive,
   ArchiveRestore,
+  Copy,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/frontend/components/AuthProvider"
@@ -107,14 +112,26 @@ function ProfileSection() {
   const navigate = useNavigate()
   const [isNavigatingToSettings, setIsNavigatingToSettings] = useState(false)
   const [imageError, setImageError] = useState(false)
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
+  const { selectedModel } = useModelStore()
+
+  const [newAvatarUrl, setNewAvatarUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (user && profile) {
+      setNewAvatarUrl(profile?.avatar_url || user.user_metadata?.avatar_url || user.user_metadata?.picture || null)
+    }
+  }, [profile, user])
 
   if (!user) return null
 
   const displayName = profile?.full_name || profile?.username || user.email?.split("@")[0] || "User"
-  
+
   // Enhanced avatar URL logic with better fallbacks
-  const avatarUrl = profile?.avatar_url || user.user_metadata?.avatar_url || user.user_metadata?.picture
-  
+  useEffect(() => {
+    setAvatarUrl(newAvatarUrl)
+  }, [newAvatarUrl])
+
   // Debug logging for avatar URL
   useEffect(() => {
     console.log("🖼️ Profile avatar debug:", {
@@ -126,30 +143,28 @@ function ProfileSection() {
       finalAvatarUrl: avatarUrl,
       hasProfile: !!profile,
       userMetadata: user.user_metadata,
-      authProvider: user.app_metadata?.provider
+      authProvider: user.app_metadata?.provider,
     })
   }, [profile, user, avatarUrl])
-
-
 
   const handleSettingsNavigation = () => {
     setIsNavigatingToSettings(true)
     console.log("🔄 Navigating to settings...")
-    
+
     // Add a timeout to clear the loading state in case navigation gets stuck
     setTimeout(() => {
       setIsNavigatingToSettings(false)
     }, 3000)
-    
+
     navigate("/settings")
   }
 
   const handleImageError = () => {
     console.warn("⚠️ Profile image failed to load:", avatarUrl)
     setImageError(true)
-    
+
     // For Google images, try adding a size parameter or removing size restrictions
-    if (avatarUrl?.includes('googleusercontent.com')) {
+    if (avatarUrl?.includes("googleusercontent.com")) {
       console.log("🔄 Attempting to reload Google image with different parameters")
       // Force re-render by updating a state that doesn't affect the URL
       setTimeout(() => {
@@ -166,14 +181,14 @@ function ProfileSection() {
   // Enhanced avatar URL with better Google handling
   const getOptimizedAvatarUrl = (url: string) => {
     if (!url) return url
-    
+
     // For Google profile images, ensure we get a good size
-    if (url.includes('googleusercontent.com')) {
+    if (url.includes("googleusercontent.com")) {
       // Remove existing size parameters and add our own
-      const baseUrl = url.split('=')[0]
+      const baseUrl = url.split("=")[0]
       return `${baseUrl}=s96-c` // 96px square, cropped
     }
-    
+
     return url
   }
 
@@ -186,11 +201,11 @@ function ProfileSection() {
       </div>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" className="w-full justify-start gap-3 h-auto p-2 hover:bg-secondary">
+          <Button variant="ghost" className="w-full justify-start gap-3 h-auto p-2 hover:bg-secondary group">
             <div className="relative">
               {optimizedAvatarUrl && !imageError ? (
                 <img
-                  src={optimizedAvatarUrl}
+                  src={optimizedAvatarUrl || "/placeholder.svg"}
                   alt={displayName}
                   className="w-8 h-8 rounded-full object-cover"
                   onError={handleImageError}
@@ -203,8 +218,21 @@ function ProfileSection() {
               )}
             </div>
             <div className="flex-1 text-left min-w-0">
-              <p className="font-medium text-sm truncate">{displayName}</p>
+              <div className="flex items-center gap-2">
+                <p className="font-medium text-sm truncate">{displayName}</p>
+                <ChevronDown className="h-3 w-3 text-muted-foreground group-hover:text-foreground transition-colors" />
+              </div>
               <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+              <p className="text-xs text-muted-foreground/70 truncate">
+                Using: {(() => {
+                  try {
+                    const modelConfig = getModelConfig(selectedModel)
+                    return modelConfig.name
+                  } catch {
+                    return selectedModel
+                  }
+                })()}
+              </p>
             </div>
           </Button>
         </DropdownMenuTrigger>
@@ -362,7 +390,7 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
       const timer = setTimeout(() => {
         setShowForceLoad(true)
       }, 5000)
-      
+
       // Auto-recovery after 15 seconds
       const autoRecoveryTimer = setTimeout(() => {
         if (loading) {
@@ -370,7 +398,7 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
           setLoading(false)
           setShowForceLoad(false)
           setError(null)
-          
+
           // Keep existing data if we have it
           if (threads.length === 0 && projects.length === 0) {
             console.log("📋 No existing data after auto-recovery, setting empty state")
@@ -379,7 +407,7 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
           }
         }
       }, 15000)
-      
+
       return () => {
         clearTimeout(timer)
         clearTimeout(autoRecoveryTimer)
@@ -401,7 +429,7 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
       setThreads([])
       setProjects([])
     }
-    
+
     toast.success("Sidebar refreshed")
   }
 
@@ -493,7 +521,7 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
 
   const handleDeleteThread = async (threadId: string) => {
     // Find the thread to delete and show confirmation dialog
-    const thread = threads.find(t => t.id === threadId) || archivedThreads.find(t => t.id === threadId)
+    const thread = threads.find((t) => t.id === threadId) || archivedThreads.find((t) => t.id === threadId)
     if (thread) {
       setThreadToDelete(thread)
       setDeleteThreadDialogOpen(true)
@@ -504,11 +532,11 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
     if (!threadToDelete) return
 
     const threadId = threadToDelete.id
-    
+
     // Store the thread data for potential rollback
-    const wasInActiveThreads = threads.some(t => t.id === threadId)
-    const wasInArchivedThreads = archivedThreads.some(t => t.id === threadId)
-    
+    const wasInActiveThreads = threads.some((t) => t.id === threadId)
+    const wasInArchivedThreads = archivedThreads.some((t) => t.id === threadId)
+
     // Optimistic update - immediately remove from local state
     if (wasInActiveThreads) {
       setThreads((prev) => prev.filter((thread) => thread.id !== threadId))
@@ -519,22 +547,22 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
 
     try {
       await deleteThread(threadId)
-      
+
       // Navigate away if we're currently viewing the deleted thread
       if (id === threadId) {
         navigate("/chat")
       }
-      
+
       toast.success("Chat deleted")
       console.log(`✅ Thread ${threadId} deleted successfully`)
-      
+
       // Close the dialog
       setDeleteThreadDialogOpen(false)
       setThreadToDelete(null)
     } catch (error) {
       console.error("Failed to delete thread:", error)
       toast.error("Failed to delete thread")
-      
+
       // Revert optimistic update on error - restore the thread
       if (threadToDelete) {
         if (wasInActiveThreads) {
@@ -620,7 +648,7 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
 
   const handleArchiveThread = async (threadId: string, isCurrentlyArchived: boolean) => {
     const newArchivedState = !isCurrentlyArchived
-    
+
     // Optimistic update - immediately update local state
     if (isCurrentlyArchived) {
       // Unarchiving: move from archived to active
@@ -634,7 +662,7 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
         return prev
       })
     } else {
-      // Archiving: move from active to archived  
+      // Archiving: move from active to archived
       setThreads((prev) => prev.filter((thread) => thread.id !== threadId))
       setArchivedThreads((prev) => {
         const activeThread = threads.find((thread) => thread.id === threadId)
@@ -649,11 +677,11 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
     try {
       await toggleThreadArchived(threadId, newArchivedState)
       toast.success(isCurrentlyArchived ? "Chat unarchived" : "Chat archived")
-      console.log(`✅ Thread ${threadId} ${newArchivedState ? 'archived' : 'unarchived'} successfully`)
+      console.log(`✅ Thread ${threadId} ${newArchivedState ? "archived" : "unarchived"} successfully`)
     } catch (error) {
       console.error("Failed to archive/unarchive thread:", error)
       toast.error("Failed to archive thread")
-      
+
       // Revert optimistic update on error
       if (isCurrentlyArchived) {
         // Revert unarchiving: move back to archived
@@ -979,13 +1007,15 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
 
   const renderThread = (thread: Thread) => {
     const isEditing = editingThreadId === thread.id
+    const lastMessageTime = new Date(thread.last_message_at || thread.updated_at)
+    const timeAgo = formatDistanceToNow(lastMessageTime, { addSuffix: true })
 
     return (
       <SidebarMenuItem key={thread.id}>
         <div
           className={cn(
-            "cursor-pointer group/thread h-9 flex items-center px-2 py-1 rounded-[8px] overflow-hidden w-full hover:bg-secondary",
-            id === thread.id && "bg-secondary",
+            "cursor-pointer group/thread h-10 flex items-center px-3 py-2 rounded-[8px] overflow-hidden w-full hover:bg-secondary/80 transition-all duration-200 border border-transparent hover:border-border/50",
+            id === thread.id && "bg-secondary border-primary/20",
             isEditing && "bg-secondary",
           )}
           onClick={() => {
@@ -994,6 +1024,7 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
             }
             navigate(`/chat/${thread.id}`)
           }}
+          title={`${thread.title} • ${timeAgo}`}
         >
           {isEditing ? (
             <div className="flex items-center gap-1 w-full">
@@ -1014,7 +1045,7 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-6 w-6"
+                className="h-6 w-6 hover:bg-green-100 hover:text-green-600"
                 onClick={(e) => {
                   e.stopPropagation()
                   handleSaveRename()
@@ -1025,7 +1056,7 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-6 w-6"
+                className="h-6 w-6 hover:bg-red-100 hover:text-red-600"
                 onClick={(e) => {
                   e.stopPropagation()
                   handleCancelRename()
@@ -1036,15 +1067,22 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
             </div>
           ) : (
             <>
-              <span className="truncate block">{thread.title}</span>
+              <div className="flex-1 min-w-0 flex flex-col justify-center items-start">
+                <span className="truncate block text-sm font-medium leading-tight w-full">{thread.title}</span>
+                <span className="text-xs text-muted-foreground opacity-0 group-hover/thread:opacity-100 transition-opacity leading-tight w-full">
+                  {timeAgo}
+                </span>
+              </div>
               <DropdownMenu modal={false} onOpenChange={(open) => setOpenDropdownThreadId(open ? thread.id : null)}>
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="ghost"
                     size="icon"
                     className={cn(
-                      "ml-auto h-7 w-7",
-                      openDropdownThreadId === thread.id ? "flex" : "hidden group-hover/thread:flex",
+                      "ml-auto h-7 w-7 shrink-0",
+                      openDropdownThreadId === thread.id
+                        ? "flex"
+                        : "opacity-0 group-hover/thread:opacity-100 transition-opacity",
                     )}
                     onClick={(e) => {
                       e.preventDefault()
@@ -1054,15 +1092,16 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
                     <MoreHorizontal size={16} />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" side="right" className="w-48" sideOffset={5} avoidCollisions={true}>
+                <DropdownMenuContent align="end" side="right" className="w-52" sideOffset={5} avoidCollisions={true}>
                   <DropdownMenuItem
                     onClick={(e) => {
                       e.preventDefault()
                       e.stopPropagation()
                       handleShareThread(thread.id, thread.title)
                     }}
+                    className="gap-2"
                   >
-                    <Share2 className="h-4 w-4 mr-2" />
+                    <Share2 className="h-4 w-4 text-blue-500" />
                     Share
                   </DropdownMenuItem>
                   <DropdownMenuItem
@@ -1071,13 +1110,26 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
                       e.stopPropagation()
                       handleStartRename(thread.id, thread.title)
                     }}
+                    className="gap-2"
                   >
-                    <Edit2 className="h-4 w-4 mr-2" />
+                    <Edit2 className="h-4 w-4 text-amber-500" />
                     Rename
                   </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      navigator.clipboard.writeText(thread.title)
+                      toast.success("Chat duplicated")
+                    }}
+                    className="gap-2"
+                  >
+                    <Copy className="h-4 w-4 text-green-500" />
+                    Duplicate Chat
+                  </DropdownMenuItem>
                   <DropdownMenuSub>
-                    <DropdownMenuSubTrigger>
-                      <Folder className="h-4 w-4 mr-2" />
+                    <DropdownMenuSubTrigger className="gap-2">
+                      <Folder className="h-4 w-4 text-purple-500" />
                       Move to Project
                     </DropdownMenuSubTrigger>
                     <DropdownMenuSubContent>
@@ -1099,8 +1151,9 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
                             e.stopPropagation()
                             handleMoveThread(thread.id, project.id)
                           }}
+                          className="gap-2"
                         >
-                          <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: project.color }} />
+                          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: project.color }} />
                           {project.name}
                         </DropdownMenuItem>
                       ))}
@@ -1112,8 +1165,9 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
                       e.stopPropagation()
                       handleArchiveThread(thread.id, thread.is_archived || false)
                     }}
+                    className="gap-2"
                   >
-                    <Archive className="h-4 w-4 mr-2" />
+                    <Archive className="h-4 w-4 text-gray-500" />
                     Archive
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
@@ -1123,9 +1177,9 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
                       e.stopPropagation()
                       handleDeleteThread(thread.id)
                     }}
-                    className="text-destructive"
+                    className="text-destructive gap-2"
                   >
-                    <Trash className="h-4 w-4 mr-2" />
+                    <Trash className="h-4 w-4" />
                     Delete
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -1179,8 +1233,14 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
         <div className="flex flex-col h-full">
           <ProfileSection />
           <div className="p-4 border-b border-border/50">
-            <Link to="/chat" className={cn(buttonVariants({ variant: "default" }), "w-full justify-center gap-2")}>
-              <MessageSquarePlus className="h-4 w-4" />
+            <Link
+              to="/chat"
+              className={cn(
+                buttonVariants({ variant: "default" }),
+                "w-full justify-center gap-2 group hover:shadow-lg hover:scale-[1.02] transition-all duration-200 active:scale-[0.98]",
+              )}
+            >
+              <MessageSquarePlus className="h-4 w-4 group-hover:scale-110 transition-transform duration-200" />
               New Chat
             </Link>
           </div>
@@ -1223,26 +1283,37 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
                 return (
                   <Collapsible key={project.id} open={isExpanded} onOpenChange={() => toggleProject(project.id)}>
                     <div className="px-4 py-1">
-                      <div className="flex items-center gap-2 px-2 py-1 hover:bg-secondary rounded-[8px] group">
+                      <div className="flex items-center gap-2 px-2 py-1 hover:bg-secondary rounded-[8px] group transition-colors">
                         <CollapsibleTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-6 w-6 p-0">
-                            {isExpanded ? <FolderOpen className="h-4 w-4" /> : <Folder className="h-4 w-4" />}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 p-0 hover:bg-primary/10 transition-colors"
+                          >
+                            <ChevronRight
+                              className={cn("h-4 w-4 transition-transform duration-200", isExpanded && "rotate-90")}
+                            />
                           </Button>
                         </CollapsibleTrigger>
-                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: project.color }} />
+                        <div
+                          className="w-3 h-3 rounded-full border border-white/20 shadow-sm"
+                          style={{ backgroundColor: project.color }}
+                        />
                         <span
-                          className="text-sm font-medium truncate flex-1 cursor-pointer"
+                          className="text-sm font-medium truncate flex-1 cursor-pointer hover:text-primary transition-colors"
                           onClick={() => navigate(`/project/${project.id}`)}
                         >
                           {project.name}
                         </span>
-                        <span className="text-xs text-muted-foreground">{projectThreads.length}</span>
+                        <span className="text-xs text-muted-foreground bg-secondary/50 px-1.5 py-0.5 rounded-md">
+                          {projectThreads.length}
+                        </span>
                         <DropdownMenu modal={false}>
                           <DropdownMenuTrigger asChild>
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-6 w-6 opacity-0 group-hover:opacity-100"
+                              className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary/10"
                               onClick={(e) => {
                                 e.stopPropagation()
                               }}
@@ -1256,8 +1327,9 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
                                 e.stopPropagation()
                                 navigate(`/project/${project.id}`)
                               }}
+                              className="gap-2"
                             >
-                              <Edit className="h-4 w-4 mr-2" />
+                              <Edit className="h-4 w-4 text-blue-500" />
                               Manage Project
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
@@ -1267,9 +1339,9 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
                                 setProjectToDelete(project)
                                 setDeleteProjectDialogOpen(true)
                               }}
-                              className="text-destructive"
+                              className="text-destructive gap-2"
                             >
-                              <Trash className="h-4 w-4 mr-2" />
+                              <Trash className="h-4 w-4" />
                               Delete Project
                             </DropdownMenuItem>
                           </DropdownMenuContent>
@@ -1322,11 +1394,24 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
                 <CollapsibleTrigger asChild>
                   <Button
                     variant="ghost"
-                    className="w-full justify-start gap-2 h-8 text-muted-foreground hover:text-foreground"
+                    className={cn(
+                      "w-full justify-start gap-2 h-9 text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-all duration-200 rounded-lg",
+                      showArchivedChats && "bg-secondary/30",
+                    )}
                   >
                     <Archive className="h-4 w-4" />
-                    <span className="text-sm flex-1 text-left">Archived Chats</span>
-                    <span className="text-xs bg-secondary px-1.5 py-0.5 rounded-md">{archivedThreads.length}</span>
+                    <span className="text-sm flex-1 text-left font-medium">Archived Chats</span>
+                    <span
+                      className={cn(
+                        "text-xs px-2 py-1 rounded-full transition-colors",
+                        archivedThreads.length > 0 ? "bg-secondary text-foreground" : "bg-muted text-muted-foreground",
+                      )}
+                    >
+                      {archivedThreads.length || "None"}
+                    </span>
+                    <ChevronRight
+                      className={cn("h-3 w-3 transition-transform duration-200", showArchivedChats && "rotate-90")}
+                    />
                   </Button>
                 </CollapsibleTrigger>
               </div>
@@ -1397,8 +1482,8 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
                 Are you sure you want to delete the project "{projectToDelete?.name}"?
                 <br />
                 <br />
-                This will <strong>not</strong> delete the conversations in this project, but they will be moved to
-                the main chat list.
+                This will <strong>not</strong> delete the conversations in this project, but they will be moved to the
+                main chat list.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

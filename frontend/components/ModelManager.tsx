@@ -11,24 +11,7 @@ import { useAPIKeyStore } from "@/frontend/stores/APIKeyStore"
 import { useModelStore } from "@/frontend/stores/ModelStore"
 import { AI_MODELS, getModelConfig, type AIModel } from "@/lib/models"
 import { ProviderLogo } from "./ProviderLogo"
-import { 
-  Bot, 
-  Key, 
-  Globe, 
-  Zap, 
-  Brain, 
-  Search, 
-  Sparkles, 
-  Eye, 
-  FileText, 
-  Lightbulb,
-  Filter,
-  CheckSquare,
-  Square,
-  SlidersHorizontal,
-  X,
-  Shield
-} from 'lucide-react'
+import { Bot, Key, Globe, Zap, Brain, Search, Sparkles, Eye, FileText, Lightbulb, Filter, CheckSquare, Square, SlidersHorizontal, X, Shield, ChevronDown } from 'lucide-react'
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import {
@@ -435,219 +418,224 @@ export function ModelManager() {
         </div>
 
         {/* Filters and Controls */}
-        <div className="flex flex-col lg:flex-row gap-3 items-start lg:items-center justify-between">
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Filter Popover */}
-            <Popover>
-              <PopoverTrigger asChild>
+        {/* Unified Filter Toolbar */}
+        <div className="bg-muted/30 border rounded-lg p-4 space-y-4">
+          <div className="flex flex-col lg:flex-row gap-3 items-start lg:items-center justify-between">
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Filter Popover */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2 hover:scale-105 transition-transform"
+                  >
+                    <SlidersHorizontal className="h-4 w-4" />
+                    Advanced Filters
+                    {getActiveFilterCount() > 0 && (
+                      <Badge variant="secondary" className="text-xs ml-1 bg-primary/20 text-primary">
+                        {getActiveFilterCount()}
+                      </Badge>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-80" align="start">
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-semibold">Filter Models</h4>
+                      {getActiveFilterCount() > 0 && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={clearAllFilters}
+                          className="h-auto p-1 text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          Clear all
+                        </Button>
+                      )}
+                    </div>
+
+                    {/* Provider Filters */}
+                    <div>
+                      <h5 className="text-xs font-medium text-muted-foreground mb-2">Providers</h5>
+                      <div className="space-y-2">
+                                               {filterOptions.providers.map((provider) => (
+                           <div key={provider.value} className="flex items-center space-x-2">
+                             <Switch
+                               id={`provider-${provider.value}`}
+                               checked={filters.providers.includes(provider.value)}
+                               onCheckedChange={() => updateFilter('providers', provider.value)}
+                               className="scale-75"
+                             />
+                             <label
+                               htmlFor={`provider-${provider.value}`}
+                               className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center gap-2 cursor-pointer"
+                             >
+                               {provider.icon}
+                               {provider.label}
+                             </label>
+                           </div>
+                         ))}
+                      </div>
+                    </div>
+
+                    {/* Feature Filters */}
+                    <div>
+                      <h5 className="text-xs font-medium text-muted-foreground mb-2">Features</h5>
+                      <div className="space-y-2">
+                                               {filterOptions.features.map((feature) => (
+                           <div key={feature.value} className="flex items-center space-x-2">
+                             <Switch
+                               id={`feature-${feature.value}`}
+                               checked={filters.features.includes(feature.value)}
+                               onCheckedChange={() => updateFilter('features', feature.value)}
+                               className="scale-75"
+                             />
+                             <label
+                               htmlFor={`feature-${feature.value}`}
+                               className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center gap-2 cursor-pointer"
+                             >
+                               <span className={feature.color}>{feature.icon}</span>
+                               {feature.label}
+                             </label>
+                           </div>
+                         ))}
+                      </div>
+                    </div>
+
+                    {/* Capability Filters */}
+                    <div>
+                      <h5 className="text-xs font-medium text-muted-foreground mb-2">Capabilities</h5>
+                      <div className="space-y-2">
+                                               {filterOptions.capabilities.map((capability) => (
+                           <div key={capability.value} className="flex items-center space-x-2">
+                             <Switch
+                               id={`capability-${capability.value}`}
+                               checked={filters.capabilities.includes(capability.value)}
+                               onCheckedChange={() => updateFilter('capabilities', capability.value)}
+                               className="scale-75"
+                             />
+                             <label
+                               htmlFor={`capability-${capability.value}`}
+                               className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                             >
+                               {capability.label}
+                             </label>
+                           </div>
+                         ))}
+                      </div>
+                    </div>
+
+                    {/* Show Only Available */}
+                    <div className="pt-2 border-t">
+                                           <div className="flex items-center space-x-2">
+                         <Switch
+                           id="show-only-available"
+                           checked={filters.showOnlyAvailable}
+                           onCheckedChange={() => updateFilter('showOnlyAvailable', !filters.showOnlyAvailable)}
+                           className="scale-75"
+                         />
+                         <label
+                           htmlFor="show-only-available"
+                           className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                         >
+                           Show only available models
+                         </label>
+                       </div>
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
+
+              {/* Quick Actions with better spacing */}
+              <div className="flex items-center gap-2 ml-2 pl-2 border-l border-border">
                 <Button
                   variant="outline"
                   size="sm"
-                  className="gap-2"
+                  onClick={handleSelectRecommended}
+                  className="gap-2 hover:scale-105 transition-transform"
                 >
-                  <SlidersHorizontal className="h-4 w-4" />
-                  Filters
-                  {getActiveFilterCount() > 0 && (
-                    <Badge variant="secondary" className="text-xs ml-1">
-                      {getActiveFilterCount()}
-                    </Badge>
-                  )}
+                  <CheckSquare className="h-4 w-4" />
+                  Select Recommended
                 </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-80" align="start">
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-sm font-semibold">Filter Models</h4>
-                    {getActiveFilterCount() > 0 && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={clearAllFilters}
-                        className="h-auto p-1 text-xs text-muted-foreground hover:text-foreground"
-                      >
-                        Clear all
-                      </Button>
-                    )}
-                  </div>
-
-                  {/* Provider Filters */}
-                  <div>
-                    <h5 className="text-xs font-medium text-muted-foreground mb-2">Providers</h5>
-                    <div className="space-y-2">
-                                             {filterOptions.providers.map((provider) => (
-                         <div key={provider.value} className="flex items-center space-x-2">
-                           <Switch
-                             id={`provider-${provider.value}`}
-                             checked={filters.providers.includes(provider.value)}
-                             onCheckedChange={() => updateFilter('providers', provider.value)}
-                             className="scale-75"
-                           />
-                           <label
-                             htmlFor={`provider-${provider.value}`}
-                             className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center gap-2 cursor-pointer"
-                           >
-                             {provider.icon}
-                             {provider.label}
-                           </label>
-                         </div>
-                       ))}
-                    </div>
-                  </div>
-
-                  {/* Feature Filters */}
-                  <div>
-                    <h5 className="text-xs font-medium text-muted-foreground mb-2">Features</h5>
-                    <div className="space-y-2">
-                                             {filterOptions.features.map((feature) => (
-                         <div key={feature.value} className="flex items-center space-x-2">
-                           <Switch
-                             id={`feature-${feature.value}`}
-                             checked={filters.features.includes(feature.value)}
-                             onCheckedChange={() => updateFilter('features', feature.value)}
-                             className="scale-75"
-                           />
-                           <label
-                             htmlFor={`feature-${feature.value}`}
-                             className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center gap-2 cursor-pointer"
-                           >
-                             <span className={feature.color}>{feature.icon}</span>
-                             {feature.label}
-                           </label>
-                         </div>
-                       ))}
-                    </div>
-                  </div>
-
-                  {/* Capability Filters */}
-                  <div>
-                    <h5 className="text-xs font-medium text-muted-foreground mb-2">Capabilities</h5>
-                    <div className="space-y-2">
-                                             {filterOptions.capabilities.map((capability) => (
-                         <div key={capability.value} className="flex items-center space-x-2">
-                           <Switch
-                             id={`capability-${capability.value}`}
-                             checked={filters.capabilities.includes(capability.value)}
-                             onCheckedChange={() => updateFilter('capabilities', capability.value)}
-                             className="scale-75"
-                           />
-                           <label
-                             htmlFor={`capability-${capability.value}`}
-                             className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                           >
-                             {capability.label}
-                           </label>
-                         </div>
-                       ))}
-                    </div>
-                  </div>
-
-                  {/* Show Only Available */}
-                  <div className="pt-2 border-t">
-                                         <div className="flex items-center space-x-2">
-                       <Switch
-                         id="show-only-available"
-                         checked={filters.showOnlyAvailable}
-                         onCheckedChange={() => updateFilter('showOnlyAvailable', !filters.showOnlyAvailable)}
-                         className="scale-75"
-                       />
-                       <label
-                         htmlFor="show-only-available"
-                         className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                       >
-                         Show only available models
-                       </label>
-                     </div>
-                  </div>
-                </div>
-              </PopoverContent>
-            </Popover>
-
-            {/* Quick Actions */}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleSelectRecommended}
-              className="gap-2"
-            >
-              <CheckSquare className="h-4 w-4" />
-              Select Recommended
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleUnselectAll}
-              className="gap-2"
-            >
-              <Square className="h-4 w-4" />
-              Unselect All
-            </Button>
-          </div>
-
-          {/* Active Filters Display */}
-          {getActiveFilterCount() > 0 && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs text-muted-foreground">Active filters:</span>
-              {filters.providers.map(provider => (
-                <Badge
-                  key={provider}
-                  variant="secondary"
-                  className="text-xs gap-1"
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleUnselectAll}
+                  className="gap-2 hover:scale-105 transition-transform"
                 >
-                  {filterOptions.providers.find(p => p.value === provider)?.label}
-                  <button
-                    onClick={() => updateFilter('providers', provider)}
-                    className="ml-1 hover:bg-muted-foreground/20 rounded-full p-0.5"
-                  >
-                    <X className="h-2 w-2" />
-                  </button>
-                </Badge>
-              ))}
-              {filters.features.map(feature => (
-                <Badge
-                  key={feature}
-                  variant="secondary"
-                  className="text-xs gap-1"
-                >
-                  {filterOptions.features.find(f => f.value === feature)?.label}
-                  <button
-                    onClick={() => updateFilter('features', feature)}
-                    className="ml-1 hover:bg-muted-foreground/20 rounded-full p-0.5"
-                  >
-                    <X className="h-2 w-2" />
-                  </button>
-                </Badge>
-              ))}
-              {filters.capabilities.map(capability => (
-                <Badge
-                  key={capability}
-                  variant="secondary"
-                  className="text-xs gap-1"
-                >
-                  {filterOptions.capabilities.find(c => c.value === capability)?.label}
-                  <button
-                    onClick={() => updateFilter('capabilities', capability)}
-                    className="ml-1 hover:bg-muted-foreground/20 rounded-full p-0.5"
-                  >
-                    <X className="h-2 w-2" />
-                  </button>
-                </Badge>
-              ))}
-              {filters.showOnlyAvailable && (
-                <Badge
-                  variant="secondary"
-                  className="text-xs gap-1"
-                >
-                  Available only
-                  <button
-                    onClick={() => updateFilter('showOnlyAvailable', false)}
-                    className="ml-1 hover:bg-muted-foreground/20 rounded-full p-0.5"
-                  >
-                    <X className="h-2 w-2" />
-                  </button>
-                </Badge>
-              )}
+                  <Square className="h-4 w-4" />
+                  Unselect All
+                </Button>
+              </div>
             </div>
-          )}
+
+            {/* Active Filters Display with better styling */}
+            {getActiveFilterCount() > 0 && (
+              <div className="flex items-center gap-2 flex-wrap bg-background/50 rounded-md p-2 border">
+                <span className="text-xs text-muted-foreground font-medium">Active:</span>
+                {filters.providers.map(provider => (
+                  <Badge
+                    key={provider}
+                    variant="secondary"
+                    className="text-xs gap-1"
+                  >
+                    {filterOptions.providers.find(p => p.value === provider)?.label}
+                    <button
+                      onClick={() => updateFilter('providers', provider)}
+                      className="ml-1 hover:bg-muted-foreground/20 rounded-full p-0.5"
+                    >
+                      <X className="h-2 w-2" />
+                    </button>
+                  </Badge>
+                ))}
+                {filters.features.map(feature => (
+                  <Badge
+                    key={feature}
+                    variant="secondary"
+                    className="text-xs gap-1"
+                  >
+                    {filterOptions.features.find(f => f.value === feature)?.label}
+                    <button
+                      onClick={() => updateFilter('features', feature)}
+                      className="ml-1 hover:bg-muted-foreground/20 rounded-full p-0.5"
+                    >
+                      <X className="h-2 w-2" />
+                    </button>
+                  </Badge>
+                ))}
+                {filters.capabilities.map(capability => (
+                  <Badge
+                    key={capability}
+                    variant="secondary"
+                    className="text-xs gap-1"
+                  >
+                    {filterOptions.capabilities.find(c => c.value === capability)?.label}
+                    <button
+                      onClick={() => updateFilter('capabilities', capability)}
+                      className="ml-1 hover:bg-muted-foreground/20 rounded-full p-0.5"
+                    >
+                      <X className="h-2 w-2" />
+                    </button>
+                  </Badge>
+                ))}
+                {filters.showOnlyAvailable && (
+                  <Badge
+                    variant="secondary"
+                    className="text-xs gap-1"
+                  >
+                    Available only
+                    <button
+                      onClick={() => updateFilter('showOnlyAvailable', false)}
+                      className="ml-1 hover:bg-muted-foreground/20 rounded-full p-0.5"
+                    >
+                      <X className="h-2 w-2" />
+                    </button>
+                  </Badge>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -657,17 +645,34 @@ export function ModelManager() {
           // Grouped by provider when no filters
           Object.entries(groupedModels).map(([provider, models]) => (
             <div key={provider} className="space-y-4">
-              <div className="flex items-center gap-3">
+              <div className={cn(
+                "flex items-center gap-3 p-4 rounded-lg transition-all duration-200",
+                models.some(m => m.isEnabled) && "bg-primary/5 border border-primary/20"
+              )}>
                 <ProviderLogo 
                   provider={provider.toLowerCase() as "openai" | "google" | "openrouter" | "ollama"} 
                   size="md" 
                 />
-                <div>
-                  <h4 className="text-lg font-semibold">{provider}</h4>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-lg font-semibold">{provider}</h4>
+                    {models.some(m => m.isEnabled) && (
+                      <Badge variant="secondary" className="text-xs bg-primary/10 text-primary">
+                        {models.filter(m => m.isEnabled).length} active
+                      </Badge>
+                    )}
+                  </div>
                   <p className="text-sm text-muted-foreground">
-                    {models.length} model{models.length !== 1 ? 's' : ''} available
+                    {models.length} model{models.length !== 1 ? 's' : ''} available • Last updated: January 2025
                   </p>
                 </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="opacity-60 hover:opacity-100"
+                >
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
               </div>
               <div className="grid gap-4">
                 {models.map((modelInfo) => (
@@ -682,13 +687,14 @@ export function ModelManager() {
                     <div className="flex items-start justify-between">
                       <div className="flex items-start gap-4 flex-1 min-w-0">
                         {/* Model Icon */}
-                        {modelInfo.icon}
-                        
                         {/* Model Info */}
                         <div className="flex-1 min-w-0 space-y-3">
                           <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                              <h4 className="text-lg font-semibold text-foreground truncate">
+                            <div className="flex items-center gap-3">
+                              <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">
+                                <Bot className="h-4 w-4 text-primary" />
+                              </div>
+                              <h4 className="text-xl font-bold text-foreground truncate">
                                 {modelInfo.name}
                               </h4>
                               {modelInfo.name.includes("🔺") && (
@@ -697,33 +703,54 @@ export function ModelManager() {
                                 </Badge>
                               )}
                             </div>
-                            <p className="text-sm text-muted-foreground">
-                              {modelInfo.description}
-                            </p>
-                            <button className="text-xs text-primary hover:text-primary/80 transition-colors">
-                              Show more
-                            </button>
+                            <div className="ml-12 space-y-2">
+                              <p className="text-sm text-muted-foreground leading-relaxed">
+                                {modelInfo.description}
+                              </p>
+                              <button className="text-xs text-primary hover:text-primary/80 transition-colors font-medium">
+                                Show more details →
+                              </button>
+                            </div>
                           </div>
                           
                           {/* Features */}
-                          <div className="flex items-center gap-2 flex-wrap">
-                            {modelInfo.features.map((feature, index) => (
-                              <Badge
-                                key={index}
-                                variant="secondary"
-                                className={cn("text-xs gap-1", feature.color)}
-                              >
-                                {feature.icon}
-                                {feature.label}
-                              </Badge>
-                            ))}
+                          <div className="flex items-center gap-3 flex-wrap ml-12">
+                            {/* Core Features */}
+                            <div className="flex items-center gap-1">
+                              {modelInfo.features.filter(f => ['Search', 'Vision', 'PDFs'].includes(f.label)).map((feature, index) => (
+                                <Badge
+                                  key={index}
+                                  variant="secondary"
+                                  className={cn("text-xs gap-1 font-medium", feature.color)}
+                                >
+                                  {feature.icon}
+                                  {feature.label}
+                                </Badge>
+                              ))}
+                            </div>
+                            
+                            {/* Performance Features */}
+                            <div className="flex items-center gap-1">
+                              {modelInfo.features.filter(f => ['Fast', 'Thinking', 'Reasoning'].includes(f.label)).map((feature, index) => (
+                                <Badge
+                                  key={index}
+                                  variant="outline"
+                                  className={cn("text-xs gap-1", feature.color)}
+                                >
+                                  {feature.icon}
+                                  {feature.label}
+                                </Badge>
+                              ))}
+                            </div>
+                            
+                            {/* Status Indicators */}
                             {modelInfo.isUsingDefaultKey && (
                               <Badge
                                 variant="outline"
-                                className="text-xs gap-1 border-green-500/50 text-green-600 bg-green-50 dark:bg-green-950/20"
+                                className="text-xs gap-1 border-green-500/30 text-green-600 bg-green-50/50 dark:bg-green-950/10 opacity-75"
                               >
                                 <Shield className="h-3 w-3" />
-                                Using default key
+                                Default key
                               </Badge>
                             )}
                           </div>
@@ -786,13 +813,14 @@ export function ModelManager() {
                 <div className="flex items-start justify-between">
                   <div className="flex items-start gap-4 flex-1 min-w-0">
                     {/* Model Icon */}
-                    {modelInfo.icon}
-                    
                     {/* Model Info */}
                     <div className="flex-1 min-w-0 space-y-3">
                       <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <h4 className="text-lg font-semibold text-foreground truncate">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">
+                            <Bot className="h-4 w-4 text-primary" />
+                          </div>
+                          <h4 className="text-xl font-bold text-foreground truncate">
                             {modelInfo.name}
                           </h4>
                           <Badge variant="outline" className="text-xs">
@@ -804,33 +832,54 @@ export function ModelManager() {
                             </Badge>
                           )}
                         </div>
-                        <p className="text-sm text-muted-foreground">
-                          {modelInfo.description}
-                        </p>
-                        <button className="text-xs text-primary hover:text-primary/80 transition-colors">
-                          Show more
-                        </button>
+                        <div className="ml-12 space-y-2">
+                          <p className="text-sm text-muted-foreground leading-relaxed">
+                            {modelInfo.description}
+                          </p>
+                          <button className="text-xs text-primary hover:text-primary/80 transition-colors font-medium">
+                            Show more details →
+                          </button>
+                        </div>
                       </div>
                       
                       {/* Features */}
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {modelInfo.features.map((feature, index) => (
-                          <Badge
-                            key={index}
-                            variant="secondary"
-                            className={cn("text-xs gap-1", feature.color)}
-                          >
-                            {feature.icon}
-                            {feature.label}
-                          </Badge>
-                        ))}
+                      <div className="flex items-center gap-3 flex-wrap ml-12">
+                        {/* Core Features */}
+                        <div className="flex items-center gap-1">
+                          {modelInfo.features.filter(f => ['Search', 'Vision', 'PDFs'].includes(f.label)).map((feature, index) => (
+                            <Badge
+                              key={index}
+                              variant="secondary"
+                              className={cn("text-xs gap-1 font-medium", feature.color)}
+                            >
+                              {feature.icon}
+                              {feature.label}
+                            </Badge>
+                          ))}
+                        </div>
+                        
+                        {/* Performance Features */}
+                        <div className="flex items-center gap-1">
+                          {modelInfo.features.filter(f => ['Fast', 'Thinking', 'Reasoning'].includes(f.label)).map((feature, index) => (
+                            <Badge
+                              key={index}
+                              variant="outline"
+                              className={cn("text-xs gap-1", feature.color)}
+                            >
+                              {feature.icon}
+                              {feature.label}
+                            </Badge>
+                          ))}
+                        </div>
+                        
+                        {/* Status Indicators */}
                         {modelInfo.isUsingDefaultKey && (
                           <Badge
                             variant="outline"
-                            className="text-xs gap-1 border-green-500/50 text-green-600 bg-green-50 dark:bg-green-950/20"
+                            className="text-xs gap-1 border-green-500/30 text-green-600 bg-green-50/50 dark:bg-green-950/10 opacity-75"
                           >
                             <Shield className="h-3 w-3" />
-                            Using default key
+                            Default key
                           </Badge>
                         )}
                       </div>
@@ -891,4 +940,3 @@ export function ModelManager() {
     </div>
   )
 }
-

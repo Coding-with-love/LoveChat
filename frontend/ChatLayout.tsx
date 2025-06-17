@@ -81,7 +81,7 @@ export default function ChatLayout() {
   const titleInputRef = useRef<HTMLInputElement>(null)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const navigate = useNavigate()
-  
+
   // Ref to store the sidebar refresh function
   const sidebarRefreshRef = useRef<() => void>(() => {})
 
@@ -182,10 +182,10 @@ export default function ChatLayout() {
       }
 
       toast.success("Chat duplicated successfully")
-      
+
       // Refresh the sidebar to show the new thread immediately
       sidebarRefreshRef.current()
-      
+
       navigate(`/chat/${newThreadId}`) // Navigate to the new thread
     } catch (error) {
       console.error("Error duplicating chat:", error)
@@ -195,7 +195,7 @@ export default function ChatLayout() {
 
   const handleShareChat = async () => {
     if (!id) return
-    
+
     try {
       // Check if there's already a share for this thread
       const share = await getSharedThreadByThreadId(id)
@@ -204,7 +204,7 @@ export default function ChatLayout() {
       console.error("Failed to check for existing share:", error)
       setExistingShare(null)
     }
-    
+
     setShareDialogOpen(true)
   }
 
@@ -219,15 +219,13 @@ export default function ChatLayout() {
       await toggleThreadArchived(id, !isCurrentlyArchived)
 
       toast.success(isCurrentlyArchived ? "Chat unarchived" : "Chat archived")
-      
-      console.log(`✅ Chat ${id} ${!isCurrentlyArchived ? 'archived' : 'unarchived'} from ChatLayout`)
+
+      console.log(`✅ Chat ${id} ${!isCurrentlyArchived ? "archived" : "unarchived"} from ChatLayout`)
     } catch (error) {
       console.error("Error archiving chat:", error)
       toast.error("Failed to update archive status")
     }
   }
-
-
 
   const handleSearchNavigation = (direction: "next" | "previous") => {
     const messageId = direction === "next" ? nextResult() : previousResult()
@@ -250,10 +248,10 @@ export default function ChatLayout() {
       await deleteThread(id)
       toast.success("Chat deleted successfully")
       setIsDeleteDialogOpen(false)
-      
+
       // Refresh the sidebar to remove the deleted thread immediately
       sidebarRefreshRef.current()
-      
+
       navigate("/chat") // Navigate to chat home after deletion
     } catch (error) {
       console.error("Error deleting chat:", error)
@@ -267,10 +265,10 @@ export default function ChatLayout() {
         <ChatSidebar onRefreshData={sidebarRefreshRef} />
         <div className="flex-1 flex flex-col relative pl-2">
           {/* Sticky Header */}
-          <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-            <div className="flex h-14 items-center justify-between px-4">
+          <header className="sticky top-0 z-50 border-b border-border/20 bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/80 shadow-sm">
+            <div className="flex h-16 items-center justify-between px-6">
               {/* Left side - Chat title */}
-              <div className="flex items-center gap-2 flex-1 min-w-0">
+              <div className="flex items-center gap-3 flex-1 min-w-0 group">
                 {isEditingTitle ? (
                   <Input
                     ref={titleInputRef}
@@ -278,13 +276,13 @@ export default function ChatLayout() {
                     onChange={(e) => setEditTitle(e.target.value)}
                     onBlur={handleTitleSave}
                     onKeyDown={handleTitleKeyDown}
-                    className="h-8 text-sm font-semibold bg-transparent border-dashed"
+                    className="h-9 text-base font-semibold bg-transparent border-dashed"
                     placeholder="Enter chat title..."
                   />
                 ) : (
                   <div className="flex items-center gap-2 min-w-0">
                     <h1
-                      className="font-semibold truncate cursor-pointer hover:text-primary transition-colors"
+                      className="text-lg font-bold truncate cursor-pointer hover:text-primary transition-colors leading-tight"
                       onDoubleClick={handleTitleDoubleClick}
                       title={thread?.title || "LoveChat"}
                     >
@@ -295,10 +293,11 @@ export default function ChatLayout() {
                         onClick={handleTitleEdit}
                         variant="ghost"
                         size="icon"
-                        className="h-6 w-6 opacity-60 hover:opacity-100"
-                        aria-label="Edit chat title"
+                        className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-all duration-200 hover:bg-primary/10 rounded-lg"
+                        aria-label="Rename chat"
+                        title="Rename chat"
                       >
-                        <Edit2 className="h-3 w-3" />
+                        <Edit2 className="h-3.5 w-3.5" />
                       </Button>
                     )}
                   </div>
@@ -306,127 +305,156 @@ export default function ChatLayout() {
               </div>
 
               {/* Right side - Chat controls */}
-              <div className="flex items-center gap-2">
-                {/* Search - only show when there's an active chat */}
-                {id && (
-                  <Button
-                    onClick={toggleSearch}
-                    variant="outline"
-                    size="icon"
-                    className="h-8 w-8"
-                    aria-label="Search in chat"
-                  >
-                    <Search className="h-4 w-4" />
-                  </Button>
-                )}
+              <div className="flex items-center">
+                {/* Search & Export Group */}
+                <div className="flex items-center gap-1 mr-4">
+                  {/* Search - only show when there's an active chat */}
+                  {id && (
+                    <Button
+                      onClick={toggleSearch}
+                      variant="outline"
+                      size="icon"
+                      className="h-9 w-9 hover:shadow-md hover:scale-105 transition-all duration-200 rounded-lg"
+                      aria-label="Search in chat"
+                      title="Search"
+                    >
+                      <Search className="h-4 w-4" />
+                    </Button>
+                  )}
 
-                {/* Export */}
-                {id && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-8 w-8"
-                        aria-label="Export conversation"
-                        disabled={exporting}
-                      >
-                        <Download className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => handleExport("markdown")}>Export as Markdown</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleExport("txt")}>Export as Text</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleExport("pdf")}>
-                        Export as PDF
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
+                  {/* Export */}
+                  {id && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="h-9 w-9 hover:shadow-md hover:scale-105 transition-all duration-200 rounded-lg"
+                          aria-label="Export conversation"
+                          title="Export"
+                          disabled={exporting}
+                        >
+                          <Download className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleExport("markdown")}>Export as Markdown</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleExport("txt")}>Export as Text</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleExport("pdf")}>Export as PDF</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                </div>
 
-                {/* Message Navigator - only show when there's an active chat */}
-                {id && (
-                  <Button
-                    onClick={handleToggleNavigator}
-                    variant="outline"
-                    size="icon"
-                    className="h-8 w-8"
-                    aria-label={isNavigatorVisible ? "Hide message navigator" : "Show message navigator"}
-                  >
-                    <MessageSquareMore className="h-4 w-4" />
-                  </Button>
-                )}
+                {/* Navigation & Features Group */}
+                <div className="flex items-center gap-1 mr-4">
+                  {/* Message Navigator - only show when there's an active chat */}
+                  {id && (
+                    <Button
+                      onClick={handleToggleNavigator}
+                      variant="outline"
+                      size="icon"
+                      className={`h-9 w-9 hover:shadow-md hover:scale-105 transition-all duration-200 rounded-lg ${
+                        isNavigatorVisible ? "bg-primary/10 border-primary/30" : ""
+                      }`}
+                      aria-label={isNavigatorVisible ? "Hide message navigator" : "Show message navigator"}
+                      title="Message Navigator"
+                    >
+                      <MessageSquareMore className="h-4 w-4" />
+                    </Button>
+                  )}
 
-                {/* Pinned Messages */}
-                {id && (
-                  <Button
-                    onClick={handleTogglePinnedMessages}
-                    variant="outline"
-                    size="icon"
-                    className="h-8 w-8"
-                    aria-label="Show pinned messages"
-                  >
-                    <Star className="h-4 w-4" />
-                  </Button>
-                )}
+                  {/* Pinned Messages */}
+                  {id && (
+                    <Button
+                      onClick={handleTogglePinnedMessages}
+                      variant="outline"
+                      size="icon"
+                      className={`h-9 w-9 hover:shadow-md hover:scale-105 transition-all duration-200 rounded-lg ${
+                        showPinnedMessages ? "bg-yellow-50 border-yellow-200 text-yellow-600" : ""
+                      }`}
+                      aria-label="Show pinned messages"
+                      title="Pinned Messages"
+                    >
+                      <Star className={`h-4 w-4 ${showPinnedMessages ? "fill-current" : ""}`} />
+                    </Button>
+                  )}
 
-                {/* Conversation Summary */}
-                {id && (
-                  <ConversationSummaryDialog
-                    threadId={id}
-                    trigger={
-                      <Button variant="outline" size="icon" className="h-8 w-8" aria-label="Summarize conversation">
-                        <FileText className="h-4 w-4" />
-                      </Button>
-                    }
-                  />
-                )}
+                  {/* Conversation Summary */}
+                  {id && (
+                    <ConversationSummaryDialog
+                      threadId={id}
+                      trigger={
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="h-9 w-9 hover:shadow-md hover:scale-105 transition-all duration-200 rounded-lg"
+                          aria-label="Summarize conversation"
+                          title="Summarize"
+                        >
+                          <FileText className="h-4 w-4" />
+                        </Button>
+                      }
+                    />
+                  )}
+                </div>
 
-                {/* Chat Actions Dropdown */}
-                {id && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="icon" className="h-8 w-8" aria-label="More actions">
-                        <MoreVertical className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={handleDuplicateChat}>
-                        <Copy className="h-4 w-4 mr-2" />
-                        Duplicate Chat
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={handleShareChat}>
-                        <Share className="h-4 w-4 mr-2" />
-                        Share Chat
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={handleArchiveChat}>
-                        <Archive className="h-4 w-4 mr-2" />
-                        Archive Chat
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={handleDeleteChat} className="text-destructive">
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        Delete Chat
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
+                {/* Actions & Settings Group */}
+                <div className="flex items-center gap-1">
+                  {/* Chat Actions Dropdown */}
+                  {id && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="h-9 w-9 hover:shadow-md hover:scale-105 transition-all duration-200 rounded-lg"
+                          aria-label="More actions"
+                          title="More Actions"
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-48">
+                        <DropdownMenuItem onClick={handleDuplicateChat} className="gap-2">
+                          <Copy className="h-4 w-4 text-green-500" />
+                          Duplicate Chat
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={handleShareChat} className="gap-2">
+                          <Share className="h-4 w-4 text-blue-500" />
+                          Share Chat
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={handleArchiveChat} className="gap-2">
+                          <Archive className="h-4 w-4 text-gray-500" />
+                          Archive Chat
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={handleDeleteChat} className="text-destructive gap-2">
+                          <Trash2 className="h-4 w-4" />
+                          Delete Chat
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
 
-                <ThemeToggler />
+                  <div className="ml-2">
+                    <ThemeToggler />
+                  </div>
+                </div>
               </div>
             </div>
 
             {/* Search Bar */}
             {isSearchVisible && (
-              <div className="border-t px-4 py-2">
-                <div className="flex items-center gap-2">
+              <div className="border-t border-border/10 bg-muted/30 px-6 py-3">
+                <div className="flex items-center gap-3">
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
                       placeholder="Search messages..."
                       value={searchQuery}
                       onChange={(e) => handleSearch(e.target.value, id)}
-                      className="pl-10 pr-10"
+                      className="pl-10 pr-10 h-10 bg-background/50 border-border/50 focus:bg-background focus:border-primary/50 transition-all duration-200"
                     />
                     {isSearching && (
                       <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
@@ -436,7 +464,7 @@ export default function ChatLayout() {
                         onClick={clearSearch}
                         variant="ghost"
                         size="icon"
-                        className="absolute right-1 top-1/2 transform -translate-y-1/2 h-6 w-6"
+                        className="absolute right-1 top-1/2 transform -translate-y-1/2 h-7 w-7 hover:bg-destructive/10 hover:text-destructive rounded-md"
                       >
                         <X className="h-4 w-4" />
                       </Button>
@@ -445,47 +473,49 @@ export default function ChatLayout() {
 
                   {/* Search Navigation */}
                   {searchResults.length > 0 && (
-                    <div className="flex items-center gap-1">
-                      <span className="text-sm text-muted-foreground whitespace-nowrap">
+                    <div className="flex items-center gap-2 bg-background/80 rounded-lg px-3 py-1.5 border border-border/50">
+                      <span className="text-sm text-muted-foreground whitespace-nowrap font-medium">
                         {currentResultIndex + 1} of {searchResults.length}
                       </span>
-                      <Button
-                        onClick={() => handleSearchNavigation("previous")}
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        disabled={searchResults.length === 0}
-                      >
-                        <ChevronUp className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        onClick={() => handleSearchNavigation("next")}
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        disabled={searchResults.length === 0}
-                      >
-                        <ChevronDown className="h-4 w-4" />
-                      </Button>
+                      <div className="flex gap-1">
+                        <Button
+                          onClick={() => handleSearchNavigation("previous")}
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 hover:bg-primary/10 rounded-md"
+                          disabled={searchResults.length === 0}
+                        >
+                          <ChevronUp className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          onClick={() => handleSearchNavigation("next")}
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 hover:bg-primary/10 rounded-md"
+                          disabled={searchResults.length === 0}
+                        >
+                          <ChevronDown className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </div>
 
                 {/* Search Results */}
                 {searchResults.length > 0 && (
-                  <div className="mt-2 max-h-60 overflow-y-auto border rounded-md">
+                  <div className="mt-3 max-h-60 overflow-y-auto border rounded-lg bg-background/80 backdrop-blur-sm">
                     {searchResults.map((result, index) => (
                       <div
                         key={result.message.id}
-                        className={`p-2 cursor-pointer hover:bg-accent ${
-                          index === currentResultIndex ? "bg-accent" : ""
+                        className={`p-3 cursor-pointer hover:bg-accent/50 transition-colors border-b border-border/10 last:border-b-0 ${
+                          index === currentResultIndex ? "bg-accent/80" : ""
                         }`}
                         onClick={() => handleSearchResultClick(index)}
                       >
-                        <div className="text-xs text-muted-foreground">
+                        <div className="text-xs text-muted-foreground font-medium mb-1">
                           {new Date(result.message.created_at).toLocaleString()}
                         </div>
-                        <div className="text-sm">{result.snippet}</div>
+                        <div className="text-sm leading-relaxed">{result.snippet}</div>
                       </div>
                     ))}
                   </div>

@@ -71,14 +71,24 @@ export const useWorkflowStore = create<WorkflowStore>()(
 
       fetchExecutions: async () => {
         try {
+          console.log('🔍 Fetching workflow executions...')
           const headers = await getAuthHeaders()
+          console.log('📋 Auth headers prepared:', headers)
+          
           const response = await fetch('/api/workflows/executions', { headers })
+          console.log('📡 Response status:', response.status, response.statusText)
+          
           if (response.ok) {
             const executions = await response.json()
+            console.log('✅ Executions fetched:', executions.length, 'executions')
+            console.log('📊 Executions data:', executions)
             set({ executions })
+          } else {
+            const errorText = await response.text()
+            console.error('❌ Failed to fetch executions - Status:', response.status, 'Error:', errorText)
           }
         } catch (error) {
-          console.error('Failed to fetch workflow executions:', error)
+          console.error('❌ Failed to fetch workflow executions:', error)
         }
       },
 

@@ -137,6 +137,18 @@ export async function POST(request: NextRequest) {
     }
 
     // Create execution record
+    console.log('📝 Creating workflow execution record...')
+    console.log('🔧 Execution data:', {
+      workflow_id: workflowId,
+      user_id: user.id,
+      thread_id: threadId,
+      status: "running",
+      input_data: inputData,
+      started_at: new Date().toISOString(),
+      current_step: 0,
+      step_count: workflow.steps.length
+    })
+
     const { data: execution, error: executionError } = await supabaseServer
       .from("workflow_executions")
       .insert({
@@ -161,12 +173,14 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (executionError || !execution) {
-      console.error("Execution creation error:", executionError)
+      console.error("❌ Execution creation error:", executionError)
       return NextResponse.json({ 
         error: "Failed to create execution", 
         details: executionError?.message || "Unknown error" 
       }, { status: 500 })
     }
+
+    console.log('✅ Workflow execution created successfully:', execution.id)
 
     // Create a streaming response that executes the workflow
     const messageId = uuidv4()

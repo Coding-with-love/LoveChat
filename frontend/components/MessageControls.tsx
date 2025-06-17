@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils"
 import { Check, Copy, RefreshCcw, SquarePen, Star, Archive, Volume2, VolumeX, Loader2 } from "lucide-react"
 import type { UIMessage } from "ai"
 import type { UseChatHelpers } from "@ai-sdk/react"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip"
 
 // Extend UIMessage to include attempts
 interface ExtendedUIMessage extends UIMessage {
@@ -417,45 +418,118 @@ export default function MessageControls({
   }, [threadId, message.id])
 
   return (
-    <div className="opacity-60 group-hover:opacity-100 transition-opacity duration-100 flex gap-1">
-      <Button variant="ghost" size="icon" onClick={handleCopy}>
-        {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-      </Button>
+    <div className="opacity-0 group-hover:opacity-100 transition-all duration-200 ease-in-out flex gap-1 animate-in fade-in-0 slide-in-from-bottom-1">
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleCopy}
+              className="h-8 w-8 hover:bg-muted transition-colors"
+            >
+              {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>{copied ? "Copied!" : "Copy"}</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
 
-      {/* Archive Button */}
-      <Button variant="ghost" size="icon" onClick={handleSaveAsArtifact} title="Save as Artifact">
-        <Archive className="w-4 h-4" />
-      </Button>
+      {setMode && hasRequiredKeys && (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleEdit}
+                className="h-8 w-8 hover:bg-muted transition-colors"
+              >
+                <SquarePen className="w-4 h-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Edit</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      )}
+      {hasRequiredKeys && (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  console.log("🖱️ Regenerate button clicked!")
+                  handleRegenerate()
+                }}
+                className="h-8 w-8 hover:bg-muted transition-colors"
+              >
+                <RefreshCcw className="w-4 h-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Regenerate</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      )}
 
       {/* Read Aloud Button */}
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={handleReadAloud}
-        disabled={isSpeechLoading}
-        title={isSpeechPlaying ? "Stop reading" : "Read aloud"}
-      >
-        {isSpeechLoading ? (
-          <Loader2 className="w-4 h-4 animate-spin" />
-        ) : isSpeechPlaying ? (
-          <VolumeX className="w-4 h-4" />
-        ) : (
-          <Volume2 className="w-4 h-4" />
-        )}
-      </Button>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleReadAloud}
+              disabled={isSpeechLoading}
+              title={isSpeechPlaying ? "Stop reading" : "Read aloud"}
+              className="h-8 w-8 hover:bg-muted transition-colors"
+            >
+              {isSpeechLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : isSpeechPlaying ? (
+                <VolumeX className="w-4 h-4" />
+              ) : (
+                <Volume2 className="w-4 h-4" />
+              )}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>{isSpeechPlaying ? "Stop reading" : "Read aloud"}</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
 
       {/* Pin Button */}
       <Dialog open={showPinDialog} onOpenChange={setShowPinDialog}>
         <DialogTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handlePinClick}
-            disabled={pinLoading}
-            className={cn("transition-colors", isPinned && "text-yellow-500 hover:text-yellow-600")}
-          >
-            <Star className={cn("w-4 h-4", isPinned && "fill-current")} />
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handlePinClick}
+                  disabled={pinLoading}
+                  className={cn(
+                    "h-8 w-8 transition-colors hover:bg-muted",
+                    isPinned && "text-yellow-500 hover:text-yellow-600",
+                  )}
+                >
+                  <Star className={cn("w-4 h-4", isPinned && "fill-current")} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{isPinned ? "Unpin" : "Pin"}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </DialogTrigger>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -486,23 +560,25 @@ export default function MessageControls({
         </DialogContent>
       </Dialog>
 
-      {setMode && hasRequiredKeys && (
-        <Button variant="ghost" size="icon" onClick={handleEdit}>
-          <SquarePen className="w-4 h-4" />
-        </Button>
-      )}
-      {hasRequiredKeys && (
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => {
-            console.log("🖱️ Regenerate button clicked!")
-            handleRegenerate()
-          }}
-        >
-          <RefreshCcw className="w-4 h-4" />
-        </Button>
-      )}
+      {/* Archive Button */}
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleSaveAsArtifact}
+              title="Save as Artifact"
+              className="h-8 w-8 hover:bg-muted transition-colors"
+            >
+              <Archive className="w-4 h-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Save as Artifact</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     </div>
   )
 }

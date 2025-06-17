@@ -228,6 +228,21 @@ export function ArtifactCard({
 
   const shouldShowExpandButton = artifact.content.split("\n").length > (compact ? 5 : 10)
 
+  const getArtifactEmoji = () => {
+    switch (artifact.content_type) {
+      case "table":
+        return "📊"
+      case "text":
+        return "🧾"
+      case "code":
+        return "💾"
+      case "markdown":
+        return "📄"
+      default:
+        return "📄"
+    }
+  }
+
   return (
     <Card
       className={cn(
@@ -254,7 +269,17 @@ export function ArtifactCard({
               <div className="flex items-center gap-2 mb-1">
                 {getArtifactIcon()}
                 <h3 className="font-semibold text-sm truncate">{artifact.title}</h3>
-                {artifact.is_pinned && <Pin className="h-3 w-3 text-primary fill-current" />}
+                <span className="text-xs text-muted-foreground">.{artifact.file_extension}</span>
+                {artifact.is_pinned && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Pin className="h-3 w-3 text-primary fill-current cursor-pointer" />
+                      </TooltipTrigger>
+                      <TooltipContent>Pinned</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
               </div>
 
               <div className="flex items-center gap-2 mb-2">
@@ -395,8 +420,7 @@ export function ArtifactCard({
           </TooltipProvider>
         </div>
 
-        {/* Tags */}
-        {artifact.tags.length > 0 && (
+        {artifact.tags && artifact.tags.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-3">
             {artifact.tags.slice(0, 3).map((tag) => (
               <Badge key={tag} variant="outline" className="text-xs px-1.5 py-0.5">

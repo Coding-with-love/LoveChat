@@ -49,14 +49,19 @@ export const useAPIKeyStore = create<APIKeyStore>()(
           // Get current user
           const { data: { user } } = await supabase.auth.getUser()
           if (!user) throw new Error("User not authenticated")
+          console.log("👤 User authenticated for setKey:", user.id)
 
           // Check if key already exists
-          const { data: existingKey } = await supabase
+          const { data: existingKey, error: selectError } = await supabase
             .from("api_keys")
             .select("id")
             .eq("user_id", user.id)
             .eq("provider", normalizedProvider)
             .single()
+          
+          if (selectError && selectError.code !== 'PGRST116') {
+            console.error("❌ Error checking existing key:", selectError)
+          }
 
           if (existingKey) {
             // Update existing key
@@ -225,12 +230,15 @@ export const useAPIKeyStore = create<APIKeyStore>()(
           // Get current user
           const { data: { user } } = await supabase.auth.getUser()
           if (!user) throw new Error("User not authenticated")
+          console.log("👤 User authenticated for loadKeys:", user.id)
 
           // Fetch all API keys for user
           const { data: apiKeys, error } = await supabase
             .from("api_keys")
             .select("provider, api_key")
             .eq("user_id", user.id)
+          
+          console.log("🔍 Raw database response:", { apiKeys, error })
 
           if (error) throw error
 
@@ -266,7 +274,13 @@ export const useAPIKeyStore = create<APIKeyStore>()(
     {
       name: "api-key-storage", // name of the item in localStorage
       version: 1,
-      // Enable proper hydration to restore state on tab switches
+      // Only persist non-sensitive data, not the actual keys themselves
+      partialize: (state) => ({
+        // Don't persist the actual keys - they come from database
+        // Only persist loading state flags if needed
+        isLoading: false,
+        error: null,
+      }),
     }
   )
 )

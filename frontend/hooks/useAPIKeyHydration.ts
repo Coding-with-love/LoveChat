@@ -15,23 +15,15 @@ export function useAPIKeyHydration() {
       return
     }
 
-    const currentKeys = getAllKeys()
-    const hasAnyKeys = Object.keys(currentKeys).length > 0
-    
-    console.log("🔄 Initial API Key Hydration - Current keys:", Object.keys(currentKeys))
+    console.log("🔄 Initial API Key Hydration - Always loading from database...")
 
-    // Only load if no keys and not already loading
-    if (!hasAnyKeys && !isLoading) {
-      console.log("🔄 No API keys found, loading from database...")
-      hasInitialized.current = true
-      loadKeys().catch(error => {
-        console.warn("⚠️ Failed to load API keys:", error)
-        hasInitialized.current = false // Allow retry on error
-      })
-    } else {
-      hasInitialized.current = true
-    }
-  }, [loadKeys, getAllKeys, isLoading])
+    // Always load from database on app start to ensure sync across devices/domains
+    hasInitialized.current = true
+    loadKeys().catch(error => {
+      console.warn("⚠️ Failed to load API keys:", error)
+      hasInitialized.current = false // Allow retry on error
+    })
+  }, [loadKeys, isLoading])
 
   useEffect(() => {
     // Lightweight visibility change handler - only check, don't reload

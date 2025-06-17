@@ -454,6 +454,120 @@ export interface Database {
           updated_at?: string
         }
       }
+      workflows: {
+        Row: {
+          id: string
+          user_id: string
+          name: string
+          description: string | null
+          steps: any[]
+          is_public: boolean
+          tags: string[]
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          name: string
+          description?: string | null
+          steps: any[]
+          is_public?: boolean
+          tags?: string[]
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          name?: string
+          description?: string | null
+          steps?: any[]
+          is_public?: boolean
+          tags?: string[]
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      workflow_executions: {
+        Row: {
+          id: string
+          workflow_id: string
+          user_id: string
+          thread_id: string | null
+          status: "pending" | "running" | "completed" | "failed" | "cancelled"
+          input_data: any | null
+          output_data: any | null
+          step_results: any[]
+          current_step: number
+          error_message: string | null
+          started_at: string | null
+          completed_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          workflow_id: string
+          user_id: string
+          thread_id?: string | null
+          status?: "pending" | "running" | "completed" | "failed" | "cancelled"
+          input_data?: any | null
+          output_data?: any | null
+          step_results?: any[]
+          current_step?: number
+          error_message?: string | null
+          started_at?: string | null
+          completed_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          workflow_id?: string
+          user_id?: string
+          thread_id?: string | null
+          status?: "pending" | "running" | "completed" | "failed" | "cancelled"
+          input_data?: any | null
+          output_data?: any | null
+          step_results?: any[]
+          current_step?: number
+          error_message?: string | null
+          started_at?: string | null
+          completed_at?: string | null
+          created_at?: string
+        }
+      }
+      workflow_templates: {
+        Row: {
+          id: string
+          name: string
+          description: string | null
+          category: string | null
+          steps: any[]
+          tags: string[]
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          description?: string | null
+          category?: string | null
+          steps: any[]
+          tags?: string[]
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          description?: string | null
+          category?: string | null
+          steps?: any[]
+          tags?: string[]
+          created_at?: string
+          updated_at?: string
+        }
+      }
     }
     Views: {
       [_ in never]: never

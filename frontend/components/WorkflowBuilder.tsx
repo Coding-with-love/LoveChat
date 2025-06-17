@@ -470,49 +470,68 @@ export function WorkflowBuilder({ open, onOpenChange, threadId, onRefreshMessage
               <div className="mb-4 flex-shrink-0">
                 <h3 className="text-lg font-semibold">Execution History</h3>
                 <p className="text-sm text-muted-foreground">Track your workflow runs and results</p>
+                {/* Debug info */}
+                <div className="text-xs text-muted-foreground mt-2">
+                  Debug: {executions.length} executions loaded, Loading: {isLoading ? 'Yes' : 'No'}
+                </div>
               </div>
 
               <ScrollArea className="flex-1 min-h-0">
                 <div className="space-y-4 pb-6">
-                  {executions.map((execution) => {
-                    const workflow = workflows.find((w) => w.id === execution.workflow_id)
-                    return (
-                      <Card key={execution.id}>
-                        <CardContent className="pt-4">
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                {getStatusIcon(execution.status)}
-                                <span className="font-medium">{workflow?.name || "Unknown Workflow"}</span>
-                                <Badge variant="outline" className="text-xs">
-                                  {execution.status}
-                                </Badge>
-                              </div>
-                              <p className="text-sm text-muted-foreground mt-1">
-                                Started {new Date(execution.created_at).toLocaleString()}
-                              </p>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-sm text-muted-foreground">
-                                Step {execution.current_step + 1} of {execution.step_results.length}
-                              </div>
-                              {execution.completed_at && (
-                                <div className="text-xs text-muted-foreground">
-                                  Completed {new Date(execution.completed_at).toLocaleString()}
+                  {executions.length === 0 ? (
+                    <div className="flex items-center justify-center h-64">
+                      <div className="text-center">
+                        <Zap className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                        <h3 className="text-lg font-semibold mb-2">No Executions Yet</h3>
+                        <p className="text-muted-foreground mb-4">
+                          Execute workflows to see their history here
+                        </p>
+                        <div className="text-sm text-muted-foreground">
+                          Total executions: {executions.length}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    executions.map((execution) => {
+                      const workflow = workflows.find((w) => w.id === execution.workflow_id)
+                      return (
+                        <Card key={execution.id}>
+                          <CardContent className="pt-4">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  {getStatusIcon(execution.status)}
+                                  <span className="font-medium">{workflow?.name || "Unknown Workflow"}</span>
+                                  <Badge variant="outline" className="text-xs">
+                                    {execution.status}
+                                  </Badge>
                                 </div>
-                              )}
+                                <p className="text-sm text-muted-foreground mt-1">
+                                  Started {new Date(execution.created_at).toLocaleString()}
+                                </p>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-sm text-muted-foreground">
+                                  Step {execution.current_step + 1} of {execution.step_results.length}
+                                </div>
+                                {execution.completed_at && (
+                                  <div className="text-xs text-muted-foreground">
+                                    Completed {new Date(execution.completed_at).toLocaleString()}
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                          </div>
 
-                          {execution.error_message && (
-                            <div className="mt-3 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
-                              {execution.error_message}
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
-                    )
-                  })}
+                            {execution.error_message && (
+                              <div className="mt-3 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+                                {execution.error_message}
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      )
+                    })
+                  )}
                 </div>
               </ScrollArea>
             </TabsContent>
