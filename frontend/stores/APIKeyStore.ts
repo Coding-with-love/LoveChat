@@ -6,6 +6,7 @@ interface APIKeyStore {
   keys: Record<string, string>
   isLoading: boolean
   error: string | null
+  hasInitialized: boolean
   getKey: (provider: string) => string | undefined
   setKey: (provider: string, key: string) => Promise<void>
   removeKey: (provider: string) => Promise<void>
@@ -24,13 +25,15 @@ export const useAPIKeyStore = create<APIKeyStore>()(
       keys: {},
       isLoading: false,
       error: null,
+      hasInitialized: false,
       getKey: (provider: string) => {
         const state = get()
         const normalizedProvider = provider.toLowerCase()
-        console.log("🔑 Getting API key for provider:", provider, "→", normalizedProvider)
-        console.log("🔑 Available keys:", Object.keys(state.keys))
         const key = state.keys[normalizedProvider]
-        console.log("🔑 Found key:", !!key, "Length:", key?.length || 0)
+        // Only log when debugging is needed, not on every call
+        // console.log("🔑 Getting API key for provider:", provider, "→", normalizedProvider)
+        // console.log("🔑 Available keys:", Object.keys(state.keys))
+        // console.log("🔑 Found key:", !!key, "Length:", key?.length || 0)
         return key
       },
       setKey: async (provider: string, key: string) => {
@@ -136,6 +139,11 @@ export const useAPIKeyStore = create<APIKeyStore>()(
           })
 
           console.log("✅ API key removed from database")
+          
+          // Trigger cleanup of favorites for models that no longer have API keys
+          // Import the ModelStore dynamically to avoid circular imports
+          const { useModelStore } = await import("./ModelStore")
+          useModelStore.getState().cleanupFavoritesForRemovedProviders()
         } catch (error) {
           console.error("❌ Error removing API key:", error)
           set({ error: error instanceof Error ? error.message : "Failed to remove API key" })
@@ -217,10 +225,15 @@ export const useAPIKeyStore = create<APIKeyStore>()(
         return state.keys
       },
       loadKeys: async () => {
-        // Prevent concurrent loadKeys calls
+        // Prevent concurrent loadKeys calls and check if already initialized
         const state = get()
         if (state.isLoading) {
           console.log("🔄 loadKeys already in progress, skipping...")
+          return
+        }
+        
+        if (state.hasInitialized) {
+          console.log("🔄 loadKeys already completed, skipping...")
           return
         }
 
@@ -229,18 +242,19 @@ export const useAPIKeyStore = create<APIKeyStore>()(
           const currentState = get()
           if (currentState.isLoading) {
             console.warn("⚠️ loadKeys timeout - clearing loading state")
-            set({ isLoading: false })
+            set({ isLoading: false, hasInitialized: true })
           }
         }, 10000) // 10 second timeout
 
         try {
           set({ isLoading: true, error: null })
+          console.log("🔄 loadKeys: Starting database query...")
           
           // Get current user
           const { data: { user } } = await supabase.auth.getUser()
           if (!user) {
             console.log("👤 No user found, skipping loadKeys")
-            set({ isLoading: false })
+            set({ isLoading: false, keys: {}, hasInitialized: true }) // Mark as initialized even with no user
             return
           }
           console.log("👤 User authenticated for loadKeys:", user.id)
@@ -251,7 +265,12 @@ export const useAPIKeyStore = create<APIKeyStore>()(
             .select("provider, api_key")
             .eq("user_id", user.id)
           
-          console.log("🔍 Raw database response:", { apiKeys, error })
+          console.log("🔍 Raw database response:", { 
+            apiKeys, 
+            error,
+            apiKeysCount: apiKeys?.length || 0,
+            apiKeysProviders: apiKeys?.map(k => k.provider) || []
+          })
 
           if (error) throw error
 
@@ -261,15 +280,25 @@ export const useAPIKeyStore = create<APIKeyStore>()(
             return acc
           }, {} as Record<string, string>)
 
-          set({ keys })
-          console.log("✅ API keys loaded from database")
+          console.log("🔍 Processed keys:", {
+            keyCount: Object.keys(keys).length,
+            providers: Object.keys(keys)
+          })
+
+          set({ keys, hasInitialized: true })
+          
+          if (Object.keys(keys).length === 0) {
+            console.log("✅ No API keys found in database (this is normal for new users)")
+          } else {
+            console.log("✅ API keys loaded from database:", Object.keys(keys))
+          }
         } catch (error) {
           console.error("❌ Error loading API keys:", error)
-          set({ error: error instanceof Error ? error.message : "Failed to load API keys" })
+          set({ error: error instanceof Error ? error.message : "Failed to load API keys", hasInitialized: true })
         } finally {
           clearTimeout(loadingTimeout)
           set({ isLoading: false })
-          console.log("🔄 loadKeys loading state cleared")
+          console.log("🔄 loadKeys: Loading state cleared")
         }
       },
       debug: () => {

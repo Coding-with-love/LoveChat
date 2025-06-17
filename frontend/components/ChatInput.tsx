@@ -144,6 +144,7 @@ function PureChatInput({ threadId, input, status, setInput, append, stop, onRefr
   const [workflowBuilderOpen, setWorkflowBuilderOpen] = useState(false)
   const [reasoningEffort, setReasoningEffort] = useState<"low" | "medium" | "high">("medium")
   const [toolsDropdownOpen, setToolsDropdownOpen] = useState(false)
+  const [artifactPickerOpen, setArtifactPickerOpen] = useState(false)
 
   // Get sidebar state for responsive positioning
   const { state: sidebarState, isMobile } = useSidebar()
@@ -645,21 +646,23 @@ function PureChatInput({ threadId, input, status, setInput, append, stop, onRefr
       
       <div className="p-2 space-y-1">
         {/* Artifact Picker */}
-        <ArtifactPicker
-          threadId={threadId}
-          onSelectArtifact={handleArtifactSelect}
-          trigger={
-            <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted/30 transition-all duration-200 cursor-pointer w-full group">
-              <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-purple-500/10 text-purple-600 group-hover:bg-purple-500/20 transition-colors">
-                <Archive className="h-3.5 w-3.5" />
-              </div>
-              <div className="flex-1 text-left">
-                <div className="font-medium text-sm text-foreground">Artifacts</div>
-                <div className="text-xs text-muted-foreground">Insert code & documents</div>
-              </div>
-            </div>
-          }
-        />
+        <Button
+          variant="ghost"
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted/30 transition-all duration-200 cursor-pointer w-full group h-auto justify-start"
+          onClick={(e) => {
+            e.stopPropagation() // Prevent dropdown from closing
+            setArtifactPickerOpen(true)
+            setToolsDropdownOpen(false)
+          }}
+        >
+          <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-purple-500/10 text-purple-600 group-hover:bg-purple-500/20 transition-colors">
+            <Archive className="h-3.5 w-3.5" />
+          </div>
+          <div className="flex-1 text-left">
+            <div className="font-medium text-sm text-foreground">Artifacts</div>
+            <div className="text-xs text-muted-foreground">Insert code & documents</div>
+          </div>
+        </Button>
 
         {/* Workflow Builder */}
         <div 
@@ -1144,6 +1147,15 @@ function PureChatInput({ threadId, input, status, setInput, append, stop, onRefr
         onOpenChange={setWorkflowBuilderOpen}
         threadId={threadId}
         onRefreshMessages={onRefreshMessages}
+      />
+
+      {/* Artifact Picker Dialog */}
+      <ArtifactPicker
+        threadId={threadId}
+        onSelectArtifact={handleArtifactSelect}
+        open={artifactPickerOpen}
+        onOpenChange={setArtifactPickerOpen}
+        trigger={<div style={{ display: 'none' }} />} // Hidden trigger since we control it manually
       />
 
       {/* Enhanced Web Search Status Indicator */}

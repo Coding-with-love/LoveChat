@@ -34,12 +34,20 @@ interface ArtifactPickerProps {
   onSelectArtifact: (artifact: Artifact, action: 'reference' | 'insert' | 'view') => void
   trigger?: React.ReactNode
   className?: string
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
-export function ArtifactPicker({ threadId, onSelectArtifact, trigger, className }: ArtifactPickerProps) {
+export function ArtifactPicker({ threadId, onSelectArtifact, trigger, className, open: externalOpen, onOpenChange }: ArtifactPickerProps) {
   const { artifacts, fetchArtifacts, getArtifactsByThread } = useArtifactStore()
-  const [open, setOpen] = useState(false)
+  const [internalOpen, setInternalOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
+
+  // Use external open state if provided, otherwise use internal
+  const open = externalOpen !== undefined ? externalOpen : internalOpen
+  const setOpen = onOpenChange || setInternalOpen
+
+
 
   useEffect(() => {
     if (open) {

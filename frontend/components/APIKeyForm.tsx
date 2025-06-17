@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/frontend/components/ui/button"
 import { Input } from "@/frontend/components/ui/input"
 import { Label } from "@/frontend/components/ui/label"
@@ -18,6 +18,7 @@ export default function APIKeyForm() {
     loadKeys,
     isLoading: storeLoading,
     error: storeError,
+    hasInitialized: storeHasInitialized,
   } = useAPIKeyStore()
 
   const [openaiKey, setOpenaiKey] = useState("")
@@ -30,62 +31,44 @@ export default function APIKeyForm() {
   const [isLoading, setIsLoading] = useState(true)
   const [showForceLoad, setShowForceLoad] = useState(false)
 
-  // Sync form state with store state whenever store updates
+  // Simplified initialization - just load keys once on mount
   useEffect(() => {
-    const currentOpenaiKey = getKey("openai") || ""
-    const currentGoogleKey = getKey("google") || ""
-    const currentOpenrouterKey = getKey("openrouter") || ""
-
-    setOpenaiKey(currentOpenaiKey)
-    setGoogleKey(currentGoogleKey)
-    setOpenrouterKey(currentOpenrouterKey)
-
-    console.log("🔄 Syncing form with store state:", {
-      openai: !!currentOpenaiKey,
-      google: !!currentGoogleKey,
-      openrouter: !!currentOpenrouterKey,
-    })
-  }, [getKey])
-
-  // Initialize keys from store
-  useEffect(() => {
-    const initializeKeys = async () => {
+    const initializeForm = async () => {
       try {
         setIsLoading(true)
+        console.log("🔄 APIKeyForm: Starting initialization...")
 
-        // Get keys from current store state first
-        const currentOpenaiKey = getKey("openai") || ""
-        const currentGoogleKey = getKey("google") || ""
-        const currentOpenrouterKey = getKey("openrouter") || ""
-
-        setOpenaiKey(currentOpenaiKey)
-        setGoogleKey(currentGoogleKey)
-        setOpenrouterKey(currentOpenrouterKey)
-
-        // If we don't have keys in store and we haven't loaded from DB yet, try to load from database
-        if (!currentOpenaiKey && !currentGoogleKey && !currentOpenrouterKey && !storeLoading) {
-          console.log("🔄 No keys in store, loading from database...")
-          try {
-            await loadKeys()
-
-            // Update local state with loaded keys after database load
-            setOpenaiKey(getKey("openai") || "")
-            setGoogleKey(getKey("google") || "")
-            setOpenrouterKey(getKey("openrouter") || "")
-          } catch (error) {
-            console.error("❌ Error loading API keys:", error)
-            // Continue with empty keys if loading fails
-          }
+        // If store hasn't been initialized yet, load from database
+        if (!storeHasInitialized && !storeLoading) {
+          console.log("🔄 Store not initialized, loading from database...")
+          await loadKeys()
         }
+
+        // Load current keys into form
+        setOpenaiKey(getKey("openai") || "")
+        setGoogleKey(getKey("google") || "")
+        setOpenrouterKey(getKey("openrouter") || "")
+
+        console.log("🔄 APIKeyForm: Initialization complete")
       } catch (error) {
-        console.error("❌ Error initializing API keys:", error)
+        console.error("❌ Error initializing APIKeyForm:", error)
       } finally {
         setIsLoading(false)
       }
     }
 
-    initializeKeys()
-  }, [getKey, getAllKeys, loadKeys, storeLoading])
+    initializeForm()
+  }, []) // Only run once on mount
+
+  // Sync form with store when store updates
+  useEffect(() => {
+    if (storeHasInitialized) {
+      setOpenaiKey(getKey("openai") || "")
+      setGoogleKey(getKey("google") || "")
+      setOpenrouterKey(getKey("openrouter") || "")
+      setIsLoading(false) // Ensure loading is cleared when store is ready
+    }
+  }, [storeHasInitialized, getKey])
 
   // Enhanced loading timeout with force load option
   useEffect(() => {
@@ -126,6 +109,7 @@ export default function APIKeyForm() {
     console.log("🔧 Force loading API keys")
     setIsLoading(false)
     setShowForceLoad(false)
+    setIsLoading(true)
 
     // Load keys from current store state
     setOpenaiKey(getKey("openai") || "")
@@ -199,6 +183,10 @@ export default function APIKeyForm() {
           setOpenrouterKey("")
           break
       }
+
+      // Trigger cleanup of favorites for models that no longer have API keys
+      const { useModelStore } = await import("@/frontend/stores/ModelStore")
+      useModelStore.getState().cleanupFavoritesForRemovedProviders()
 
       toast.success(`${provider} API key removed`)
     } catch (error) {

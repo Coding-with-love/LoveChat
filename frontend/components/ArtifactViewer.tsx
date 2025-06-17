@@ -176,7 +176,16 @@ export function ArtifactViewer({ open, onOpenChange, artifact }: ArtifactViewerP
     const language = getLanguageForHighlighting()
     const contentToRender = selectedVersionContent || artifact.content
 
-    if (artifact.content_type === "markdown" || artifact.content_type === "md") {
+    // Enhanced detection for markdown/table content
+    const isMarkdownContent = 
+      artifact.content_type === "markdown" || 
+      artifact.content_type === "md" || 
+      artifact.content_type === "data" || 
+      artifact.content_type === "table" ||
+      // Also detect if content looks like markdown table
+      (artifact.content.includes('|') && artifact.content.includes('---'))
+
+    if (isMarkdownContent) {
       return (
         <div className="space-y-4">
           {selectedVersionContent && (
@@ -193,8 +202,16 @@ export function ArtifactViewer({ open, onOpenChange, artifact }: ArtifactViewerP
               </Button>
             </div>
           )}
-          <div className="prose prose-sm dark:prose-invert max-w-none">
-            <MarkdownRenderer content={contentToRender} id={`artifact-${artifact.id}`} />
+          <div className="prose prose-sm dark:prose-invert max-w-none w-full prose-table:border-collapse prose-table:border prose-table:border-border prose-th:border prose-th:border-border prose-th:bg-muted/50 prose-th:px-4 prose-th:py-2 prose-th:text-left prose-th:font-medium prose-td:border prose-td:border-border prose-td:px-4 prose-td:py-2 prose-tr:border-b prose-tr:border-border prose-table:w-full prose-table:rounded-md prose-table:shadow-sm">
+            <div className="overflow-x-auto">
+              <MarkdownRenderer 
+                content={contentToRender} 
+                id={`artifact-${artifact.id}`} 
+                threadId={artifact.thread_id || ""}
+                messageId={artifact.message_id || ""}
+                isArtifactMessage={true}
+              />
+            </div>
           </div>
         </div>
       )
@@ -261,6 +278,45 @@ export function ArtifactViewer({ open, onOpenChange, artifact }: ArtifactViewerP
       </div>
     )
   }
+
+  useEffect(() => {
+    if (artifact?.id) {
+      // Add debugging function to window for manual artifact fixing
+      (window as any).fixArtifact = async (newTitle?: string, newContentType?: string) => {
+        try {
+          console.log(`🔧 Fixing artifact ${artifact.id}...`)
+          
+          // If no title provided, try to generate a smart one from content
+          let titleToUse = newTitle
+          if (!titleToUse && artifact.content.includes('|') && artifact.content.includes('---')) {
+            const firstLine = artifact.content.split('\n').find(line => line.trim() && !line.includes('|'))
+            titleToUse = firstLine?.replace(/[#*_]/g, '').trim() || 'Requirements Table'
+          }
+          
+          // If no content type provided, detect from content
+          let contentTypeToUse = newContentType
+          if (!contentTypeToUse && artifact.content.includes('|') && artifact.content.includes('---')) {
+            contentTypeToUse = 'data'
+          }
+          
+          await updateArtifact(artifact.id, { 
+            title: titleToUse || artifact.title,
+            content_type: contentTypeToUse || artifact.content_type
+          })
+          
+          console.log(`✅ Fixed artifact: "${titleToUse}" (${contentTypeToUse})`)
+          
+        } catch (error) {
+          console.error('❌ Failed to fix artifact:', error)
+        }
+      }
+    }
+    
+    return () => {
+      // Cleanup
+      delete (window as any).fixArtifact
+    }
+  }, [artifact?.id, updateArtifact])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

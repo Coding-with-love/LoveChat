@@ -166,6 +166,8 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
   useReasoningStream({
     onReasoningStart: () => {
       console.log("🧠 Reasoning stream started")
+      console.log("🧠 Current messages length:", messages.length)
+      console.log("🧠 Current streaming reasoning state:", isStreamingReasoning)
       setIsStreamingReasoning(true)
       setStreamingReasoning("")
       setReasoningDuration(undefined)
@@ -179,14 +181,21 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
       }
     },
     onReasoningDelta: (content: string) => {
-      console.log("🧠 Reasoning delta:", content.substring(0, 100))
+      console.log("🧠 Reasoning delta received:", content.substring(0, 100))
+      console.log("🧠 Current reasoning buffer length:", streamingReasoning.length)
+      console.log("🧠 Current message ID being tracked:", streamingReasoningMessageId)
       const newReasoning = streamingReasoning + content
       setStreamingReasoning(newReasoning)
       
       // Update the message with the current reasoning content
       if (streamingReasoningMessageId) {
-        setMessages(prevMessages => 
-          prevMessages.map(msg => 
+        console.log("🧠 Updating message with reasoning content:", {
+          messageId: streamingReasoningMessageId,
+          contentLength: content.length,
+          totalReasoningLength: newReasoning.length
+        })
+        setMessages(prevMessages => {
+          const updatedMessages = prevMessages.map(msg => 
             msg.id === streamingReasoningMessageId 
               ? {
                   ...msg,
@@ -198,19 +207,25 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
                 }
               : msg
           )
-        )
+          console.log("🧠 Messages updated with reasoning delta")
+          return updatedMessages
+        })
+      } else {
+        console.log("🧠 No message ID tracked yet, buffering reasoning content")
       }
     },
     onReasoningEnd: (duration: number, totalReasoning: string) => {
       console.log("🧠 Reasoning stream ended:", { duration, reasoningLength: totalReasoning.length })
+      console.log("🧠 Final reasoning content preview:", totalReasoning.substring(0, 200))
       setIsStreamingReasoning(false)
       setReasoningDuration(duration)
       setStreamingReasoning(totalReasoning)
       
       // Update the message with the final reasoning content
       if (streamingReasoningMessageId) {
-        setMessages(prevMessages => 
-          prevMessages.map(msg => 
+        console.log("🧠 Updating message with final reasoning content:", streamingReasoningMessageId)
+        setMessages(prevMessages => {
+          const updatedMessages = prevMessages.map(msg => 
             msg.id === streamingReasoningMessageId 
               ? {
                   ...msg,
@@ -223,14 +238,17 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
                 }
               : msg
           )
-        )
+          console.log("🧠 Messages updated with final reasoning")
+          return updatedMessages
+        })
       }
       // Also handle case where we added a placeholder but didn't track the message ID
       else if (messages.length > 0) {
         const lastMessage = messages[messages.length - 1]
         if (lastMessage.role === "assistant" && lastMessage.parts?.some(part => part.type === "reasoning")) {
-          setMessages(prevMessages => 
-            prevMessages.map(msg => 
+          console.log("🧠 Updating last message with final reasoning (fallback):", lastMessage.id)
+          setMessages(prevMessages => {
+            const updatedMessages = prevMessages.map(msg => 
               msg.id === lastMessage.id 
                 ? {
                     ...msg,
@@ -243,7 +261,9 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
                   }
                 : msg
             )
-          )
+            console.log("🧠 Messages updated with final reasoning (fallback)")
+            return updatedMessages
+          })
         }
       }
     },
@@ -251,8 +271,26 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
 
   // Watch for new assistant messages and attach reasoning IMMEDIATELY for thinking models
   useEffect(() => {
+    console.log("🧠 Message tracking effect triggered:", {
+      messagesLength: messages.length,
+      isStreamingReasoning,
+      streamingReasoningMessageId,
+      supportsThinking,
+      status
+    })
+    
     if (messages.length > 0) {
       const lastMessage = messages[messages.length - 1]
+      console.log("🧠 Last message:", {
+        id: lastMessage.id,
+        role: lastMessage.role,
+        hasContent: !!lastMessage.content,
+        contentLength: lastMessage.content?.length || 0,
+        hasParts: !!lastMessage.parts,
+        partsCount: lastMessage.parts?.length || 0,
+        partsTypes: lastMessage.parts?.map(p => p.type) || []
+      })
+      
       if (lastMessage.role === "assistant") {
         // For reasoning models that send events, attach reasoning when streaming starts
         if (isStreamingReasoning && !streamingReasoningMessageId) {
@@ -260,8 +298,9 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
           setStreamingReasoningMessageId(lastMessage.id)
           
           // Immediately add a reasoning part to the message so it shows up FIRST
-          setMessages(prevMessages => 
-            prevMessages.map(msg => 
+          console.log("🧠 Adding reasoning part to message immediately")
+          setMessages(prevMessages => {
+            const updatedMessages = prevMessages.map(msg => 
               msg.id === lastMessage.id 
                 ? {
                     ...msg,
@@ -272,13 +311,15 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
                   }
                 : msg
             )
-          )
+            console.log("🧠 Message updated with reasoning part")
+            return updatedMessages
+          })
         }
         // For ALL thinking models, ensure reasoning component appears IMMEDIATELY when message is created
         else if (supportsThinking && (status === "streaming" || status === "submitted") && !lastMessage.parts?.some(part => part.type === "reasoning")) {
           console.log("🧠 Adding reasoning placeholder for thinking model IMMEDIATELY:", lastMessage.id)
-          setMessages(prevMessages => 
-            prevMessages.map(msg => 
+          setMessages(prevMessages => {
+            const updatedMessages = prevMessages.map(msg => 
               msg.id === lastMessage.id 
                 ? {
                     ...msg,
@@ -289,9 +330,21 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
                   }
                 : msg
             )
-          )
+            console.log("🧠 Message updated with reasoning placeholder")
+            return updatedMessages
+          })
+        } else {
+          console.log("🧠 No reasoning attachment needed:", {
+            isStreamingReasoning,
+            hasStreamingReasoningMessageId: !!streamingReasoningMessageId,
+            supportsThinking,
+            status,
+            hasReasoningPart: lastMessage.parts?.some(part => part.type === "reasoning")
+          })
         }
       }
+    } else {
+      console.log("🧠 No messages yet")
     }
   }, [messages, isStreamingReasoning, streamingReasoningMessageId, streamingReasoning, supportsThinking, status])
 

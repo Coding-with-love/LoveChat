@@ -27,6 +27,7 @@ import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/pris
 import { useTheme } from "next-themes"
 import type { Artifact } from "@/frontend/stores/ArtifactStore"
 import { useArtifactStore } from "@/frontend/stores/ArtifactStore"
+import MarkdownRenderer from "@/frontend/components/MemoizedMarkdown"
 
 interface ArtifactCardProps {
   artifact: Artifact
@@ -195,6 +196,31 @@ export function ArtifactCard({
     const displayContent =
       shouldTruncate && !isExpanded ? lines.slice(0, maxLines).join("\n") + "\n..." : artifact.content
 
+    // Enhanced detection for markdown/table content
+    const isMarkdownContent = 
+      artifact.content_type === "markdown" || 
+      artifact.content_type === "md" || 
+      artifact.content_type === "data" || 
+      artifact.content_type === "table" ||
+      // Also detect if content looks like markdown table
+      (artifact.content.includes('|') && artifact.content.includes('---'))
+
+    if (isMarkdownContent) {
+      return (
+        <div className="bg-muted/50 rounded-lg p-3 overflow-auto max-h-[200px]">
+          <div className="prose prose-xs dark:prose-invert max-w-none prose-table:text-xs prose-table:border-collapse prose-table:border prose-table:border-border prose-th:border prose-th:border-border prose-th:bg-muted/50 prose-th:px-2 prose-th:py-1 prose-th:text-left prose-th:font-medium prose-td:border prose-td:border-border prose-td:px-2 prose-td:py-1 prose-tr:border-b prose-tr:border-border">
+            <MarkdownRenderer 
+              content={displayContent} 
+              id={`artifact-preview-${artifact.id}`} 
+              threadId={artifact.thread_id || ""}
+              messageId={artifact.message_id || ""}
+              isArtifactMessage={true}
+            />
+          </div>
+        </div>
+      )
+    }
+
     if (language !== "text" && artifact.content_type !== "text") {
       return (
         <SyntaxHighlighter
@@ -259,56 +285,81 @@ export function ArtifactCard({
         <div className="flex items-start justify-between">
           <div className="flex items-start gap-3 flex-1 min-w-0">
             {/* Artifact Badge */}
-            <div className="flex items-center gap-2 mt-1">
+            <div className="flex items-center gap-2 mt-1 flex-shrink-0">
               <div className="p-1.5 rounded-md bg-background/80 border">
                 <Package className="h-3 w-3 text-primary" />
               </div>
             </div>
 
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                {getArtifactIcon()}
-                <h3 className="font-semibold text-sm truncate">{artifact.title}</h3>
-                <span className="text-xs text-muted-foreground">.{artifact.file_extension}</span>
-                {artifact.is_pinned && (
+              <div className="flex items-center gap-2 mb-1 min-w-0">
+                <div className="flex-shrink-0">
+                  {getArtifactIcon()}
+                </div>
+                <div className="flex-1 min-w-0">
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Pin className="h-3 w-3 text-primary fill-current cursor-pointer" />
+                        <h3 className="font-semibold text-sm truncate cursor-help block max-w-full" title={artifact.title}>
+                          {artifact.title}
+                        </h3>
                       </TooltipTrigger>
-                      <TooltipContent>Pinned</TooltipContent>
+                      <TooltipContent side="top" className="max-w-xs">
+                        <p className="text-sm break-words">{artifact.title}</p>
+                      </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
-                )}
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <span className="text-xs text-muted-foreground">
+                    .{artifact.file_extension}
+                  </span>
+                  {artifact.is_pinned && (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Pin className="h-3 w-3 text-primary fill-current cursor-pointer" />
+                        </TooltipTrigger>
+                        <TooltipContent>Pinned</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
+                </div>
               </div>
 
-              <div className="flex items-center gap-2 mb-2">
-                <Badge variant="secondary" className="text-xs">
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                <Badge variant="secondary" className="text-xs flex-shrink-0">
                   {artifact.content_type}
                 </Badge>
                 {artifact.language && (
-                  <Badge variant="outline" className="text-xs">
+                  <Badge variant="outline" className="text-xs flex-shrink-0">
                     {artifact.language}
                   </Badge>
                 )}
                 {artifact.project_name && (
-                  <Badge variant="outline" className="text-xs border-blue-200 bg-blue-50 text-blue-700">
-                    📁 {artifact.project_name}
+                  <Badge variant="outline" className="text-xs border-blue-200 bg-blue-50 text-blue-700 flex-shrink-0 max-w-[150px]">
+                    <span className="truncate inline-block max-w-full" title={`📁 ${artifact.project_name}`}>
+                      📁 {artifact.project_name}
+                    </span>
                   </Badge>
                 )}
               </div>
 
-              {artifact.description && <p className="text-xs text-muted-foreground mb-2">{artifact.description}</p>}
+              {artifact.description && (
+                <p className="text-xs text-muted-foreground mb-2 line-clamp-2">
+                  {artifact.description}
+                </p>
+              )}
 
-              <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                <div className="flex items-center gap-1">
+              <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                <div className="flex items-center gap-1 flex-shrink-0">
                   <Calendar className="h-3 w-3" />
                   {formatDate(artifact.created_at)}
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 flex-shrink-0">
                   <span>{artifact.content.length} chars</span>
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 flex-shrink-0">
                   <span>v{artifact.version}</span>
                 </div>
               </div>

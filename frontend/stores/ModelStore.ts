@@ -24,6 +24,7 @@ interface ModelState {
   hasLoadedFromDB: boolean
   favoriteModels: AIModel[]
   toggleFavoriteModel: (model: AIModel) => void
+  cleanupFavoritesForRemovedProviders: () => void
 }
 
 const DEFAULT_MODEL = "gemini-2.0-flash-exp" as const
@@ -291,6 +292,73 @@ export const useModelStore = create<ModelState>()(
           debouncedSave(() => get().saveToDatabase())
         }
       },
+      cleanupFavoritesForRemovedProviders: () => {
+        const apiKeyStore = useAPIKeyStore.getState()
+        const currentFavorites = get().favoriteModels
+        
+        console.log("🧹 Starting favorites cleanup...")
+        console.log("🧹 Current favorites:", currentFavorites)
+        console.log("🧹 Available API keys:", Object.keys(apiKeyStore.keys))
+        
+        const validFavorites = currentFavorites.filter((model) => {
+          try {
+            const modelConfig = getModelConfig(model)
+            console.log(`🧹 Checking model: ${model} (provider: ${modelConfig.provider})`)
+            
+            // For Ollama models, always keep them (they don't need API keys)
+            if (modelConfig.provider === "ollama") {
+              console.log(`🧹 Keeping ${model} - Ollama model`)
+              return true
+            }
+            
+            // For Google models, keep them (they can use server fallback)
+            if (modelConfig.provider === "google") {
+              console.log(`🧹 Keeping ${model} - Google model (server fallback available)`)
+              return true
+            }
+            
+            // For OpenAI and OpenRouter, only keep if user has API key
+            if (modelConfig.provider === "openai" || modelConfig.provider === "openrouter") {
+              const hasUserKey = !!apiKeyStore.getKey(modelConfig.provider)
+              console.log(`🧹 ${model} (${modelConfig.provider}) - has user key: ${hasUserKey}`)
+              if (!hasUserKey) {
+                console.log(`🗑️ Removing ${model} from favorites - no ${modelConfig.provider} API key`)
+                return false
+              }
+              console.log(`🧹 Keeping ${model} - has ${modelConfig.provider} API key`)
+              return true
+            }
+            
+            // For other providers, check if they have API keys
+            const hasUserKey = !!apiKeyStore.getKey(modelConfig.provider)
+            console.log(`🧹 ${model} (${modelConfig.provider}) - has user key: ${hasUserKey}`)
+            if (!hasUserKey) {
+              console.log(`🗑️ Removing ${model} from favorites - no ${modelConfig.provider} API key`)
+              return false
+            }
+            console.log(`🧹 Keeping ${model} - has ${modelConfig.provider} API key`)
+            return true
+          } catch (error) {
+            // If there's an error getting model config, remove from favorites
+            console.log(`🗑️ Removing ${model} from favorites - invalid model config:`, error)
+            return false
+          }
+        })
+        
+        console.log("🧹 Valid favorites after filtering:", validFavorites)
+        
+        // Only update if there's a change
+        if (validFavorites.length !== currentFavorites.length) {
+          console.log(`🧹 Cleaned up favorites: ${currentFavorites.length} → ${validFavorites.length}`)
+          set({ favoriteModels: validFavorites })
+          
+          if (get().hasLoadedFromDB) {
+            debouncedSave(() => get().saveToDatabase())
+          }
+        } else {
+          console.log("🧹 No cleanup needed - all favorites are still valid")
+        }
+      },
       loadFromDatabase: async () => {
         try {
           const {
@@ -318,6 +386,11 @@ export const useModelStore = create<ModelState>()(
               favoriteModels: (data.favorite_models as AIModel[]) || [],
               hasLoadedFromDB: true,
             })
+            
+            // Clean up any stale favorites after loading from database
+            setTimeout(() => {
+              get().cleanupFavoritesForRemovedProviders()
+            }, 500) // Small delay to ensure API key store is also loaded
           } else {
             // No preferences in DB, mark as loaded so future changes will save
             set({ hasLoadedFromDB: true })
@@ -379,3 +452,63 @@ export const useModelStore = create<ModelState>()(
     },
   ),
 )
+
+// Subscribe to API key changes to automatically clean up favorites
+let previousApiKeys: Record<string, string> = {}
+
+const setupApiKeySubscription = () => {
+  console.log("🔑 Setting up API key subscription for favorites cleanup...")
+  
+  useAPIKeyStore.subscribe((state) => {
+    const currentApiKeys = state.keys
+    
+    console.log("🔑 API key state changed:", {
+      previousKeys: Object.keys(previousApiKeys),
+      currentKeys: Object.keys(currentApiKeys),
+      hasInitialized: state.hasInitialized
+    })
+    
+    // Only process changes after store has been initialized
+    if (!state.hasInitialized) {
+      console.log("🔑 API key store not yet initialized, skipping cleanup")
+      previousApiKeys = { ...currentApiKeys }
+      return
+    }
+    
+    // Check if any API keys were removed
+    const removedProviders = Object.keys(previousApiKeys).filter(
+      (provider) => previousApiKeys[provider] && !currentApiKeys[provider]
+    )
+    
+    if (removedProviders.length > 0) {
+      console.log("🔑 API keys removed for providers:", removedProviders)
+      // Trigger cleanup of favorites
+      useModelStore.getState().cleanupFavoritesForRemovedProviders()
+    } else {
+      console.log("🔑 No API keys were removed, no cleanup needed")
+    }
+    
+    previousApiKeys = { ...currentApiKeys }
+  })
+}
+
+// Set up the subscription after the stores are initialized
+setTimeout(setupApiKeySubscription, 100)
+
+// Expose cleanup function for manual testing in development
+if (typeof window !== 'undefined') {
+  (window as any).cleanupFavorites = () => {
+    console.log("🧪 Manual favorites cleanup triggered")
+    useModelStore.getState().cleanupFavoritesForRemovedProviders()
+  }
+  
+  (window as any).debugModelStore = () => {
+    const state = useModelStore.getState()
+    const apiState = useAPIKeyStore.getState()
+    console.log("🧪 Model Store Debug:", {
+      favoriteModels: state.favoriteModels,
+      availableApiKeys: Object.keys(apiState.keys),
+      hasLoadedFromDB: state.hasLoadedFromDB
+    })
+  }
+}

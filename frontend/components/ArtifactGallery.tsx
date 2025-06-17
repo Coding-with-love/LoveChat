@@ -155,13 +155,21 @@ export function ArtifactGallery({ threadId, className }: ArtifactGalleryProps) {
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-2 flex-1 min-w-0">
-            {getArtifactIcon(artifact.content_type)}
-            <CardTitle className="text-sm truncate">{artifact.title}</CardTitle>
-            {artifact.is_pinned && <Pin className="h-3 w-3 text-primary flex-shrink-0" />}
+            <div className="flex-shrink-0">
+              {getArtifactIcon(artifact.content_type)}
+            </div>
+            <div className="flex-1 min-w-0">
+              <CardTitle className="text-sm truncate cursor-default" title={artifact.title}>
+                {artifact.title}
+              </CardTitle>
+            </div>
+            {artifact.is_pinned && (
+              <Pin className="h-3 w-3 text-primary flex-shrink-0" />
+            )}
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100">
+              <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100 flex-shrink-0">
                 <MoreHorizontal className="h-3 w-3" />
               </Button>
             </DropdownMenuTrigger>
@@ -239,13 +247,21 @@ export function ArtifactGallery({ threadId, className }: ArtifactGalleryProps) {
       )}
     >
       <div className="flex items-center gap-2 flex-1 min-w-0">
-        {getArtifactIcon(artifact.content_type)}
+        <div className="flex-shrink-0">
+          {getArtifactIcon(artifact.content_type)}
+        </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <h3 className="font-medium text-sm truncate">{artifact.title}</h3>
+            <h3 className="font-medium text-sm truncate flex-1 min-w-0" title={artifact.title}>
+              {artifact.title}
+            </h3>
             {artifact.is_pinned && <Pin className="h-3 w-3 text-primary flex-shrink-0" />}
           </div>
-          {artifact.description && <p className="text-xs text-muted-foreground truncate">{artifact.description}</p>}
+          {artifact.description && (
+            <p className="text-xs text-muted-foreground truncate" title={artifact.description}>
+              {artifact.description}
+            </p>
+          )}
         </div>
       </div>
 

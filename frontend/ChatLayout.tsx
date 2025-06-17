@@ -230,14 +230,20 @@ export default function ChatLayout() {
   const handleSearchNavigation = (direction: "next" | "previous") => {
     const messageId = direction === "next" ? nextResult() : previousResult()
     if (messageId) {
-      scrollToMessage(messageId)
+      // Small delay to allow UI updates before scrolling
+      setTimeout(() => {
+        scrollToMessage(messageId)
+      }, 100)
     }
   }
 
   const handleSearchResultClick = (index: number) => {
     const messageId = navigateToResult(index)
     if (messageId) {
-      scrollToMessage(messageId)
+      // Small delay to allow UI updates before scrolling
+      setTimeout(() => {
+        scrollToMessage(messageId)
+      }, 150)
     }
   }
 

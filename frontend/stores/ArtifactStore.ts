@@ -75,6 +75,9 @@ interface ArtifactStore {
   
   // Check if specific code content has an associated artifact
   getArtifactByContent: (content: string, messageId?: string) => Artifact | undefined
+
+  // Utility method to fix artifact titles and content types
+  fixArtifactMetadata: (id: string, newTitle?: string, newContentType?: string) => Promise<void>
 }
 
 export interface ArtifactFilters {
@@ -529,6 +532,34 @@ export const useArtifactStore = create<ArtifactStore>()(
           selectedArtifact:
             state.selectedArtifact?.id === id ? { ...state.selectedArtifact, ...updates } : state.selectedArtifact,
         }))
+      },
+
+      // Utility method to fix artifact titles and content types
+      fixArtifactMetadata: async (id, newTitle, newContentType) => {
+        set({ isLoading: true, error: null })
+
+        try {
+          const headers = await getAuthHeaders()
+          const response = await fetch(`${API_BASE}/${id}/fix-metadata`, {
+            method: "PUT",
+            headers,
+            body: JSON.stringify({ newTitle, newContentType }),
+          })
+
+          if (!response.ok) {
+            throw new Error("Failed to fix artifact metadata")
+          }
+
+          const { artifact } = await response.json()
+          set((state) => ({
+            artifacts: state.artifacts.map((a) => (a.id === id ? artifact : a)),
+            selectedArtifact: state.selectedArtifact?.id === id ? artifact : state.selectedArtifact,
+            isLoading: false,
+          }))
+        } catch (error) {
+          console.error("Error fixing artifact metadata:", error)
+          set({ error: (error as Error).message, isLoading: false })
+        }
       },
     }),
     {

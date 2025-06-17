@@ -272,25 +272,78 @@ function extractTableTitle(content: string, tableIndex: number): string | null {
   const lines = beforeTable.split('\n').reverse()
   
   // Look for the closest heading or descriptive line
-  for (let i = 0; i < Math.min(lines.length, 5); i++) {
+  for (let i = 0; i < Math.min(lines.length, 8); i++) { // Increased search range
     const line = lines[i].trim()
     
     // Skip empty lines
     if (!line) continue
     
-    // Check for markdown headings
+    // Check for markdown headings (# ## ### etc.)
     const headingMatch = line.match(/^#+\s*(.+)$/)
     if (headingMatch) {
       return headingMatch[1].trim()
     }
     
-    // Check for lines that might describe the table
-    if (line.length > 5 && line.length < 100 && 
-        (line.toLowerCase().includes('table') || 
-         line.toLowerCase().includes('data') ||
-         line.toLowerCase().includes('comparison') ||
-         line.toLowerCase().includes('results'))) {
-      return line
+    // Check for lines that might describe the table (expanded keywords)
+    if (line.length > 5 && line.length < 150) {
+      const lowercaseLine = line.toLowerCase()
+      const tableIndicators = [
+        'table', 'data', 'comparison', 'results', 'summary', 'overview',
+        'breakdown', 'analysis', 'report', 'chart', 'list', 'features',
+        'requirements', 'specifications', 'details', 'information',
+        'key', 'main', 'important', 'following', 'below', 'above'
+      ]
+      
+      if (tableIndicators.some(indicator => lowercaseLine.includes(indicator))) {
+        // Clean up the line for use as title
+        return line.replace(/[.!?:]+$/, '').trim()
+      }
+    }
+    
+    // Look for sentences that precede the table (context clues)
+    if (line.length > 10 && line.length < 120 && 
+        (line.includes(':') || line.endsWith('.') || line.endsWith('!'))) {
+      // This might be descriptive text about the table
+      return line.replace(/[.!?:]+$/, '').trim()
+    }
+  }
+  
+  // Analyze the table content itself to generate a meaningful title
+  const afterTable = content.substring(tableIndex)
+  const tableMatch = afterTable.match(/(\|[^\n]*\|\n\|[-:\s|]*\|\n(?:\|[^\n]*\|\n?)*)/)
+  
+  if (tableMatch) {
+    const tableContent = tableMatch[1]
+    const rows = tableContent.split('\n').filter(row => row.trim() && !row.match(/^[\|\s\-:]+$/))
+    
+    if (rows.length > 0) {
+      // Extract headers from first row
+      const headerRow = rows[0]
+      const headers = headerRow.split('|').map(h => h.trim()).filter(h => h)
+      
+      if (headers.length > 0) {
+        // Create title based on content analysis
+        const firstHeader = headers[0].toLowerCase()
+        const hasMultipleColumns = headers.length > 1
+        
+        // Smart title generation based on headers
+        if (firstHeader.includes('feature') || firstHeader.includes('requirement')) {
+          return hasMultipleColumns ? 'Feature Comparison Table' : 'Feature List'
+        } else if (firstHeader.includes('step') || firstHeader.includes('stage')) {
+          return 'Process Steps Table'
+        } else if (firstHeader.includes('name') || firstHeader.includes('item')) {
+          return hasMultipleColumns ? 'Summary Table' : 'Item List'
+        } else if (firstHeader.includes('category') || firstHeader.includes('type')) {
+          return 'Category Breakdown'
+        } else if (headers.some(h => h.toLowerCase().includes('price') || h.toLowerCase().includes('cost'))) {
+          return 'Pricing Table'
+        } else if (headers.some(h => h.toLowerCase().includes('date') || h.toLowerCase().includes('time'))) {
+          return 'Timeline Table'
+        } else {
+          // Generic but descriptive titles
+          return hasMultipleColumns ? `${headers[0]} Comparison` : `${headers[0]} Overview`
+        }
+      }
     }
   }
   

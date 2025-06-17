@@ -166,11 +166,16 @@ function PureChatNavigator({ threadId, scrollToMessage, isVisible, onClose }: Me
 
   const handleItemClick = (item: NavigatorItem) => {
     console.log("🎯 Navigator: Clicking item for message:", item.message_id, "Content:", item.content.slice(0, 30))
-    scrollToMessage(item.message_id)
-    // Close navigator on mobile after clicking
+    
+    // Close navigator on mobile first to prevent UI interference
     if (window.innerWidth < 1024) {
       onClose()
     }
+    
+    // Small delay to allow UI updates before scrolling
+    setTimeout(() => {
+      scrollToMessage(item.message_id)
+    }, window.innerWidth < 1024 ? 300 : 100) // Longer delay on mobile for close animation
   }
 
   return (
