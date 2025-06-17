@@ -323,7 +323,8 @@ export const useModelStore = create<ModelState>()(
             set({ hasLoadedFromDB: true })
           }
         } catch (error) {
-          console.error("Failed to load model preferences from database:", error)
+          console.error("Failed to load model preferences:", error)
+          // Still mark as loaded so future changes will attempt to save
           set({ hasLoadedFromDB: true })
         }
       },
@@ -336,43 +337,29 @@ export const useModelStore = create<ModelState>()(
           if (!user) return
 
           const state = get()
-          const preferences = {
-            selected_model: state.selectedModel,
-            enabled_models: state.enabledModels,
-            favorite_models: state.favoriteModels,
-          }
-
-          // Check if preferences already exist
-          const { data: existing } = await supabase
+          const { data, error } = await supabase
             .from("user_preferences")
-            .select("id")
-            .eq("user_id", user.id)
+            .upsert(
+              {
+                user_id: user.id,
+                selected_model: state.selectedModel,
+                enabled_models: state.enabledModels,
+                favorite_models: state.favoriteModels,
+                updated_at: new Date().toISOString(),
+              },
+              { onConflict: "user_id" }
+            )
+            .select()
             .single()
 
-          if (existing) {
-            // Update existing preferences
-            const { error } = await supabase
-              .from("user_preferences")
-              .update({
-                ...preferences,
-                updated_at: new Date().toISOString(),
-              })
-              .eq("user_id", user.id)
-
-            if (error) throw error
-          } else {
-            // Insert new preferences
-            const { error } = await supabase.from("user_preferences").insert({
-              user_id: user.id,
-              ...preferences,
-            })
-
-            if (error) throw error
+          if (error) {
+            console.error("Failed to save model preferences:", error)
+            return
           }
 
-          console.log("✅ Model preferences saved to database")
+          console.log("📤 Saved model preferences to database:", data)
         } catch (error) {
-          console.error("Failed to save model preferences to database:", error)
+          console.error("Failed to save model preferences:", error)
         }
       },
     }),

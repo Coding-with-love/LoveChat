@@ -34,6 +34,30 @@ function equal(a: any, b: any): boolean {
   return JSON.stringify(a) === JSON.stringify(b)
 }
 
+// Extract search query from message content
+function extractSearchQuery(content?: string): string | null {
+  if (!content) return null
+  
+  // Look for common search patterns in the content
+  const patterns = [
+    /search(?:ing)?\s+(?:for\s+)?["']([^"']+)["']/i,
+    /looking\s+(?:up|for)\s+["']([^"']+)["']/i,
+    /researching\s+["']([^"']+)["']/i,
+    /find(?:ing)?\s+information\s+about\s+["']([^"']+)["']/i,
+    /query:\s*["']([^"']+)["']/i,
+    /search\s+results?\s+for\s+["']([^"']+)["']/i
+  ]
+  
+  for (const pattern of patterns) {
+    const match = content.match(pattern)
+    if (match && match[1]) {
+      return match[1]
+    }
+  }
+  
+  return null
+}
+
 // Extend UIMessage to include reasoning field, message attempts, and workflow information
 interface ExtendedUIMessage extends UIMessage {
   reasoning?: string
@@ -142,29 +166,22 @@ function PureMessage({
       const textPart = actualCurrentMessage.parts?.find((part) => part.type === "text")
       if (textPart?.text) {
         // For streaming thinking models, extract both complete and partial thinking content
-        if (textPart.text.includes("<think>")) {
+        if (textPart.text.includes("<think>") || textPart.text.includes("<Thinking>")) {
           // Handle both complete and partial thinking blocks
-          if (textPart.text.includes("</think>")) {
-            // Complete thinking blocks
-            const thinkMatches = textPart.text.match(/<think>([\s\S]*?)<\/think>/g)
-            if (thinkMatches) {
-              return thinkMatches.map(match => 
-                match.replace(/<think>|<\/think>/g, "")
-              ).join('\n\n')
-            }
-          } else {
-            // Partial thinking block (streaming in progress)
-            const partialMatch = textPart.text.match(/<think>([\s\S]*)$/)
+          const thinkMatches = textPart.text.match(/<think>([\s\S]*?)<\/think>|<Thinking>([\s\S]*?)<\/Thinking>/g)
+          if (thinkMatches) {
+            return thinkMatches.map(match => 
+              match.replace(/<think>|<\/think>|<Thinking>|<\/Thinking>/g, "")
+            ).join('\n\n')
+          }
+
+          // Handle incomplete thinking block (streaming in progress)
+          if (isStreaming) {
+            const partialMatch = textPart.text.match(/<think>([\s\S]*?)$|<Thinking>([\s\S]*?)$/)
             if (partialMatch) {
-              return partialMatch[1]
+              return (partialMatch[1] || partialMatch[2] || "").trim()
             }
           }
-        }
-        
-        // Legacy support for <Thinking> tags
-        if (textPart.text.includes("<Thinking>") && textPart.text.includes("</Thinking>")) {
-          const thinkMatch = textPart.text.match(/<Thinking>([\s\S]*?)<\/Thinking>/)
-          return thinkMatch ? thinkMatch[1].trim() : null
         }
       }
       return null
@@ -177,7 +194,8 @@ function PureMessage({
     hasReasoningParts: !!actualCurrentMessage.parts?.find((part) => part.type === "reasoning"),
     extractedReasoning: !!reasoning,
     reasoningLength: reasoning?.length || 0,
-    reasoningPreview: reasoning?.substring(0, 100) || "none"
+    reasoningPreview: reasoning?.substring(0, 100) || "none",
+    isStreaming,
   })
 
   // Refresh artifacts when streaming stops to catch auto-generated artifacts
@@ -250,8 +268,17 @@ function PureMessage({
   // Extract sources if available
   const sources: any[] = (actualCurrentMessage.parts as any)?.find((part: any) => part.type === "sources")?.sources || []
 
-  // Check if this message used web search
-  const usedWebSearch = sources.length > 0
+  // Check if this message used web search (during streaming or after)
+  const hasWebSearchIndicators = actualCurrentMessage.content?.includes("📊 Web Search Results:") || 
+    actualCurrentMessage.content?.includes("🔍") || 
+    actualCurrentMessage.content?.includes("web search") ||
+    actualCurrentMessage.content?.includes("search results") ||
+    actualCurrentMessage.content?.includes("searching the web") ||
+    actualCurrentMessage.content?.includes("🔍 Executing web search")
+  
+  // Show WebSearchBanner immediately during streaming if we detect web search activity
+  // Also show if there are sources available (after completion)
+  const usedWebSearch = sources.length > 0 || (isStreaming && hasWebSearchIndicators)
 
   // Check if this is a workflow execution message
   const isWorkflowExecution = actualCurrentMessage.content?.includes('🚀') && 
@@ -472,7 +499,21 @@ const isSelectionInThisMessage = useCallback(() => {
       data-message-content="true" // Add this attribute to help identify message content areas
     >
       {/* Web Search Banner for Assistant Messages (only for non-workflow messages) */}
-      {message.role === "assistant" && usedWebSearch && !isWorkflowExecution && <WebSearchBanner />}
+      {message.role === "assistant" && usedWebSearch && !isWorkflowExecution && (
+        <WebSearchBanner 
+          query={sources[0]?.query || extractSearchQuery(actualCurrentMessage.content) || "Web search"}
+          resultCount={sources.length || 7}
+          searchResults={sources.map((source: any) => ({
+            title: source.title || source.name || "Search Result",
+            snippet: source.snippet || source.description || source.text || "",
+            url: source.url || source.link || "#",
+            source: source.source || source.domain,
+            domain: source.domain || source.source,
+            query: source.query
+          }))}
+          isStreaming={isStreaming}
+        />
+      )}
 
       {/* Workflow Execution Banner for Assistant Messages */}
       {message.role === "assistant" && (message.workflowExecutionId || workflowExecution) && (
@@ -550,17 +591,29 @@ const isSelectionInThisMessage = useCallback(() => {
               let cleanText = actualCurrentMessage.content || part.text
               let extractedThinking = ""
 
-              if (cleanText.includes("<Thinking>") && cleanText.includes("</Thinking>")) {
+              // Handle both <think> and <Thinking> tags
+              if (cleanText.includes("<think>") || cleanText.includes("<Thinking>")) {
                 // Extract thinking content for potential display
-                const thinkMatches = cleanText.match(/<Thinking>([\s\S]*?)<\/Thinking>/g)
+                const thinkMatches = cleanText.match(/<think>([\s\S]*?)<\/think>|<Thinking>([\s\S]*?)<\/Thinking>/g)
                 if (thinkMatches) {
                   thinkMatches.forEach((match) => {
-                    extractedThinking += match.replace(/<Thinking>|<\/Thinking>/g, "") + "\n"
+                    extractedThinking += match.replace(/<think>|<\/think>|<Thinking>|<\/Thinking>/g, "") + "\n"
                   })
                 }
 
                 // Remove thinking tags from displayed content
-                cleanText = cleanText.replace(/<Thinking>[\s\S]*?<\/Thinking>/g, "").trim()
+                cleanText = cleanText
+                  .replace(/<think>[\s\S]*?<\/think>/g, "")
+                  .replace(/<Thinking>[\s\S]*?<\/Thinking>/g, "")
+                  .trim()
+
+                // If we're still streaming and have an incomplete thinking tag, remove it too
+                if (isStreaming) {
+                  cleanText = cleanText
+                    .replace(/<think>[\s\S]*$/, "")
+                    .replace(/<Thinking>[\s\S]*$/, "")
+                    .trim()
+                }
               }
 
               // Check if this is a workflow execution message
@@ -585,12 +638,10 @@ const isSelectionInThisMessage = useCallback(() => {
                   <div
                     className={cn(
                       "transition-all duration-500 relative select-text",
-                      usedWebSearch &&
-                        "border-l-4 border-blue-500 pl-4 bg-blue-50/50 dark:bg-blue-950/20 rounded-lg shadow-sm",
                       showAnimation && [
                         "transform scale-[1.02] shadow-lg",
-                        "bg-gradient-to-r from-green-50 via-blue-50 to-purple-50",
-                        "dark:from-green-950/20 dark:via-blue-950/20 dark:to-purple-950/20",
+                        "bg-gradient-to-r from-green-50 via-muted to-purple-50",
+                        "dark:from-green-950/20 dark:via-muted dark:to-purple-950/20",
                         "border border-green-200 dark:border-green-800",
                       ],
                     )}
@@ -766,11 +817,11 @@ const isSelectionInThisMessage = useCallback(() => {
                   className={cn(
                     "transition-all duration-500 relative select-text",
                     usedWebSearch &&
-                      "border-l-4 border-blue-500 pl-4 bg-blue-50/50 dark:bg-blue-950/20 rounded-lg shadow-sm",
+                      "border-l-4 border-border pl-4 bg-muted/20 rounded-lg shadow-sm",
                     showAnimation && [
                       "transform scale-[1.02] shadow-lg",
-                      "bg-gradient-to-r from-green-50 via-blue-50 to-purple-50",
-                      "dark:from-green-950/20 dark:via-blue-950/20 dark:to-purple-950/20",
+                      "bg-gradient-to-r from-green-50 via-muted to-purple-50",
+                      "dark:from-green-950/20 dark:via-muted dark:to-purple-950/20",
                       "border border-green-200 dark:border-green-800",
                     ],
                   )}

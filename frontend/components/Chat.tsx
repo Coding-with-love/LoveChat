@@ -599,6 +599,7 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
 
   const handlePromptClick = useCallback(
     async (prompt: string) => {
+      console.log("🎯 handlePromptClick called with prompt:", prompt)
       try {
         // Set the prompt as the input and append it as a user message
         setInput("")
@@ -611,6 +612,8 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
           parts: [{ type: "text" as const, text: prompt }],
         }
 
+        console.log("💬 Created message:", message)
+
         // Create thread if needed
         if (!id) {
           console.log("📝 Creating new thread...")
@@ -620,16 +623,20 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
         }
 
         // Save to database first
+        console.log("💾 Saving message to database...")
         await createMessage(threadId, message)
+        console.log("✅ Message saved to database")
 
         // Then append to chat
+        console.log("📤 Appending message to chat...")
         await append(message)
+        console.log("✅ Message appended to chat")
       } catch (error) {
-        console.error("Error sending prompt:", error)
+        console.error("❌ Error sending prompt:", error)
         toast.error("Failed to send message")
       }
     },
-    [append, setInput, threadId, id, navigate],
+    [append, setInput, threadId, id, navigate, createMessage, createThread],
   )
 
   // Define keyboard shortcuts

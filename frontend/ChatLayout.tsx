@@ -265,7 +265,7 @@ export default function ChatLayout() {
         <ChatSidebar onRefreshData={sidebarRefreshRef} />
         <div className="flex-1 flex flex-col relative pl-2">
           {/* Sticky Header */}
-          <header className="sticky top-0 z-50 border-b border-border/20 bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/80 shadow-sm">
+          <header className="sticky top-0 z-50 border-b border-border/60 bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/80 shadow-sm">
             <div className="flex h-16 items-center justify-between px-6">
               {/* Left side - Chat title */}
               <div className="flex items-center gap-3 flex-1 min-w-0 group">

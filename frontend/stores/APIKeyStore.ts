@@ -224,12 +224,25 @@ export const useAPIKeyStore = create<APIKeyStore>()(
           return
         }
 
+        // Set a timeout to clear loading state if it takes too long
+        const loadingTimeout = setTimeout(() => {
+          const currentState = get()
+          if (currentState.isLoading) {
+            console.warn("⚠️ loadKeys timeout - clearing loading state")
+            set({ isLoading: false })
+          }
+        }, 10000) // 10 second timeout
+
         try {
           set({ isLoading: true, error: null })
           
           // Get current user
           const { data: { user } } = await supabase.auth.getUser()
-          if (!user) throw new Error("User not authenticated")
+          if (!user) {
+            console.log("👤 No user found, skipping loadKeys")
+            set({ isLoading: false })
+            return
+          }
           console.log("👤 User authenticated for loadKeys:", user.id)
 
           // Fetch all API keys for user
@@ -253,34 +266,24 @@ export const useAPIKeyStore = create<APIKeyStore>()(
         } catch (error) {
           console.error("❌ Error loading API keys:", error)
           set({ error: error instanceof Error ? error.message : "Failed to load API keys" })
-          
-          // Don't throw error to prevent infinite loading states
-          // The UI can handle the error state gracefully
         } finally {
-          // Always ensure loading state is cleared
+          clearTimeout(loadingTimeout)
           set({ isLoading: false })
           console.log("🔄 loadKeys loading state cleared")
         }
       },
       debug: () => {
         const state = get()
-        console.log("🔍 API Key Store Debug:")
+        console.log("🔍 APIKeyStore Debug:")
         console.log("Keys:", Object.keys(state.keys))
-        console.log("Has OpenAI key:", !!state.keys["openai"])
-        console.log("Has Google key:", !!state.keys["google"])
-        console.log("Has OpenRouter key:", !!state.keys["openrouter"])
+        console.log("Loading:", state.isLoading)
+        console.log("Error:", state.error)
       }
     }),
     {
-      name: "api-key-storage", // name of the item in localStorage
+      name: "api-key-store",
       version: 1,
-      // Only persist non-sensitive data, not the actual keys themselves
-      partialize: (state) => ({
-        // Don't persist the actual keys - they come from database
-        // Only persist loading state flags if needed
-        isLoading: false,
-        error: null,
-      }),
+      skipHydration: true, // Skip automatic hydration since we handle it manually
     }
   )
 )

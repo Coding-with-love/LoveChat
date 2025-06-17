@@ -62,8 +62,8 @@ export default function APIKeyForm() {
         setGoogleKey(currentGoogleKey)
         setOpenrouterKey(currentOpenrouterKey)
 
-        // If we don't have keys in store, try to load from database
-        if (!currentOpenaiKey && !currentGoogleKey && !currentOpenrouterKey) {
+        // If we don't have keys in store and we haven't loaded from DB yet, try to load from database
+        if (!currentOpenaiKey && !currentGoogleKey && !currentOpenrouterKey && !storeLoading) {
           console.log("🔄 No keys in store, loading from database...")
           try {
             await loadKeys()
@@ -85,29 +85,35 @@ export default function APIKeyForm() {
     }
 
     initializeKeys()
-  }, [getKey, getAllKeys, loadKeys])
+  }, [getKey, getAllKeys, loadKeys, storeLoading])
 
   // Enhanced loading timeout with force load option
   useEffect(() => {
-    const loadingTimeout = setTimeout(() => {
-      if (isLoading || storeLoading) {
-        console.warn("⚠️ APIKeyForm loading timeout - showing force load option")
-        setShowForceLoad(true)
-      }
-    }, 3000) // Reduced to 3 seconds
+    let loadingTimeout: NodeJS.Timeout
+    let forceTimeout: NodeJS.Timeout
 
-    const forceTimeout = setTimeout(() => {
-      if (isLoading || storeLoading) {
-        console.warn("⚠️ APIKeyForm force loading timeout - forcing display")
-        setIsLoading(false)
-        setShowForceLoad(false)
+    // Only start timeouts if we're actually loading
+    if (isLoading || storeLoading) {
+      loadingTimeout = setTimeout(() => {
+        if (isLoading || storeLoading) {
+          console.warn("⚠️ APIKeyForm loading timeout - showing force load option")
+          setShowForceLoad(true)
+        }
+      }, 3000) // Show force load after 3 seconds
 
-        // Load keys from current store state
-        setOpenaiKey(getKey("openai") || "")
-        setGoogleKey(getKey("google") || "")
-        setOpenrouterKey(getKey("openrouter") || "")
-      }
-    }, 7000) // Force display after 7 seconds
+      forceTimeout = setTimeout(() => {
+        if (isLoading || storeLoading) {
+          console.warn("⚠️ APIKeyForm force loading timeout - forcing display")
+          setIsLoading(false)
+          setShowForceLoad(false)
+
+          // Load keys from current store state
+          setOpenaiKey(getKey("openai") || "")
+          setGoogleKey(getKey("google") || "")
+          setOpenrouterKey(getKey("openrouter") || "")
+        }
+      }, 7000) // Force display after 7 seconds
+    }
 
     return () => {
       clearTimeout(loadingTimeout)
@@ -206,18 +212,25 @@ export default function APIKeyForm() {
     }
   }
 
-  // Show loading state only if we're actually loading and for less than 5 seconds
-  if (isLoading && !storeError) {
+  // Show loading state only if we're actually loading and haven't shown force load yet
+  if ((isLoading || storeLoading) && !showForceLoad && !storeError) {
     return (
       <div className="flex flex-col items-center justify-center p-8 space-y-4">
         <div className="animate-spin rounded-full h-8 w-8 border-2 border-foreground border-t-transparent"></div>
         <p className="text-sm text-muted-foreground">Loading API keys...</p>
-        {showForceLoad && (
-          <Button onClick={handleForceLoad} variant="outline" size="sm" className="gap-2">
-            <RefreshCw className="h-4 w-4" />
-            Force Load
-          </Button>
-        )}
+      </div>
+    )
+  }
+
+  // Show force load option if loading takes too long
+  if ((isLoading || storeLoading) && showForceLoad && !storeError) {
+    return (
+      <div className="flex flex-col items-center justify-center p-8 space-y-4">
+        <p className="text-sm text-muted-foreground">Loading is taking longer than expected...</p>
+        <Button onClick={handleForceLoad} variant="outline" size="sm" className="gap-2">
+          <RefreshCw className="h-4 w-4" />
+          Force Load Form
+        </Button>
       </div>
     )
   }

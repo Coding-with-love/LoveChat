@@ -607,44 +607,72 @@ IMPORTANT: Generate complete, detailed content as requested. Do NOT use placehol
 
 async function performWebSearch(query: string): Promise<{ content: string, sources?: any[] }> {
   try {
-    // Use DuckDuckGo API for web search
-    const searchUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`
+    // Check for Serper API key
+    const serperApiKey = process.env.SERPER_API_KEY
+    if (!serperApiKey) {
+      console.error("❌ SERPER_API_KEY not found in environment variables")
+      return {
+        content: `Web search failed: Serper API key not configured`
+      }
+    }
+
+    // Use Serper API for Google search results
+    const searchUrl = "https://google.serper.dev/search"
 
     const response = await fetch(searchUrl, {
+      method: "POST",
       headers: {
-        "User-Agent": "LoveChat/1.0",
+        "Content-Type": "application/json",
+        "X-API-KEY": serperApiKey,
       },
+      body: JSON.stringify({
+        q: query,
+        num: 5,
+      }),
     })
 
     if (!response.ok) {
-      throw new Error(`Search API error: ${response.status}`)
+      throw new Error(`Serper API error: ${response.status}`)
     }
 
     const data = await response.json()
     const results = []
     const sources = []
 
-    // Add instant answer if available
-    if (data.Abstract) {
-      results.push(`**${data.Heading || "Instant Answer"}**\n${data.Abstract}`)
+    // Add answer box if available
+    if (data.answerBox) {
+      const answer = data.answerBox
+      results.push(`**${answer.title || "Answer"}**\n${answer.answer || answer.snippet || ""}`)
       sources.push({
-        title: data.Heading || "Instant Answer",
-        url: data.AbstractURL || "#",
-        snippet: data.Abstract,
+        title: answer.title || "Answer",
+        url: answer.link || "#",
+        snippet: answer.answer || answer.snippet || "",
+        source: answer.source || "Google Answer Box",
       })
     }
 
-    // Add related topics
-    if (data.RelatedTopics && data.RelatedTopics.length > 0) {
-      data.RelatedTopics.slice(0, 3).forEach((topic: any) => {
-        if (topic.Text && topic.FirstURL) {
-          results.push(`**${topic.Text.split(" - ")[0]}**\n${topic.Text}`)
-          sources.push({
-            title: topic.Text.split(" - ")[0] || "Related Topic",
-            url: topic.FirstURL,
-            snippet: topic.Text,
-          })
-        }
+    // Add knowledge graph if available
+    if (data.knowledgeGraph) {
+      const kg = data.knowledgeGraph
+      results.push(`**${kg.title || "Knowledge Graph"}**\n${kg.description || kg.descriptionSource || ""}`)
+      sources.push({
+        title: kg.title || "Knowledge Graph",
+        url: kg.descriptionLink || kg.website || "#",
+        snippet: kg.description || kg.descriptionSource || "",
+        source: "Google Knowledge Graph",
+      })
+    }
+
+    // Add organic search results
+    if (data.organic && data.organic.length > 0) {
+      data.organic.slice(0, 3).forEach((result: any) => {
+        results.push(`**${result.title}**\n${result.snippet || result.description || ""}`)
+        sources.push({
+          title: result.title || "Search Result",
+          url: result.link || "#",
+          snippet: result.snippet || result.description || "",
+          source: result.domain || "Google",
+        })
       })
     }
 
