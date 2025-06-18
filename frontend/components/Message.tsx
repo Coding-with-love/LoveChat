@@ -566,10 +566,6 @@ const isSelectionInThisMessage = useCallback(() => {
               reasoningPreview: reasoning.substring(0, 100)
             })
             orderedParts.unshift({ type: "reasoning", reasoning } as any)
-          } else if (isThinkingModel && isStreaming && reasoningParts.length === 0) {
-            // For streaming thinking models without reasoning yet, show placeholder
-            console.log("🧠 Adding thinking placeholder for streaming model:", message.id)
-            orderedParts.unshift({ type: "reasoning", reasoning: "Thinking..." } as any)
           }
 
           console.log("🧠 Final ordered parts for message:", {
