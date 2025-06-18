@@ -18,7 +18,7 @@ import { useNavigate, useParams } from "react-router"
 import { createMessage, createThread } from "@/lib/supabase/queries"
 import { v4 as uuidv4 } from "uuid"
 import { toast } from "sonner"
-import { ThinkingIndicator } from "./ThinkingIndicator"
+
 import type { Message, CreateMessage } from "ai"
 import { getMessageParts } from "@ai-sdk/ui-utils"
 import { useTabVisibility } from "@/frontend/hooks/useTabVisibility"
@@ -956,15 +956,7 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
       )}
 
       <main className="flex flex-col w-full max-w-3xl pt-10 pb-48 mx-auto transition-all duration-300 ease-in-out px-4 sm:px-6 lg:px-8">
-        {/* Global Thinking Indicator - shown when streaming starts with thinking models */}
-        {isThinking && status === "streaming" && supportsThinking && (
-          <div className="mb-6 flex justify-center">
-            <ThinkingIndicator 
-          isVisible={true} 
-          variant={selectedModel.includes("deepseek") ? "deepseek" : selectedModel.includes("openrouter") ? "openrouter" : "default"}
-        />
-          </div>
-        )}
+
 
         {/* Google Thinking Model Streaming Reasoning */}
         {isStreamingReasoning && streamingReasoningMessageId && (

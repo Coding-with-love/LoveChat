@@ -16,7 +16,7 @@ import { useTextSelection } from "@/frontend/hooks/useTextSelection"
 import { useAIActions } from "@/frontend/hooks/useAIActions"
 import AIContextMenu from "./AIContextMenu"
 import AIActionResultDialog from "./AIActionResultDialog"
-import { ThinkingIndicator } from "./ThinkingIndicator"
+
 import MessageContentRenderer from "./MessageContentRenderer"
 import { ArtifactCard } from "./ArtifactCard"
 import { useArtifactStore } from "@/frontend/stores/ArtifactStore"
@@ -546,7 +546,7 @@ const isSelectionInThisMessage = useCallback(() => {
       {/* Thinking Indicator for streaming thinking models */}
       {isCurrentlyThinking && (
         <div className="mb-3">
-          <ThinkingIndicator isVisible={true} />
+  
         </div>
       )}
 
