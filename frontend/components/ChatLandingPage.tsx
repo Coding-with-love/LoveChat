@@ -181,108 +181,63 @@ export default function ChatLandingPage({ onPromptClick, userName }: ChatLanding
   return (
     <>
       {/* Desktop/Tablet Layout */}
-      <div className="hidden sm:block relative flex flex-col items-center justify-center w-full max-w-4xl mx-auto px-4 py-8 min-h-[70vh]">
-        {/* Background Accent */}
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute top-20 left-1/4 w-72 h-72 bg-gradient-to-r from-primary/5 to-blue-500/5 rounded-full blur-3xl" />
-          <div className="absolute bottom-20 right-1/4 w-96 h-96 bg-gradient-to-r from-blue-500/5 to-primary/5 rounded-full blur-3xl" />
-        </div>
-
-        <div className={`space-y-8 transition-all duration-1000 ease-out ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
-          {/* Welcome Message */}
-          {userName && (
-            <div className="text-center animate-in fade-in duration-700">
-              <p className="text-muted-foreground text-lg">
+      <div className="hidden sm:block relative flex flex-col items-center justify-start w-full max-w-3xl mx-auto px-4 py-6">
+        <div className={`space-y-6 transition-all duration-1000 ease-out ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
+          {/* Welcome Message & Title */}
+          <div className="text-center space-y-2">
+            {userName && (
+              <p className="text-muted-foreground text-sm">
                 Welcome back, <span className="text-primary font-medium">{userName}</span>!
               </p>
-            </div>
-          )}
-
-          {/* AI Mascot & Greeting */}
-          <div className="text-center space-y-4">
-            <div className="flex justify-center">
-              <div className="relative">
-                <div className="w-16 h-16 bg-gradient-to-br from-primary to-primary/80 rounded-2xl flex items-center justify-center shadow-lg border border-primary/20">
-                  <Zap className="w-8 h-8 text-primary-foreground" />
-                </div>
-                <div className="absolute -top-1 -right-1 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center border-2 border-background">
-                  <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
-                </div>
-              </div>
-            </div>
+            )}
             
-            <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-foreground via-foreground/90 to-foreground/70 bg-clip-text text-transparent leading-tight">
-              How can I help you today?
+            <h1 className="text-3xl md:text-4xl font-bold text-foreground">
+              How can I help you?
             </h1>
-            
-            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-              Choose a category below or describe what you'd like to work on. I'm here to assist with coding, learning, and creative projects.
-            </p>
           </div>
 
-          {/* Quick Actions Card */}
-          <div className="w-full max-w-2xl mx-auto">
-            <div className="bg-card/80 backdrop-blur-sm border border-border rounded-2xl p-6 shadow-lg">
-              <h2 className="text-lg font-semibold mb-4 text-center text-muted-foreground">Quick Actions</h2>
-              
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {categories.map((category) => (
-                  <Button
-                    key={category.name}
-                    variant="ghost"
-                    className={`h-auto p-4 flex-col space-y-2 transition-all duration-200 border rounded-xl ${
-                      selectedCategory === category.name 
-                        ? `${category.bgColor} ${category.borderColor}` 
-                        : "border-transparent hover:border-border hover:bg-muted/50"
-                    }`}
-                    onClick={() => setSelectedCategory(category.name)}
-                  >
-                    <category.icon className={`h-6 w-6 ${selectedCategory === category.name ? category.color : 'text-muted-foreground'}`} />
-                    <span className={`text-sm font-medium ${selectedCategory === category.name ? 'text-foreground' : 'text-muted-foreground'}`}>
-                      {category.name}
-                    </span>
-                  </Button>
-                ))}
-              </div>
-            </div>
+          {/* Simple Category Buttons */}
+          <div className="flex flex-wrap justify-center gap-3">
+            {categories.map((category) => (
+              <Button
+                key={category.name}
+                variant={selectedCategory === category.name ? "default" : "outline"}
+                size="sm"
+                className={`gap-2 transition-all duration-200 ${
+                  selectedCategory === category.name 
+                    ? "" 
+                    : "hover:bg-muted/50"
+                }`}
+                onClick={() => setSelectedCategory(category.name)}
+              >
+                <category.icon className="h-4 w-4" />
+                {category.name}
+              </Button>
+            ))}
           </div>
 
-          {/* Enhanced Suggestions */}
-          <div className="w-full max-w-3xl mx-auto">
-            <h3 className="text-xl font-semibold mb-4 text-center">
-              Popular <span className="text-primary">{selectedCategory}</span> requests
-            </h3>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {categoryPrompts[selectedCategory as keyof typeof categoryPrompts].map((prompt, index) => (
-                <div
-                  key={index}
-                  className="group bg-card/60 hover:bg-card/80 border border-border/50 hover:border-border rounded-xl p-4 cursor-pointer transition-all duration-200 hover:shadow-md hover:scale-[1.02]"
-                  onClick={() => onPromptClick(`${prompt.title}: ${prompt.description}`)}
-                >
-                  <div className="flex items-start space-x-3">
-                    <div className={`flex-shrink-0 mt-1 p-2 rounded-lg bg-muted/50 group-hover:bg-muted/70 transition-colors`}>
-                      <prompt.icon className={`h-5 w-5 ${prompt.color}`} />
-                    </div>
-                    <div className="flex-1 space-y-1">
-                      <h4 className="font-medium text-foreground group-hover:text-primary transition-colors">
-                        {prompt.title}
-                      </h4>
-                      <p className="text-sm text-muted-foreground">
-                        {prompt.description}
-                      </p>
-                    </div>
-                  </div>
+          {/* Simple Example Questions List */}
+          <div className="w-full max-w-2xl mx-auto space-y-3">
+            {categoryPrompts[selectedCategory as keyof typeof categoryPrompts].slice(0, 4).map((prompt, index) => (
+              <button
+                key={index}
+                className="w-full text-left p-3 rounded-lg hover:bg-muted/30 transition-all duration-200 group border border-transparent hover:border-border/50"
+                onClick={() => onPromptClick(`${prompt.title}: ${prompt.description}`)}
+              >
+                <div className="flex items-center gap-3">
+                  <prompt.icon className={`h-4 w-4 ${prompt.color} opacity-70 group-hover:opacity-100 transition-opacity`} />
+                  <span className="text-foreground group-hover:text-primary transition-colors">
+                    {prompt.title}
+                  </span>
                 </div>
-              ))}
-            </div>
+              </button>
+            ))}
           </div>
 
-          {/* Call to Action */}
+          {/* Subtle Call to Action */}
           <div className="text-center">
-            <p className="text-muted-foreground text-sm flex items-center justify-center gap-2">
-              Or simply type your question in the chat below 
-              <Terminal className="h-4 w-4" />
+            <p className="text-muted-foreground text-sm">
+              Or ask me anything...
             </p>
           </div>
         </div>

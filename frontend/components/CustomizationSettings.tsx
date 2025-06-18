@@ -13,6 +13,7 @@ import { X, Plus, RefreshCw, Loader2, User, Brain, Bug, Palette, Type } from "lu
 import { toast } from "sonner"
 import ThemeSettings from "./ThemeSettings"
 import { useAuth } from "./AuthProvider"
+import { useTabVisibility } from "@/frontend/hooks/useTabVisibility"
 
 // Available fonts
 const UI_FONTS = [
@@ -73,6 +74,45 @@ export default function CustomizationSettings() {
   const [isResetting, setIsResetting] = useState(false)
   const [copiedUserId, setCopiedUserId] = useState(false)
 
+  // Add tab visibility management to prevent stuck loading states
+  useTabVisibility({
+    onVisible: () => {
+      console.log("🔄 CustomizationSettings became visible, checking loading state:", isLoading)
+      
+      // More aggressive clearing of stuck loading states
+      if (isLoading) {
+        console.log("🔄 Found loading state in CustomizationSettings, setting up timeout...")
+        
+        // Give it a short time to complete naturally, then force clear
+        setTimeout(() => {
+          const currentState = useUserPreferencesStore.getState()
+          if (currentState.isLoading) {
+            console.warn("⚠️ Force clearing stuck loading state in CustomizationSettings after tab return")
+            useUserPreferencesStore.setState({ 
+              isLoading: false, 
+              hasLoadedFromDB: true 
+            })
+          }
+        }, 1000) // Only wait 1 second before force clearing
+      }
+      
+      // Also check if we never loaded from DB and user exists
+      const state = useUserPreferencesStore.getState()
+      if (user && !state.hasLoadedFromDB && !state.isLoading) {
+        console.log("🔄 Never loaded from DB, attempting load...")
+        loadFromDatabase().catch(error => {
+          console.warn("Failed to load preferences on tab return:", error)
+          // Force mark as loaded to prevent infinite loading
+          useUserPreferencesStore.setState({ 
+            isLoading: false, 
+            hasLoadedFromDB: true 
+          })
+        })
+      }
+    },
+    refreshStoresOnVisible: false, // Don't trigger additional refreshes
+  })
+
   // Load preferences from database when component mounts and user is available
   useEffect(() => {
     if (user && !isLoading) {
@@ -114,6 +154,24 @@ export default function CustomizationSettings() {
       `🎨 Font settings applied - UI: ${uiFont}, Code: ${codeFont}, Size: ${fontSize} (${fontSizeMap[fontSize]})`,
     )
   }, [uiFont, codeFont, fontSize])
+
+  // Add a safety timeout to prevent infinite loading screens
+  useEffect(() => {
+    if (isLoading) {
+      const safetyTimeout = setTimeout(() => {
+        const currentState = useUserPreferencesStore.getState()
+        if (currentState.isLoading) {
+          console.warn("⚠️ Safety timeout: forcing CustomizationSettings out of loading state")
+          useUserPreferencesStore.setState({ 
+            isLoading: false, 
+            hasLoadedFromDB: true 
+          })
+        }
+      }, 10000) // 10 second safety timeout
+
+      return () => clearTimeout(safetyTimeout)
+    }
+  }, [isLoading])
 
   const handleAddTrait = () => {
     if (!newTrait.trim()) return
@@ -482,16 +540,6 @@ Is Loading: ${state.isLoading}`)
         <div className="h-px bg-gradient-to-r from-transparent via-border to-transparent"></div>
 
         <div className="flex flex-col sm:flex-row gap-3 justify-end">
-          <Button
-            variant="outline"
-            className="gap-2 text-muted-foreground hover:text-foreground hover:bg-muted/50 border-border/50 transition-all duration-200"
-            onClick={handleDebugPreferences}
-            disabled={isResetting}
-          >
-            <Bug className="h-4 w-4" />
-            Debug Preferences
-          </Button>
-
           <Button
             variant="destructive"
             className="gap-2 bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground border border-destructive/20 hover:border-destructive transition-all duration-200"

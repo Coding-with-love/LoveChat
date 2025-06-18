@@ -904,12 +904,12 @@ function PureChatInput({ threadId, input, status, setInput, append, stop, onRefr
                             : "What can I do for you?"
                 }
                 className={cn(
-                  "w-full px-4 py-4 border-none shadow-none bg-transparent",
+                  "w-full px-4 py-3 border-none shadow-none bg-transparent",
                   "placeholder:text-muted-foreground/70 resize-none",
                   "focus-visible:ring-0 focus-visible:ring-offset-0",
                   "scrollbar-thin scrollbar-track-transparent scrollbar-thumb-muted-foreground/30",
                   "scrollbar-thumb-rounded-full text-base",
-                  "min-h-[80px]",
+                  "min-h-[60px]",
                 )}
                 ref={textareaRef}
                 onKeyDown={handleKeyDown}
@@ -924,7 +924,7 @@ function PureChatInput({ threadId, input, status, setInput, append, stop, onRefr
 
             {/* Integrated Toolbar */}
             {/* Desktop/Tablet Layout */}
-            <div className="hidden sm:flex items-center justify-between px-6 py-4 border-t border-border/30">
+            <div className="hidden sm:flex items-center justify-between px-6 py-2 border-t border-border/30">
               {/* Left Group - Model Selector */}
               <div className="flex items-center">
                 <div className="bg-muted/60 dark:bg-muted/40 rounded-xl px-3 py-2 border border-border/50 max-w-full overflow-hidden">

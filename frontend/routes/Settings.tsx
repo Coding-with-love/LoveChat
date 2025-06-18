@@ -58,8 +58,21 @@ function Settings() {
   // Add tab visibility management to refresh state when returning to settings
   useTabVisibility({
     onVisible: () => {
-      console.log("🔄 Settings page became visible, refreshing shared threads")
-      loadSharedThreads(true) // Pass true to indicate this is a refresh
+      console.log("🔄 Settings page became visible")
+      
+      // Clear any stuck loading states
+      if (loadingShares) {
+        console.log("🔄 Clearing stuck loading state in settings")
+        setLoadingShares(false)
+      }
+      
+      // Only refresh shared threads if we have no data loaded
+      if (sharedThreads.length === 0) {
+        console.log("🔄 Refreshing shared threads - no data loaded")
+        loadSharedThreads(true) // Pass true to indicate this is a refresh
+      } else {
+        console.log(`🔄 Skipping shared threads refresh - data already loaded (${sharedThreads.length} threads)`)
+      }
     },
     refreshStoresOnVisible: false, // Don't refresh stores here - APIKeyForm handles its own state
   })

@@ -43,6 +43,7 @@ import { toast } from "sonner"
 import { CreateArtifactDialog } from "./CreateArtifactDialog"
 import { ArtifactViewer } from "./ArtifactViewer"
 import { useThread } from "@/frontend/hooks/useThread"
+import { useTabVisibility } from "@/frontend/hooks/useTabVisibility"
 
 interface ArtifactGalleryProps {
   threadId?: string
@@ -73,6 +74,52 @@ export function ArtifactGallery({ threadId, className, showHeader = true }: Arti
   const [showViewDialog, setShowViewDialog] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [artifactToDelete, setArtifactToDelete] = useState<Artifact | null>(null)
+
+  // Add tab visibility management to prevent stuck loading states
+  useTabVisibility({
+    onVisible: () => {
+      console.log("🔄 ArtifactGallery became visible, checking loading state:", isLoading)
+      
+      // More aggressive clearing of stuck loading states
+      if (isLoading) {
+        console.log("🔄 Found loading state in ArtifactGallery, setting up timeout...")
+        setTimeout(() => {
+          const currentState = useArtifactStore.getState()
+          if (currentState.isLoading) {
+            console.warn("⚠️ Force clearing stuck loading state in ArtifactGallery after tab return")
+            useArtifactStore.setState({ isLoading: false })
+            // If we have no artifacts loaded, try to load them once more
+            if (currentState.artifacts.length === 0) {
+              console.log("🔄 Retrying artifacts load after clearing stuck state")
+              const filters: ArtifactFilters = {
+                threadId,
+                search: searchQuery || undefined,
+                contentType: selectedContentType === "all" ? undefined : selectedContentType,
+                archived: false,
+              }
+              fetchArtifacts(filters)
+            }
+          }
+        }, 1000) // Only wait 1 second before force clearing
+      }
+    },
+    refreshStoresOnVisible: false, // Don't trigger additional refreshes
+  })
+
+  // Add a safety timeout to prevent infinite loading screens
+  useEffect(() => {
+    if (isLoading) {
+      const safetyTimeout = setTimeout(() => {
+        const currentState = useArtifactStore.getState()
+        if (currentState.isLoading) {
+          console.warn("⚠️ Safety timeout: forcing ArtifactGallery out of loading state")
+          useArtifactStore.setState({ isLoading: false })
+        }
+      }, 15000) // 15 second safety timeout for artifact loading
+
+      return () => clearTimeout(safetyTimeout)
+    }
+  }, [isLoading])
 
   // Fetch artifacts on mount and when filters change
   useEffect(() => {

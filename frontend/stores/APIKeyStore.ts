@@ -237,21 +237,27 @@ export const useAPIKeyStore = create<APIKeyStore>()(
           return
         }
 
-        // Set a timeout to clear loading state if it takes too long
+        // Set a shorter timeout to clear loading state if it takes too long
         const loadingTimeout = setTimeout(() => {
           const currentState = get()
           if (currentState.isLoading) {
             console.warn("⚠️ loadKeys timeout - clearing loading state")
-            set({ isLoading: false, hasInitialized: true })
+            set({ isLoading: false, hasInitialized: true, error: "Loading timeout" })
           }
-        }, 10000) // 10 second timeout
+        }, 5000) // Reduced from 10 to 5 seconds
 
         try {
           set({ isLoading: true, error: null })
           console.log("🔄 loadKeys: Starting database query...")
           
-          // Get current user
-          const { data: { user } } = await supabase.auth.getUser()
+          // Get current user with a timeout
+          const userPromise = supabase.auth.getUser()
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error("User authentication timeout")), 3000)
+          )
+          
+          const { data: { user } } = await Promise.race([userPromise, timeoutPromise]) as any
+          
           if (!user) {
             console.log("👤 No user found, skipping loadKeys")
             set({ isLoading: false, keys: {}, hasInitialized: true }) // Mark as initialized even with no user
@@ -259,23 +265,29 @@ export const useAPIKeyStore = create<APIKeyStore>()(
           }
           console.log("👤 User authenticated for loadKeys:", user.id)
 
-          // Fetch all API keys for user
-          const { data: apiKeys, error } = await supabase
+          // Fetch all API keys for user with timeout
+          const keysPromise = supabase
             .from("api_keys")
             .select("provider, api_key")
             .eq("user_id", user.id)
+          
+          const keysTimeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error("Database query timeout")), 3000)
+          )
+          
+          const { data: apiKeys, error } = await Promise.race([keysPromise, keysTimeoutPromise]) as any
           
           console.log("🔍 Raw database response:", { 
             apiKeys, 
             error,
             apiKeysCount: apiKeys?.length || 0,
-            apiKeysProviders: apiKeys?.map(k => k.provider) || []
+            apiKeysProviders: apiKeys?.map((k: any) => k.provider) || []
           })
 
           if (error) throw error
 
           // Convert to Record<string, string>
-          const keys = (apiKeys || []).reduce((acc, { provider, api_key }) => {
+          const keys = (apiKeys || []).reduce((acc: Record<string, string>, { provider, api_key }: { provider: string; api_key: string }) => {
             acc[provider.toLowerCase()] = api_key
             return acc
           }, {} as Record<string, string>)

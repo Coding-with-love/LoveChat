@@ -7,6 +7,7 @@ import { useAPIKeyStore } from "@/frontend/stores/APIKeyStore"
 import { useModelStore } from "@/frontend/stores/ModelStore"
 import { useSidebar } from "./ui/sidebar"
 import { Button } from "./ui/button"
+import { cn } from "@/lib/utils"
 import { ChevronDown } from 'lucide-react'
 import { useCustomResumableChat } from "@/frontend/hooks/useCustomResumableChat"
 import { getModelConfig } from "@/lib/models"
@@ -52,6 +53,8 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
   const [showPinnedMessages, setShowPinnedMessages] = useState(false)
   const [isThinking, setIsThinking] = useState(false)
   const isAutoScrolling = useRef(false)
+  const lastUserScrollTime = useRef(0)
+  const autoScrollEnabled = useRef(true)
 
   // Add these state variables inside the Chat component function
   const [realtimeThinking, setRealtimeThinking] = useState("")
@@ -65,7 +68,8 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
   const [streamingReasoningMessageId, setStreamingReasoningMessageId] = useState<string | null>(null)
 
   const navigate = useNavigate()
-  const { toggleSidebar } = useSidebar()
+  const { toggleSidebar, state: sidebarState, isMobile } = useSidebar()
+  const sidebarCollapsed = sidebarState === "collapsed"
   const { id } = useParams()
 
   // Get user preferences for chat
@@ -573,24 +577,52 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
 
   const scrollToBottom = () => {
     isAutoScrolling.current = true
+    
+    // Hide the button immediately when clicked
+    setShowScrollToBottom(false)
+    
     window.scrollTo({
       top: document.documentElement.scrollHeight,
       behavior: "smooth",
     })
+    
     setTimeout(() => {
       isAutoScrolling.current = false
+      // Double-check if we're at bottom after scroll completes
+      const scrollTop = window.pageYOffset || document.documentElement.scrollTop
+      const windowHeight = window.innerHeight
+      const documentHeight = document.documentElement.scrollHeight
+      const isNearBottom = documentHeight - (scrollTop + windowHeight) < 100
+      setShowScrollToBottom(!isNearBottom)
     }, 1000)
   }
 
   const handleScroll = () => {
     if (isAutoScrolling.current) return
 
+    // Track when user manually scrolls
+    lastUserScrollTime.current = Date.now()
+    
     const scrollTop = window.pageYOffset || document.documentElement.scrollTop
     const windowHeight = window.innerHeight
     const documentHeight = document.documentElement.scrollHeight
 
-    const isNearBottom = documentHeight - (scrollTop + windowHeight) < 200
+    const isNearBottom = documentHeight - (scrollTop + windowHeight) < 100
     setShowScrollToBottom(!isNearBottom)
+    
+    // More responsive auto-scroll control during streaming
+    if (status === "streaming") {
+      // If user scrolls significantly away from bottom, disable auto-scroll
+      const distanceFromBottom = documentHeight - (scrollTop + windowHeight)
+      if (distanceFromBottom > 500) {
+        autoScrollEnabled.current = false
+      } else if (distanceFromBottom < 100) {
+        // Re-enable if user scrolls close to bottom
+        autoScrollEnabled.current = true
+      }
+    } else if (isNearBottom) {
+      autoScrollEnabled.current = true
+    }
   }
 
   useEffect(() => {
@@ -607,11 +639,40 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
       const documentHeight = document.documentElement.scrollHeight
       const isNearBottom = documentHeight - (scrollTop + windowHeight) < 300
 
-      if (isNearBottom) {
+      // Only auto-scroll if user hasn't manually scrolled recently and auto-scroll is enabled
+      const timeSinceUserScroll = Date.now() - lastUserScrollTime.current
+      const shouldAutoScroll = autoScrollEnabled.current && (timeSinceUserScroll > 1000 || isNearBottom)
+
+      if (shouldAutoScroll) {
         setTimeout(() => scrollToBottom(), 100)
       }
     }
   }, [messages.length, status, isResuming])
+
+  // Enhanced auto-scroll for streaming content updates
+  useEffect(() => {
+    if (status === "streaming" && messages.length > 0) {
+      const lastMessage = messages[messages.length - 1]
+      
+      // Only auto-scroll if it's an assistant message being streamed and auto-scroll is enabled
+      if (lastMessage?.role === "assistant" && autoScrollEnabled.current) {
+        // Use requestAnimationFrame for smoother scrolling during rapid updates
+        requestAnimationFrame(() => {
+          window.scrollTo({
+            top: document.documentElement.scrollHeight,
+            behavior: "smooth",
+          })
+        })
+      }
+    }
+  }, [messages, status])
+
+  // Reset auto-scroll when streaming starts
+  useEffect(() => {
+    if (status === "streaming") {
+      autoScrollEnabled.current = true
+    }
+  }, [status])
 
   // Handle keyboard shortcuts
   const handleClearInput = () => {
@@ -894,7 +955,7 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
         </div>
       )}
 
-      <main className="flex flex-col w-full max-w-3xl pt-10 pb-56 mx-auto transition-all duration-300 ease-in-out px-4 sm:px-6 lg:px-8">
+      <main className="flex flex-col w-full max-w-3xl pt-10 pb-48 mx-auto transition-all duration-300 ease-in-out px-4 sm:px-6 lg:px-8">
         {/* Global Thinking Indicator - shown when streaming starts with thinking models */}
         {isThinking && status === "streaming" && supportsThinking && (
           <div className="mb-6 flex justify-center">
@@ -942,15 +1003,29 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
       </main>
 
       {showScrollToBottom && (
-        <Button
-          onClick={scrollToBottom}
-          variant="outline"
-          size="icon"
-          className="fixed right-4 bottom-32 z-20 shadow-lg bg-background/95 backdrop-blur-sm hover:bg-background border-2"
-          aria-label="Scroll to bottom"
-        >
-          <ChevronDown className="h-4 w-4" />
-        </Button>
+        <div className={cn(
+          "fixed w-full max-w-4xl bottom-[220px] z-50",
+          "transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]",
+          "px-3 md:px-4 pointer-events-none",
+          isMobile
+            ? "left-1/2 transform -translate-x-1/2"
+            : sidebarCollapsed
+              ? "left-1/2 transform -translate-x-1/2"
+              : "left-[calc(var(--sidebar-width)+1rem)] right-4 transform-none max-w-none w-[calc(100vw-var(--sidebar-width)-2rem)]",
+        )}>
+          <div className="flex justify-center">
+            <Button
+              onClick={scrollToBottom}
+              variant="secondary"
+              size="sm"
+              className="gap-2 shadow-sm bg-muted/80 text-muted-foreground hover:bg-muted border border-border/50 pointer-events-auto"
+              aria-label="Scroll to bottom"
+            >
+              <ChevronDown className="h-3 w-3" />
+              Go to bottom
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   )

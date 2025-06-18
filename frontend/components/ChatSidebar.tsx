@@ -275,6 +275,7 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
   const [error, setError] = useState<string | null>(null)
   const [showForceLoad, setShowForceLoad] = useState(false)
   const [showArchivedChats, setShowArchivedChats] = useState(false)
+  const [showProjects, setShowProjects] = useState(false)
   const { state, toggleSidebar } = useSidebar()
   const collapsed = state === "collapsed"
 
@@ -288,9 +289,22 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
         isLoading: loading,
       })
 
-      // Always do a gentle refresh to ensure data is up-to-date
-      // This ensures any stuck loading states are cleared
-      fetchData(true) // Pass true to indicate this is a refresh
+      // Clear any stuck loading state first
+      if (loading) {
+        console.log("🔄 Clearing stuck sidebar loading state")
+        setLoading(false)
+      }
+
+      // Only refresh if we have no data OR if it's been a significant time since last load
+      // This prevents unnecessary refreshes that can disrupt the user experience
+      const hasData = threads.length > 0 || projects.length > 0
+      
+      if (user && !hasData) {
+        console.log("🔄 Refreshing sidebar - no data loaded")
+        fetchData(true) // Pass true to indicate this is a refresh
+      } else {
+        console.log(`🔄 Skipping sidebar refresh - data already loaded (${threads.length} threads, ${projects.length} projects)`)
+      }
     },
     refreshStoresOnVisible: false, // Don't refresh API key stores - let specific components handle that
   })
@@ -1067,9 +1081,9 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
             </div>
           ) : (
             <>
-              <div className="flex-1 min-w-0 flex flex-col justify-center items-start">
-                <span className="truncate block text-sm font-medium leading-tight w-full">{thread.title}</span>
-                <span className="text-xs text-muted-foreground opacity-0 group-hover/thread:opacity-100 transition-opacity leading-tight w-full">
+              <div className="flex-1 min-w-0 flex items-center relative">
+                <span className="truncate block text-sm font-medium leading-tight w-full pr-2">{thread.title}</span>
+                <span className="absolute right-0 top-1/2 -translate-y-1/2 text-xs text-muted-foreground opacity-0 group-hover/thread:opacity-100 transition-opacity bg-secondary/80 px-1 rounded whitespace-nowrap">
                   {timeAgo}
                 </span>
               </div>
@@ -1245,121 +1259,148 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
             </Link>
           </div>
 
-          {/* Fixed Projects Header */}
-          <div className="px-4 py-2 border-b border-border/50">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Projects</span>
-              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setCreateProjectOpen(true)}>
-                <Plus className="h-4 w-4" />
-              </Button>
-            </div>
+          {/* Collapsible Projects Header */}
+          <div className="border-b border-border/50">
+            <Collapsible open={showProjects} onOpenChange={setShowProjects}>
+              <div className="px-2 py-2">
+                <div className="flex items-center justify-between">
+                  <CollapsibleTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      className={cn(
+                        "flex-1 justify-start gap-2 h-9 text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-all duration-200 rounded-lg",
+                        showProjects && "bg-secondary/30",
+                      )}
+                    >
+                      <ChevronRight
+                        className={cn("h-3 w-3 transition-transform duration-200", showProjects && "rotate-90")}
+                      />
+                      <span className="text-sm font-medium">Projects</span>
+                      <span
+                        className={cn(
+                          "text-xs px-2 py-1 rounded-full transition-colors ml-auto",
+                          projects.length > 0 ? "bg-secondary text-foreground" : "bg-muted text-muted-foreground",
+                        )}
+                      >
+                        {projects.length || "0"}
+                      </span>
+                    </Button>
+                  </CollapsibleTrigger>
+                  <Button variant="ghost" size="icon" className="h-6 w-6 ml-1" onClick={() => setCreateProjectOpen(true)}>
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              
+              {/* Projects Content */}
+              <CollapsibleContent>
+                {loading ? (
+                  <div className="flex flex-col items-center justify-center p-4 space-y-2">
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                    <p className="text-sm text-muted-foreground">Loading...</p>
+                    {showForceLoad && (
+                      <Button variant="outline" size="sm" onClick={handleForceLoad}>
+                        Force Load
+                      </Button>
+                    )}
+                  </div>
+                ) : error ? (
+                  <div className="p-4 text-center">
+                    <p className="text-sm text-destructive mb-2">{error}</p>
+                    <Button variant="outline" size="sm" onClick={() => fetchData()}>
+                      Retry
+                    </Button>
+                  </div>
+                ) : (
+                  <div>
+                    {/* Projects */}
+                    {projects.map((project) => {
+                      const projectThreads = getProjectThreads(project.id)
+                      const isExpanded = expandedProjects.has(project.id)
+
+                      return (
+                        <Collapsible key={project.id} open={isExpanded} onOpenChange={() => toggleProject(project.id)}>
+                          <div className="px-4 py-1">
+                            <div className="flex items-center gap-2 px-2 py-1 hover:bg-secondary rounded-[8px] group transition-colors">
+                              <CollapsibleTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 p-0 hover:bg-primary/10 transition-colors"
+                                >
+                                  <ChevronRight
+                                    className={cn("h-4 w-4 transition-transform duration-200", isExpanded && "rotate-90")}
+                                  />
+                                </Button>
+                              </CollapsibleTrigger>
+                              <div
+                                className="w-3 h-3 rounded-full border border-white/20 shadow-sm"
+                                style={{ backgroundColor: project.color }}
+                              />
+                              <span
+                                className="text-sm font-medium truncate flex-1 cursor-pointer hover:text-primary transition-colors"
+                                onClick={() => navigate(`/project/${project.id}`)}
+                              >
+                                {project.name}
+                              </span>
+                              <span className="text-xs text-muted-foreground bg-secondary/50 px-1.5 py-0.5 rounded-md">
+                                {projectThreads.length}
+                              </span>
+                              <DropdownMenu modal={false}>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary/10"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                    }}
+                                  >
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" side="right" className="w-48" sideOffset={5}>
+                                  <DropdownMenuItem
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      navigate(`/project/${project.id}`)
+                                    }}
+                                    className="gap-2"
+                                  >
+                                    <Edit className="h-4 w-4 text-blue-500" />
+                                    Manage Project
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setProjectToDelete(project)
+                                      setDeleteProjectDialogOpen(true)
+                                    }}
+                                    className="text-destructive gap-2"
+                                  >
+                                    <Trash className="h-4 w-4" />
+                                    Delete Project
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+                          </div>
+                          <CollapsibleContent>
+                            <div className="px-4">
+                              <div className="ml-6 space-y-1 max-h-32 overflow-y-auto">
+                                {projectThreads.map(renderProjectThread)}
+                              </div>
+                            </div>
+                          </CollapsibleContent>
+                        </Collapsible>
+                      )
+                    })}
+                  </div>
+                )}
+              </CollapsibleContent>
+            </Collapsible>
           </div>
-
-          {/* Fixed Projects Section */}
-          {loading ? (
-            <div className="flex flex-col items-center justify-center p-4 space-y-2 border-b border-border/50">
-              <Loader2 className="h-6 w-6 animate-spin" />
-              <p className="text-sm text-muted-foreground">Loading...</p>
-              {showForceLoad && (
-                <Button variant="outline" size="sm" onClick={handleForceLoad}>
-                  Force Load
-                </Button>
-              )}
-            </div>
-          ) : error ? (
-            <div className="p-4 text-center border-b border-border/50">
-              <p className="text-sm text-destructive mb-2">{error}</p>
-              <Button variant="outline" size="sm" onClick={() => fetchData()}>
-                Retry
-              </Button>
-            </div>
-          ) : (
-            <div className="border-b border-border/50">
-              {/* Projects */}
-              {projects.map((project) => {
-                const projectThreads = getProjectThreads(project.id)
-                const isExpanded = expandedProjects.has(project.id)
-
-                return (
-                  <Collapsible key={project.id} open={isExpanded} onOpenChange={() => toggleProject(project.id)}>
-                    <div className="px-4 py-1">
-                      <div className="flex items-center gap-2 px-2 py-1 hover:bg-secondary rounded-[8px] group transition-colors">
-                        <CollapsibleTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 p-0 hover:bg-primary/10 transition-colors"
-                          >
-                            <ChevronRight
-                              className={cn("h-4 w-4 transition-transform duration-200", isExpanded && "rotate-90")}
-                            />
-                          </Button>
-                        </CollapsibleTrigger>
-                        <div
-                          className="w-3 h-3 rounded-full border border-white/20 shadow-sm"
-                          style={{ backgroundColor: project.color }}
-                        />
-                        <span
-                          className="text-sm font-medium truncate flex-1 cursor-pointer hover:text-primary transition-colors"
-                          onClick={() => navigate(`/project/${project.id}`)}
-                        >
-                          {project.name}
-                        </span>
-                        <span className="text-xs text-muted-foreground bg-secondary/50 px-1.5 py-0.5 rounded-md">
-                          {projectThreads.length}
-                        </span>
-                        <DropdownMenu modal={false}>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary/10"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                              }}
-                            >
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" side="right" className="w-48" sideOffset={5}>
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                navigate(`/project/${project.id}`)
-                              }}
-                              className="gap-2"
-                            >
-                              <Edit className="h-4 w-4 text-blue-500" />
-                              Manage Project
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setProjectToDelete(project)
-                                setDeleteProjectDialogOpen(true)
-                              }}
-                              className="text-destructive gap-2"
-                            >
-                              <Trash className="h-4 w-4" />
-                              Delete Project
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </div>
-                    <CollapsibleContent>
-                      <div className="px-4">
-                        <div className="ml-6 space-y-1 max-h-32 overflow-y-auto">
-                          {projectThreads.map(renderProjectThread)}
-                        </div>
-                      </div>
-                    </CollapsibleContent>
-                  </Collapsible>
-                )
-              })}
-            </div>
-          )}
 
           <SidebarContent className="no-scrollbar">
             <SidebarGroup>

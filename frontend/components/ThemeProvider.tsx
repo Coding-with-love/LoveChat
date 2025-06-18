@@ -23,6 +23,12 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
       "theme-peachmeringue",
       "theme-cocoadust",
       "theme-frostedsage",
+      "theme-charcoal",
+      "theme-neon",
+      "theme-warmth",
+      "theme-pastel",
+      "theme-jewel",
+      "theme-contrast",
       "theme-custom",
     )
 

@@ -133,9 +133,25 @@ export const useArtifactStore = create<ArtifactStore>()(
       error: null,
 
       fetchArtifacts: async (filters = {}) => {
-        set({ isLoading: true, error: null })
+        // Prevent concurrent fetches and add timeout protection
+        const currentState = get()
+        if (currentState.isLoading) {
+          console.log("🎯 fetchArtifacts already in progress, skipping...")
+          return
+        }
+
+        // Set loading timeout to prevent stuck states
+        const loadingTimeout = setTimeout(() => {
+          const state = get()
+          if (state.isLoading) {
+            console.warn("⚠️ ArtifactStore fetchArtifacts timeout - clearing loading state")
+            set({ isLoading: false, error: "Loading timeout" })
+          }
+        }, 10000) // 10 second timeout for artifacts
 
         try {
+          set({ isLoading: true, error: null })
+
           const params = new URLSearchParams()
           if (filters.threadId) params.append("threadId", filters.threadId)
           if (filters.messageId) params.append("messageId", filters.messageId)
@@ -145,10 +161,16 @@ export const useArtifactStore = create<ArtifactStore>()(
           if (filters.pinned !== undefined) params.append("pinned", filters.pinned.toString())
           if (filters.archived !== undefined) params.append("archived", filters.archived.toString())
 
+          // Add timeout to the fetch request itself
           const headers = await getAuthHeaders()
-          const response = await fetch(`${API_BASE}?${params}`, {
+          const fetchPromise = fetch(`${API_BASE}?${params}`, {
             headers,
           })
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error("Network request timeout")), 8000)
+          )
+
+          const response = await Promise.race([fetchPromise, timeoutPromise]) as Response
 
           if (!response.ok) {
             throw new Error("Failed to fetch artifacts")
@@ -159,6 +181,8 @@ export const useArtifactStore = create<ArtifactStore>()(
         } catch (error) {
           console.error("Error fetching artifacts:", error)
           set({ error: (error as Error).message, isLoading: false })
+        } finally {
+          clearTimeout(loadingTimeout)
         }
       },
 

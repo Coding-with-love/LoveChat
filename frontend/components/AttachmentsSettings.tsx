@@ -26,6 +26,7 @@ import { formatFileSize } from "@/lib/supabase/file-upload"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/frontend/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/frontend/components/ui/tabs"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/frontend/components/ui/tooltip"
+import { useTabVisibility } from "@/frontend/hooks/useTabVisibility"
 
 interface FileAttachment {
   id: string
@@ -56,6 +57,44 @@ export default function AttachmentsSettings() {
   const [threadGroups, setThreadGroups] = useState<ThreadWithFiles[]>([])
   const [isDeleting, setIsDeleting] = useState<Record<string, boolean>>({})
   const [totalSize, setTotalSize] = useState(0)
+
+  // Add tab visibility management to prevent stuck loading states
+  useTabVisibility({
+    onVisible: () => {
+      console.log("🔄 AttachmentsSettings became visible, checking loading state:", isLoading)
+      
+      // More aggressive clearing of stuck loading states
+      if (isLoading) {
+        console.log("🔄 Found loading state in AttachmentsSettings, setting up timeout...")
+        setTimeout(() => {
+          if (isLoading) {
+            console.warn("⚠️ Force clearing stuck loading state in AttachmentsSettings after tab return")
+            setIsLoading(false)
+            // If we have no files loaded, try to load them once more
+            if (files.length === 0) {
+              console.log("🔄 Retrying file load after clearing stuck state")
+              loadFiles()
+            }
+          }
+        }, 1000) // Only wait 1 second before force clearing
+      }
+    },
+    refreshStoresOnVisible: false, // Don't trigger additional refreshes
+  })
+
+  // Add a safety timeout to prevent infinite loading screens
+  useEffect(() => {
+    if (isLoading) {
+      const safetyTimeout = setTimeout(() => {
+        if (isLoading) {
+          console.warn("⚠️ Safety timeout: forcing AttachmentsSettings out of loading state")
+          setIsLoading(false)
+        }
+      }, 15000) // 15 second safety timeout for file loading
+
+      return () => clearTimeout(safetyTimeout)
+    }
+  }, [isLoading])
 
   useEffect(() => {
     loadFiles()
