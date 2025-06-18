@@ -250,6 +250,19 @@ function PureChatInput({ threadId, input, status, setInput, append, stop, onRefr
     return modelConfig.provider === "openai" && modelConfig.supportsThinking
   }, [selectedModel])
 
+  // Check if current model is any thinking model
+  const isThinkingModel = useMemo(() => {
+    const modelConfig = getModelConfig(selectedModel)
+    const supports = modelConfig.supportsThinking || false
+    console.log("🧠 ChatInput thinking model check:", {
+      selectedModel,
+      provider: modelConfig.provider,
+      supportsThinking: supports,
+      isThinkingModel: supports
+    })
+    return supports
+  }, [selectedModel])
+
   // Auto-disable web search when switching to a model that doesn't support it
   useEffect(() => {
     if (!currentModelSupportsSearch && webSearchEnabled) {
@@ -582,7 +595,7 @@ function PureChatInput({ threadId, input, status, setInput, append, stop, onRefr
         experimental_attachments: experimentalAttachments.length > 0 ? experimentalAttachments : undefined,
         data: {
           userPreferences: userPrefsToSend,
-          ...(isOpenAIReasoningModel && { reasoningEffort }),
+          ...(isThinkingModel && { reasoningEffort }),
         },
       })
 
@@ -928,41 +941,19 @@ function PureChatInput({ threadId, input, status, setInput, append, stop, onRefr
               {/* Left Group - Model Selector */}
               <div className="flex items-center">
                 <div className="bg-muted/60 dark:bg-muted/40 rounded-xl px-3 py-2 border border-border/50 max-w-full overflow-hidden">
-                  <ChatModelDropdown />
-                  {isOpenAIReasoningModel && (
-                    <>
-                      <div className="w-px h-4 bg-border/50 mx-2" />
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 rounded-md hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-all duration-200"
-                            disabled={status === "streaming" || status === "submitted"}
-                          >
-                            <Settings className="h-3.5 w-3.5" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent className="w-48 p-2" align="start">
-                          <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-b border-border/50 mb-2">
-                            Model Settings
-                          </div>
-                          <div className="space-y-3">
-                            <div>
-                              <label className="text-xs font-medium text-muted-foreground mb-2 block">
-                                Reasoning Effort
-                              </label>
-                              <ReasoningEffortSelector
-                                value={reasoningEffort}
-                                onChange={setReasoningEffort}
-                                disabled={status === "streaming" || status === "submitted"}
-                              />
-                            </div>
-                          </div>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </>
-                  )}
+                  <div className="flex items-center gap-2">
+                    <ChatModelDropdown />
+                    {isThinkingModel && (
+                      <>
+                        <div className="w-px h-4 bg-border/50" />
+                        <ReasoningEffortSelector
+                          value={reasoningEffort}
+                          onChange={setReasoningEffort}
+                          disabled={status === "streaming" || status === "submitted"}
+                        />
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -1226,6 +1217,28 @@ function PureChatInput({ threadId, input, status, setInput, append, stop, onRefr
                         <Archive className="h-3 w-3" />
                         <span className="text-sm">Artifacts</span>
                       </Button>
+
+                      {/* Reasoning Effort for Thinking Models */}
+                      {isThinkingModel && (
+                        <>
+                          <div className="w-full h-px bg-border/50 my-2" />
+                          <div className="px-2 py-1">
+                            <label className="text-xs font-medium text-muted-foreground mb-2 block">
+                              Reasoning Effort
+                            </label>
+                            <ReasoningEffortSelector
+                              value={reasoningEffort}
+                              onChange={setReasoningEffort}
+                              disabled={status === "streaming" || status === "submitted"}
+                            />
+                          </div>
+                          {!isOpenAIReasoningModel && (
+                            <div className="text-xs text-muted-foreground bg-muted/30 rounded-lg p-2 mx-2">
+                              <strong>Note:</strong> Reasoning effort affects how thoughtfully the AI approaches your request.
+                            </div>
+                          )}
+                        </>
+                      )}
                     </div>
                   </DropdownMenuContent>
                 </DropdownMenu>

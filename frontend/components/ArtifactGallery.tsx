@@ -196,18 +196,18 @@ export function ArtifactGallery({ threadId, className, showHeader = true }: Arti
   const ArtifactCard = ({ artifact }: { artifact: Artifact }) => (
     <Card
       className={cn(
-        "group hover:shadow-md transition-all duration-200 cursor-pointer",
+        "group hover:shadow-md transition-all duration-200 cursor-pointer w-full overflow-hidden",
         artifact.is_pinned && "ring-2 ring-primary/20",
       )}
     >
       <CardHeader className="pb-3">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-2 flex-1 min-w-0">
+        <div className="flex items-start justify-between overflow-hidden">
+          <div className="flex items-center gap-2 flex-1 min-w-0 overflow-hidden">
             <div className="flex-shrink-0">
               {getArtifactIcon(artifact.content_type)}
             </div>
-            <div className="flex-1 min-w-0">
-              <CardTitle className="text-sm truncate cursor-default break-words" title={artifact.title}>
+            <div className="flex-1 min-w-0 overflow-hidden">
+              <CardTitle className="text-sm truncate cursor-default block" title={artifact.title}>
                 {artifact.title}
               </CardTitle>
             </div>
@@ -298,15 +298,15 @@ export function ArtifactGallery({ threadId, className, showHeader = true }: Arti
         <div className="flex-shrink-0">
           {getArtifactIcon(artifact.content_type)}
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <h3 className="font-medium text-sm truncate flex-1 min-w-0 break-words" title={artifact.title}>
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <div className="flex items-center gap-2 min-w-0">
+            <h3 className="font-medium text-sm truncate flex-1 min-w-0 w-full block" title={artifact.title}>
               {artifact.title}
             </h3>
             {artifact.is_pinned && <Pin className="h-3 w-3 text-primary flex-shrink-0" />}
           </div>
           {artifact.description && (
-            <p className="text-xs text-muted-foreground truncate break-words" title={artifact.description}>
+            <p className="text-xs text-muted-foreground truncate w-full block overflow-hidden" title={artifact.description}>
               {artifact.description}
             </p>
           )}

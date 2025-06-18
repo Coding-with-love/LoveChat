@@ -27,14 +27,23 @@ interface ModelState {
   cleanupFavoritesForRemovedProviders: () => void
 }
 
-const DEFAULT_MODEL = "gemini-2.0-flash-exp" as const
+const DEFAULT_MODEL = "gemini-2.0-flash" as const
 
 // Default enabled models - a curated selection
 const DEFAULT_ENABLED_MODELS: AIModel[] = [
-  "gemini-2.0-flash-exp",
+  "gemini-2.0-flash",
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-thinking",
+  "gemini-2.5-pro",
   "gpt-4o",
   "gpt-4o-mini",
-  "claude-3-5-sonnet-20241022",
+  "o3-mini",
+  "o3",
+  "anthropic/claude-3.5-haiku",
+  "anthropic/claude-v3.5-sonnet",
+  "anthropic/claude-3.7-sonnet-reasoning",
+  "anthropic/claude-4-opus-20250514",
+  "deepseek/deepseek-r1-0528:free",
 ]
 
 // Helper function to save to database with debouncing

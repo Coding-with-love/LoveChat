@@ -7,6 +7,9 @@ export function getSystemPrompt(
   userEmail: string,
   threadPersona?: { personas: Persona } | null,
   userPreferences?: UserPreferences | null,
+  isThinkingModel?: boolean,
+  modelProvider?: string,
+  modelId?: string
 ): string {
   let prompt = ""
 
@@ -38,19 +41,30 @@ export function getSystemPrompt(
   }
 
   // Add thinking/reasoning instructions for models that support it
-  prompt += `When performing complex reasoning or problem-solving:
+  if (isThinkingModel) {
+    if (modelId?.includes("deepseek")) {
+      prompt += `For complex reasoning or problem-solving tasks, use <think>...</think> tags to show your step-by-step thought process. Your thinking will be displayed separately from your final answer.
 
-1. For DeepSeek models: Use <think>...</think> tags to show your reasoning process. Example:
-   <think>
-   1. First, let me analyze the key aspects...
-   2. Next, I'll consider the implications...
-   3. Finally, I'll synthesize a solution...
-   </think>
-   [Your final answer here]
+Example format:
+<think>
+Let me break this down step by step:
+1. First, I need to understand what the user is asking...
+2. Then I should consider the key factors...
+3. Finally, I'll synthesize the information to provide a clear answer...
+</think>
 
-2. For other models: Follow their native reasoning formats.
+Your final, polished response goes here without the thinking tags.
 
-Always break down complex problems into steps and explain your thought process clearly.`
+Always use thinking tags for complex analysis, calculations, or multi-step reasoning.`
+    } else if (modelProvider === "google") {
+      prompt += `For complex reasoning tasks, think through your response step-by-step. Your reasoning process will be displayed separately from your final answer. Break down complex problems and explain your thought process clearly.`
+    } else if (modelProvider === "openai") {
+      prompt += `For complex reasoning tasks, engage your internal reasoning capabilities to think through problems step-by-step before providing your final answer.`
+    } else {
+      prompt += `For complex reasoning or problem-solving tasks, think through your response step-by-step and break down complex problems clearly.`
+    }
+    prompt += "\n\n"
+  }
 
   return prompt.trim()
 } 

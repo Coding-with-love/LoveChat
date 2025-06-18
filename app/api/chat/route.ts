@@ -948,6 +948,9 @@ export async function POST(req: NextRequest) {
       })
     }
 
+    // Check if this model supports thinking and needs special processing
+    const isThinkingModel = modelConfig.supportsThinking
+
     // Create system prompt with persona integration and user preferences
     const systemPrompt = getSystemPrompt(
       webSearchEnabled,
@@ -955,18 +958,28 @@ export async function POST(req: NextRequest) {
       user.email || "",
       threadPersona,
       userPreferences,
+      isThinkingModel,
+      modelConfig.provider,
+      modelConfig.modelId,
     )
     console.log("📝 Generated system prompt preview:", systemPrompt.substring(0, 200) + "...")
     console.log("📝 Full system prompt:", systemPrompt)
-
-    // Check if this model supports thinking and needs special processing
-    const isThinkingModel = modelConfig.supportsThinking
     
     // Special handling for OpenAI reasoning models - they use the new Responses API
     const isOpenAIReasoningModel = modelConfig.provider === "openai" && modelConfig.supportsThinking
     
-    // Custom thinking processor only for non-Google, non-OpenAI thinking models (like Ollama with thinking tags)
-    const needsCustomThinkingProcessor = isThinkingModel && !isOpenAIReasoningModel && modelConfig.provider !== "google"
+    // Custom thinking processor only for Ollama models - DeepSeek uses standard processing
+    const needsCustomThinkingProcessor = isThinkingModel && !isOpenAIReasoningModel && modelConfig.provider !== "google" && modelConfig.provider !== "openrouter"
+    
+    // Debug the routing logic for deepseek models
+    console.log("🧠 Model routing debug:", {
+      modelId: modelConfig.modelId,
+      provider: modelConfig.provider,
+      isThinkingModel,
+      isOpenAIReasoningModel,
+      needsCustomThinkingProcessor,
+      supportsThinking: modelConfig.supportsThinking
+    })
     
     if (isOpenAIReasoningModel) {
       console.log("🧠 Using OpenAI reasoning model with Responses API:", modelConfig.modelId)
@@ -1897,19 +1910,23 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
 
                     // Send processed text delta (without thinking content) to client
                     if (processedText) {
-                      const processedChunk = `0:"${processedText}"\n`
-                      safeEnqueue(encoder.encode(processedChunk))
+                      // Send properly formatted text chunk directly, not the raw data stream format
+                      safeEnqueue(encoder.encode(processedText))
                     }
 
                     // Update buffer to remaining unprocessed content
                     textBuffer = textBuffer.substring(i)
                   } else {
-                    // Pass through non-text chunks as-is
-                    safeEnqueue(value)
+                    // For non-text delta chunks, only pass through specific needed chunks
+                    if (chunk.includes('"finishReason"') || chunk.includes('"usage"')) {
+                      safeEnqueue(value)
+                    }
                   }
                 } else {
-                  // Pass through non-text chunks (like finish reason, etc.)
-                  safeEnqueue(value)
+                  // Pass through non-text chunks (like finish reason, etc.) but filter out messageId chunks
+                  if (chunk.includes('"finishReason"') || chunk.includes('"usage"')) {
+                    safeEnqueue(value)
+                  }
                 }
               }
 
@@ -1976,6 +1993,38 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
         onFinish: async ({ text, finishReason, usage, sources, providerMetadata, toolResults }: any) => {
           console.log("🏁 AI generation finished")
           console.log("🔧 Tool results:", toolResults)
+          
+          // Handle thinking content extraction for deepseek models
+          let cleanedText = text
+          let reasoning = null
+          
+          if (isThinkingModel && modelConfig.provider === "openrouter" && text) {
+            console.log("🧠 Processing thinking content for deepseek model")
+            console.log("🔍 Original text length:", text.length)
+            console.log("🔍 Contains <think>:", text.includes("<think>"))
+            console.log("🔍 Contains </think>:", text.includes("</think>"))
+            
+            if (text.includes("<think>") && text.includes("</think>")) {
+              console.log("🧠 Extracting thinking content from deepseek response")
+              
+              // Extract thinking content
+              const thinkMatches = text.match(/<think>([\s\S]*?)<\/think>/g)
+              if (thinkMatches) {
+                reasoning = thinkMatches.map((match: string) => 
+                  match.replace(/<think>|<\/think>/g, "")
+                ).join('\n\n')
+                console.log("🧠 Extracted reasoning length:", reasoning.length)
+                console.log("🧠 Extracted reasoning preview:", reasoning.substring(0, 200) + "...")
+              }
+              
+              // Remove thinking tags from the main content
+              cleanedText = text.replace(/<think>[\s\S]*?<\/think>/g, "").trim()
+              console.log("🧠 Cleaned text length:", cleanedText.length)
+              console.log("🧠 Cleaned text preview:", cleanedText.substring(0, 200) + "...")
+            } else {
+              console.log("🧠 No thinking tags found in deepseek response")
+            }
+          }
           
           // Extract sources from tool results if available
           let extractedSources: any[] = []
@@ -2046,8 +2095,11 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
           })
           
           try {
-          await handleMessageSave(threadId, aiMessageId, user.id, text, finalSources, providerMetadata, modelConfig, apiKey!)
+            await handleMessageSave(threadId, aiMessageId, user.id, cleanedText, finalSources, providerMetadata, modelConfig, apiKey!, reasoning)
             console.log("✅ Message saved successfully")
+            if (reasoning) {
+              console.log("✅ Reasoning was included in save for deepseek model")
+            }
           } catch (saveError) {
             console.error("❌ Error saving message:", saveError)
           }
@@ -2087,34 +2139,40 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
           throw error
         }
 
-        // For regular models, use the AI SDK's built-in data stream response
-        // This properly handles the finish message with finishReason
-        return result.toDataStreamResponse({
-          headers: {
-            "Content-Type": "text/plain; charset=utf-8",
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-          },
-          getErrorMessage: (error: unknown) => {
-            console.error("🚨 Regular model stream error:", error)
-            if (error == null) {
-              return 'Unknown error occurred'
-            }
-            if (typeof error === 'string') {
-              return error
-            }
-            if (error instanceof Error) {
-              console.error("🚨 Error details:", {
-                name: error.name,
-                message: error.message,
-                stack: error.stack,
-                cause: error.cause
-              })
-              return error.message
-            }
-            return JSON.stringify(error)
-          },
-        })
+        // For deepseek thinking models, use the standard response but rely on onFinish for thinking extraction
+        if (isThinkingModel && modelConfig.provider === "openrouter") {
+          console.log("🧠 Using standard stream for deepseek thinking model with post-processing")
+        }
+        
+        {
+          // For regular models, use the AI SDK's built-in data stream response
+          return result.toDataStreamResponse({
+            headers: {
+              "Content-Type": "text/plain; charset=utf-8", 
+              "Cache-Control": "no-cache",
+              "Connection": "keep-alive",
+            },
+            getErrorMessage: (error: unknown) => {
+              console.error("🚨 Regular model stream error:", error)
+              if (error == null) {
+                return 'Unknown error occurred'
+              }
+              if (typeof error === 'string') {
+                return error
+              }
+              if (error instanceof Error) {
+                console.error("🚨 Error details:", {
+                  name: error.name,
+                  message: error.message,
+                  stack: error.stack,
+                  cause: error.cause
+                })
+                return error.message
+              }
+              return JSON.stringify(error)
+            },
+          })
+        }
       })
     }
   } catch (error) {
@@ -2239,7 +2297,7 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
     console.log("👤 Ollama user preferences:", userPreferences ? "present" : "not found")
 
     // Create system prompt for Ollama
-    const systemPrompt = getSystemPrompt(false, false, userEmail, threadPersona, userPreferences)
+    const systemPrompt = getSystemPrompt(false, false, userEmail, threadPersona, userPreferences, isThinkingModel, modelConfig.provider, modelConfig.modelId)
     console.log("📝 Ollama generated system prompt preview:", systemPrompt.substring(0, 200) + "...")
 
     // Prepare messages for Ollama - inject system prompt as system message
@@ -2300,6 +2358,7 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
           let fullResponse = ""
           let reasoning = null
           let cleanedText = ""
+          let responseBuffer = ""
 
           const safeEnqueue = (chunk: Uint8Array) => {
             if (!isClosed) {
@@ -2330,15 +2389,15 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
 
               // Properly decode the incoming value as UTF-8 text
               const decodedValue = new TextDecoder().decode(value)
-              buffer += decodedValue
+              responseBuffer += decodedValue
               let processedChunk = ""
               let i = 0
 
-              while (i < buffer.length) {
+              while (i < responseBuffer.length) {
                 if (isClosed) break
 
                 try {
-                  const data = JSON.parse(buffer)
+                  const data = JSON.parse(responseBuffer)
                   if (data.message?.content) {
                     const content = data.message.content
                     fullResponse += content
@@ -2665,6 +2724,9 @@ function getSystemPrompt(
   userEmail: string,
   persona: any = null,
   userPreferences: any = null,
+  isThinkingModel: boolean = false,
+  modelProvider: string = "",
+  modelId: string = "",
 ) {
   let basePrompt = `You are LoveChat, an AI assistant that can answer questions and help with tasks.
 Be helpful and provide relevant information.
@@ -2735,7 +2797,29 @@ IMPORTANT: If the user has provided personal information in your system instruct
     basePrompt = persona.system_prompt
   }
 
-  const finalPrompt = `${basePrompt}${personalizationSection}
+  // Add reasoning effort instructions for thinking models
+  let reasoningInstructions = ""
+  if (isThinkingModel) {
+    const effortDescriptions = {
+      low: "Be concise and direct. Focus on providing quick, accurate answers without extensive analysis.",
+      medium: "Balance thoroughness with efficiency. Provide well-reasoned responses with appropriate detail and analysis.",
+      high: "Think deeply and thoroughly. Consider multiple perspectives, analyze implications, and provide comprehensive reasoning. Take time to consider edge cases and nuances."
+    }
+    
+    reasoningInstructions = `
+
+🧠 REASONING APPROACH: MEDIUM EFFORT
+${effortDescriptions.medium}
+
+For thinking models that support structured reasoning:
+- Use your internal reasoning capabilities to think through problems step by step
+- Consider multiple approaches and their trade-offs
+- Analyze the context and implications of your response
+- Show your reasoning process when helpful to the user
+`
+  }
+
+  const finalPrompt = `${basePrompt}${personalizationSection}${reasoningInstructions}
 
 ${
   webSearchEnabled && modelSupportsSearch

@@ -18,6 +18,7 @@ interface DBMessage {
   content: string
   role: "user" | "assistant" | "system" | "data"
   created_at: string
+  reasoning?: string
 }
 
 export default function Thread() {
@@ -51,6 +52,20 @@ export default function Thread() {
       // Then fetch messages
       const data = await getMessagesByThreadId(id)
       console.log("✅ Thread messages loaded:", data.length, isRefresh ? "(refresh)" : "(initial)")
+      
+      // Debug: Check if any messages have reasoning
+      const messagesWithReasoning = data.filter(msg => msg.reasoning)
+      console.log("🧠 Messages with reasoning from DB:", {
+        total: data.length,
+        withReasoning: messagesWithReasoning.length,
+        reasoningMessages: messagesWithReasoning.map(msg => ({
+          id: msg.id,
+          role: msg.role,
+          reasoningLength: msg.reasoning?.length || 0,
+          reasoningPreview: msg.reasoning?.substring(0, 100) || "none"
+        }))
+      })
+      
       setMessages(data)
     } catch (err) {
       console.error("❌ Error initializing thread:", err)
@@ -143,7 +158,8 @@ export default function Thread() {
         content: message.content || "",
         createdAt: new Date(message.created_at),
         experimental_attachments: experimentalAttachments,
-      }
+        reasoning: message.reasoning, // Include reasoning field from database
+      } as UIMessage & { reasoning?: string }
     })
     
     // Debug: Log the content being passed to Chat component
@@ -154,7 +170,9 @@ export default function Thread() {
         role: m.role,
         contentLength: m.content.length,
         contentPreview: m.content.substring(0, 100),
-        hasExperimentalAttachments: !!m.experimental_attachments?.length
+        hasExperimentalAttachments: !!m.experimental_attachments?.length,
+        hasReasoning: !!(m as any).reasoning,
+        reasoningLength: (m as any).reasoning?.length || 0
       }))
     })
     

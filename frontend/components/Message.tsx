@@ -157,7 +157,7 @@ function PureMessage({
     setCurrentAttemptIndex(prev => Math.min(actualTotalAttempts - 1, prev + 1))
   }, [actualTotalAttempts])
 
-  // Extract reasoning from current message - check multiple sources
+  // Extract reasoning from current message - check multiple sources with improved parsing
   const reasoning =
     actualCurrentMessage.reasoning ||
     actualCurrentMessage.parts?.find((part) => part.type === "reasoning")?.reasoning ||
@@ -167,19 +167,29 @@ function PureMessage({
       if (textPart?.text) {
         // For streaming thinking models, extract both complete and partial thinking content
         if (textPart.text.includes("<think>") || textPart.text.includes("<Thinking>")) {
-          // Handle both complete and partial thinking blocks
+          // Handle both complete and partial thinking blocks with improved parsing
           const thinkMatches = textPart.text.match(/<think>([\s\S]*?)<\/think>|<Thinking>([\s\S]*?)<\/Thinking>/g)
           if (thinkMatches) {
-            return thinkMatches.map(match => 
-              match.replace(/<think>|<\/think>|<Thinking>|<\/Thinking>/g, "")
-            ).join('\n\n')
+            const extracted = thinkMatches.map(match => 
+              match.replace(/<think>|<\/think>|<Thinking>|<\/Thinking>/g, "").trim()
+            ).filter(content => content.length > 0).join('\n\n')
+            
+            // Clean up any repetitive content or malformed reasoning
+            const cleaned = extracted
+              .replace(/^\s*[-•]\s*/gm, '') // Remove bullet points
+              .replace(/(\n\s*){3,}/g, '\n\n') // Remove excessive line breaks
+              .replace(/^(.*?)\1+$/gm, '$1') // Remove simple repetitions
+              .trim()
+            
+            return cleaned.length > 10 ? cleaned : null
           }
 
           // Handle incomplete thinking block (streaming in progress)
           if (isStreaming) {
             const partialMatch = textPart.text.match(/<think>([\s\S]*?)$|<Thinking>([\s\S]*?)$/)
             if (partialMatch) {
-              return (partialMatch[1] || partialMatch[2] || "").trim()
+              const partial = (partialMatch[1] || partialMatch[2] || "").trim()
+              return partial.length > 5 ? partial : null
             }
           }
         }
@@ -187,7 +197,7 @@ function PureMessage({
       return null
     })()
 
-  // Debug reasoning extraction
+  // Debug reasoning extraction with improved logging for deepseek models
   console.log("🧠 Message reasoning debug:", {
     messageId: message.id,
     hasDirectReasoning: !!actualCurrentMessage.reasoning,
@@ -591,20 +601,25 @@ const isSelectionInThisMessage = useCallback(() => {
               let cleanText = actualCurrentMessage.content || part.text
               let extractedThinking = ""
 
-              // Handle both <think> and <Thinking> tags
+              // Handle both <think> and <Thinking> tags with improved cleaning for deepseek models
               if (cleanText.includes("<think>") || cleanText.includes("<Thinking>")) {
                 // Extract thinking content for potential display
                 const thinkMatches = cleanText.match(/<think>([\s\S]*?)<\/think>|<Thinking>([\s\S]*?)<\/Thinking>/g)
                 if (thinkMatches) {
                   thinkMatches.forEach((match) => {
-                    extractedThinking += match.replace(/<think>|<\/think>|<Thinking>|<\/Thinking>/g, "") + "\n"
+                    const thinkingContent = match.replace(/<think>|<\/think>|<Thinking>|<\/Thinking>/g, "").trim()
+                    if (thinkingContent.length > 0) {
+                      extractedThinking += thinkingContent + "\n"
+                    }
                   })
                 }
 
-                // Remove thinking tags from displayed content
+                // Remove thinking tags from displayed content more aggressively
                 cleanText = cleanText
                   .replace(/<think>[\s\S]*?<\/think>/g, "")
                   .replace(/<Thinking>[\s\S]*?<\/Thinking>/g, "")
+                  .replace(/^\s*\n+/gm, '') // Remove leading whitespace and newlines
+                  .replace(/\n{3,}/g, '\n\n') // Collapse multiple newlines
                   .trim()
 
                 // If we're still streaming and have an incomplete thinking tag, remove it too
@@ -614,6 +629,15 @@ const isSelectionInThisMessage = useCallback(() => {
                     .replace(/<Thinking>[\s\S]*$/, "")
                     .trim()
                 }
+
+                // Log the cleaning process for debugging
+                console.log("🧠 Text cleaning for thinking model:", {
+                  messageId: message.id,
+                  originalLength: (actualCurrentMessage.content || part.text).length,
+                  cleanedLength: cleanText.length,
+                  extractedThinkingLength: extractedThinking.length,
+                  hasIncompleteTags: isStreaming && (cleanText.includes("<think>") || cleanText.includes("<Thinking>"))
+                })
               }
 
               // Check if this is a workflow execution message

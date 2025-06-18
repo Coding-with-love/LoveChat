@@ -1,4 +1,4 @@
-import { memo, useState, useEffect } from 'react';
+import { memo, useState, useEffect, useMemo } from 'react';
 import MemoizedMarkdown from './MemoizedMarkdown';
 import { ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
 
@@ -22,8 +22,27 @@ function PureMessageReasoning({
     }
   }, [autoExpand, isStreaming]);
 
+  // Clean and format reasoning content for better display
+  const cleanedReasoning = useMemo(() => {
+    if (!reasoning) return "";
+    
+    return reasoning
+      .replace(/^\s*[-•]\s*/gm, '') // Remove bullet points
+      .replace(/(\n\s*){3,}/g, '\n\n') // Remove excessive line breaks
+      .replace(/^(.*?)\1+$/gm, '$1') // Remove simple repetitions
+      .replace(/^(\d+\.\s*)+/gm, '') // Remove repeated numbering
+      .replace(/^\s+|\s+$/g, '') // Trim whitespace
+      .replace(/\n{2,}/g, '\n\n') // Normalize line breaks
+      .trim();
+  }, [reasoning]);
+
   // Show a thinking indicator for streaming or placeholder content
-  const isThinkingPlaceholder = reasoning === "Thinking..." || (isStreaming && reasoning.length < 10);
+  const isThinkingPlaceholder = reasoning === "Thinking..." || (isStreaming && cleanedReasoning.length < 10);
+
+  // Don't render if no meaningful content
+  if (!reasoning && !isStreaming) {
+    return null;
+  }
 
   return (
     <div className="flex flex-col gap-2 pb-2 max-w-3xl w-full">
@@ -45,6 +64,11 @@ function PureMessageReasoning({
             <span className="text-xs text-blue-600 dark:text-blue-400">streaming</span>
           </div>
         )}
+        {cleanedReasoning.length > 0 && !isStreaming && (
+          <span className="text-xs text-muted-foreground">
+            {cleanedReasoning.length} characters
+          </span>
+        )}
       </button>
       {isExpanded && (
         <div className="p-4 rounded-md bg-accent/20 border border-border">
@@ -59,7 +83,13 @@ function PureMessageReasoning({
             </div>
           ) : (
             <div className="text-sm">
-              <MemoizedMarkdown content={reasoning} id={id} size="small" />
+              <MemoizedMarkdown content={cleanedReasoning} id={id} size="small" />
+              {isStreaming && (
+                <div className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
+                  <div className="w-1 h-1 bg-current rounded-full animate-pulse" />
+                  <span>reasoning in progress...</span>
+                </div>
+              )}
             </div>
           )}
         </div>

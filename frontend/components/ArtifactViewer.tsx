@@ -10,7 +10,8 @@ import { ScrollArea } from "@/frontend/components/ui/scroll-area"
 import { Download, Copy, Pin, Archive, History, Code, FileText, Calendar, Tag, RotateCcw, Eye } from "lucide-react"
 import { toast } from "sonner"
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism"
+import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism"
+import { useTheme } from "next-themes"
 import MarkdownRenderer from "@/frontend/components/MemoizedMarkdown"
 
 interface ArtifactViewerProps {
@@ -20,6 +21,7 @@ interface ArtifactViewerProps {
 }
 
 export function ArtifactViewer({ open, onOpenChange, artifact }: ArtifactViewerProps) {
+  const { theme } = useTheme()
   const {
     downloadArtifact,
     pinArtifact,
@@ -176,14 +178,16 @@ export function ArtifactViewer({ open, onOpenChange, artifact }: ArtifactViewerP
     const language = getLanguageForHighlighting()
     const contentToRender = selectedVersionContent || artifact.content
 
-    // Enhanced detection for markdown/table content
+    // Enhanced detection for markdown/table content (keep math and tables)
     const isMarkdownContent = 
       artifact.content_type === "markdown" || 
       artifact.content_type === "md" || 
       artifact.content_type === "data" || 
       artifact.content_type === "table" ||
-      // Also detect if content looks like markdown table
-      (artifact.content.includes('|') && artifact.content.includes('---'))
+      // Detect math expressions
+      (contentToRender.includes('$$') || contentToRender.includes('\\[') || contentToRender.includes('\\(')) ||
+      // Detect markdown tables
+      (contentToRender.includes('|') && contentToRender.includes('---'))
 
     if (isMarkdownContent) {
       return (
@@ -206,7 +210,7 @@ export function ArtifactViewer({ open, onOpenChange, artifact }: ArtifactViewerP
             <div className="overflow-x-auto max-w-full">
               <MarkdownRenderer 
                 content={contentToRender} 
-                id={`artifact-${artifact.id}`} 
+                id={`artifact-${artifact.id}${selectedVersionContent ? '-version' : ''}`} 
                 threadId={artifact.thread_id || ""}
                 messageId={artifact.message_id || ""}
                 isArtifactMessage={true}
@@ -237,7 +241,7 @@ export function ArtifactViewer({ open, onOpenChange, artifact }: ArtifactViewerP
           <div className="w-full">
             <SyntaxHighlighter
               language={language}
-              style={oneDark}
+              style={theme === "dark" ? oneDark : oneLight}
               customStyle={{
                 margin: 0,
                 borderRadius: "0.5rem",

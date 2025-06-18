@@ -22,9 +22,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
-import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism"
-import { useTheme } from "next-themes"
+
 import type { Artifact } from "@/frontend/stores/ArtifactStore"
 import { useArtifactStore } from "@/frontend/stores/ArtifactStore"
 import MarkdownRenderer from "@/frontend/components/MemoizedMarkdown"
@@ -44,7 +42,6 @@ export function ArtifactCard({
   className,
   compact = false,
 }: ArtifactCardProps) {
-  const { theme } = useTheme()
   const { downloadArtifact, pinArtifact, deleteArtifact } = useArtifactStore()
   const [isExpanded, setIsExpanded] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
@@ -82,38 +79,7 @@ export function ArtifactCard({
     }
   }
 
-  const getLanguageForHighlighting = () => {
-    if (artifact.language) {
-      return artifact.language.toLowerCase()
-    }
 
-    switch (artifact.content_type.toLowerCase()) {
-      case "javascript":
-      case "js":
-        return "javascript"
-      case "typescript":
-      case "ts":
-        return "typescript"
-      case "python":
-      case "py":
-        return "python"
-      case "html":
-        return "html"
-      case "css":
-        return "css"
-      case "json":
-        return "json"
-      case "sql":
-        return "sql"
-      case "yaml":
-      case "yml":
-        return "yaml"
-      case "xml":
-        return "xml"
-      default:
-        return "text"
-    }
-  }
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
@@ -189,66 +155,50 @@ export function ArtifactCard({
   }
 
   const previewContent = () => {
-    const language = getLanguageForHighlighting()
     const maxLines = compact ? 5 : isExpanded ? Number.POSITIVE_INFINITY : 10
     const lines = artifact.content.split("\n")
     const shouldTruncate = lines.length > maxLines
     const displayContent =
       shouldTruncate && !isExpanded ? lines.slice(0, maxLines).join("\n") + "\n..." : artifact.content
 
-    // Enhanced detection for markdown/table content
-    const isMarkdownContent = 
-      artifact.content_type === "markdown" || 
-      artifact.content_type === "md" || 
-      artifact.content_type === "data" || 
-      artifact.content_type === "table" ||
-      // Also detect if content looks like markdown table
-      (artifact.content.includes('|') && artifact.content.includes('---'))
-
-    if (isMarkdownContent) {
-      return (
-        <div className="bg-muted/50 rounded-lg p-3 overflow-auto max-h-[200px]">
-          <div className="prose prose-xs dark:prose-invert max-w-none prose-table:text-xs prose-table:border-collapse prose-table:border prose-table:border-border prose-th:border prose-th:border-border prose-th:bg-muted/50 prose-th:px-2 prose-th:py-1 prose-th:text-left prose-th:font-medium prose-td:border prose-td:border-border prose-td:px-2 prose-td:py-1 prose-tr:border-b prose-tr:border-border">
-            <MarkdownRenderer 
-              content={displayContent} 
-              id={`artifact-preview-${artifact.id}`} 
-              threadId={artifact.thread_id || ""}
-              messageId={artifact.message_id || ""}
-              isArtifactMessage={true}
-            />
-          </div>
-        </div>
-      )
-    }
-
-    if (language !== "text" && artifact.content_type !== "text") {
-      return (
-        <SyntaxHighlighter
-          language={language}
-          style={theme === "dark" ? oneDark : oneLight}
-          customStyle={{
-            margin: 0,
-            borderRadius: "0.5rem",
-            fontSize: compact ? "0.75rem" : "0.875rem",
-            maxHeight: compact ? "120px" : isExpanded ? "none" : "200px",
-            overflow: "auto",
-          }}
-          showLineNumbers={!compact}
-        >
-          {displayContent}
-        </SyntaxHighlighter>
-      )
-    }
-
+    // Always use MemoizedMarkdown for consistent rendering
+    // This handles tables, math, code blocks, and plain text properly
     return (
-      <pre
-        className={cn(
-          "whitespace-pre-wrap text-sm bg-muted/50 p-3 rounded-lg overflow-auto",
-          compact ? "text-xs max-h-[120px]" : isExpanded ? "max-h-none" : "max-h-[200px]",
-        )}
-      >
-        {displayContent}
-      </pre>
+      <div className="bg-muted/50 rounded-lg p-3 overflow-auto">
+        <div className={cn(
+          "prose dark:prose-invert max-w-none",
+          compact ? "prose-xs" : "prose-sm",
+          // Table styling
+          "prose-table:text-xs prose-table:border-collapse prose-table:border prose-table:border-border prose-table:w-full prose-table:rounded prose-table:shadow-sm prose-table:my-2",
+          "prose-th:border prose-th:border-border prose-th:bg-muted/30 prose-th:px-3 prose-th:py-2 prose-th:text-left prose-th:font-medium prose-th:text-xs",
+          "prose-td:border prose-td:border-border prose-td:px-3 prose-td:py-2 prose-td:text-xs prose-td:align-top",
+          "prose-tr:border-b prose-tr:border-border",
+          // Code styling
+          "prose-code:text-xs prose-code:bg-muted/80 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:font-mono prose-code:border prose-code:border-border/50",
+          "prose-pre:text-xs prose-pre:bg-muted prose-pre:p-3 prose-pre:rounded prose-pre:overflow-x-auto prose-pre:border prose-pre:border-border/50",
+          // Text styling
+          "prose-p:text-xs prose-p:leading-relaxed prose-p:my-1.5",
+          "prose-h1:text-sm prose-h1:font-semibold prose-h1:my-2 prose-h1:text-foreground",
+          "prose-h2:text-sm prose-h2:font-medium prose-h2:my-1.5 prose-h2:text-foreground",
+          "prose-h3:text-xs prose-h3:font-medium prose-h3:my-1 prose-h3:text-foreground",
+          // List styling
+          "prose-ul:text-xs prose-ul:my-1.5 prose-li:my-0.5 prose-li:text-xs",
+          "prose-ol:text-xs prose-ol:my-1.5",
+          // Math styling
+          "prose-strong:text-xs prose-strong:font-medium",
+          "prose-em:text-xs",
+          // Blockquote styling
+          "prose-blockquote:text-xs prose-blockquote:border-l-2 prose-blockquote:border-border prose-blockquote:pl-3 prose-blockquote:my-2 prose-blockquote:italic",
+        )}>
+          <MarkdownRenderer 
+            content={displayContent} 
+            id={`artifact-preview-${artifact.id}`} 
+            threadId={artifact.thread_id || ""}
+            messageId={artifact.message_id || ""}
+            isArtifactMessage={true}
+          />
+        </div>
+      </div>
     )
   }
 
@@ -272,7 +222,7 @@ export function ArtifactCard({
   return (
     <Card
       className={cn(
-        "transition-all duration-200 border-2",
+        "transition-all duration-200 border-2 w-full overflow-hidden",
         getArtifactTypeColor(),
         isHovered && "shadow-md transform scale-[1.01]",
         compact && "max-w-md",
@@ -282,8 +232,8 @@ export function ArtifactCard({
       onMouseLeave={() => setIsHovered(false)}
     >
       <CardHeader className="pb-3">
-        <div className="flex items-start justify-between">
-          <div className="flex items-start gap-3 flex-1 min-w-0">
+        <div className="flex items-start justify-between overflow-hidden">
+          <div className="flex items-start gap-3 flex-1 min-w-0 overflow-hidden">
             {/* Artifact Badge */}
             <div className="flex items-center gap-2 mt-1 flex-shrink-0">
               <div className="p-1.5 rounded-md bg-background/80 border">
@@ -296,11 +246,11 @@ export function ArtifactCard({
                 <div className="flex-shrink-0">
                   {getArtifactIcon()}
                 </div>
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0 overflow-hidden">
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <h3 className="font-semibold text-sm truncate cursor-help block max-w-full" title={artifact.title}>
+                        <h3 className="font-semibold text-sm truncate cursor-help block" title={artifact.title}>
                           {artifact.title}
                         </h3>
                       </TooltipTrigger>
@@ -337,8 +287,8 @@ export function ArtifactCard({
                   </Badge>
                 )}
                 {artifact.project_name && (
-                  <Badge variant="outline" className="text-xs border-blue-200 bg-blue-50 text-blue-700 flex-shrink-0 max-w-[150px]">
-                    <span className="truncate inline-block max-w-full" title={`📁 ${artifact.project_name}`}>
+                  <Badge variant="outline" className="text-xs border-blue-200 bg-blue-50 text-blue-700 flex-shrink-0 max-w-[120px] overflow-hidden">
+                    <span className="truncate block w-full" title={`📁 ${artifact.project_name}`}>
                       📁 {artifact.project_name}
                     </span>
                   </Badge>
@@ -346,7 +296,7 @@ export function ArtifactCard({
               </div>
 
               {artifact.description && (
-                <p className="text-xs text-muted-foreground mb-2 line-clamp-2">
+                <p className="text-xs text-muted-foreground mb-2 line-clamp-2 break-words overflow-hidden">
                   {artifact.description}
                 </p>
               )}

@@ -959,7 +959,10 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
         {/* Global Thinking Indicator - shown when streaming starts with thinking models */}
         {isThinking && status === "streaming" && supportsThinking && (
           <div className="mb-6 flex justify-center">
-            <ThinkingIndicator isVisible={true} />
+            <ThinkingIndicator 
+          isVisible={true} 
+          variant={selectedModel.includes("deepseek") ? "deepseek" : selectedModel.includes("openrouter") ? "openrouter" : "default"}
+        />
           </div>
         )}
 

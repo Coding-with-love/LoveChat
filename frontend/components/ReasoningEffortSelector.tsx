@@ -52,18 +52,18 @@ export function ReasoningEffortSelector({ value, onChange, disabled }: Reasoning
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
-          variant="outline"
+          variant="ghost"
           size="sm"
           disabled={disabled}
           className={cn(
-            "flex items-center gap-2 h-8 px-3",
-            "hover:bg-accent/50 transition-colors",
+            "flex items-center gap-1.5 h-6 px-2",
+            "hover:bg-muted/50 transition-colors text-xs",
             selectedOption.color
           )}
         >
-          <Brain className="h-3.5 w-3.5" />
-          <SelectedIcon className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium">{selectedOption.label}</span>
+          <Brain className="h-3 w-3" />
+          <SelectedIcon className="h-3 w-3" />
+          <span className="font-medium">{selectedOption.label}</span>
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-80 p-0" align="start">

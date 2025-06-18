@@ -274,6 +274,11 @@ export function getModelConfig(model: AIModel): ModelConfig {
         headerKey: "X-OpenRouter-API-Key",
         supportsSearch: false,
         supportsThinking: true,
+        logo: {
+          type: "text",
+          content: "🧠",
+          alt: "DeepSeek R1"
+        }
       }
     case "meta-llama/llama-4-maverick:free":
       return {
