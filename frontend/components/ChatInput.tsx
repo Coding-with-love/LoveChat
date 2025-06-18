@@ -782,6 +782,12 @@ function PureChatInput({ threadId, input, status, setInput, append, stop, onRefr
 
   const searchStatusMessage = getSearchStatusMessage()
 
+  // Helper function for mobile layout
+  const getModelIcon = useCallback((model: AIModel) => {
+    const modelConfig = getModelConfig(model)
+    return <ProviderLogo provider={modelConfig.provider} size="sm" />
+  }, [])
+
   return (
     <div
       className={cn(
@@ -916,13 +922,12 @@ function PureChatInput({ threadId, input, status, setInput, append, stop, onRefr
               </span>
             </div>
 
-
-
-                        {/* Integrated Toolbar */}
-            <div className="flex items-center justify-between px-6 py-4 border-t border-border/30">
+            {/* Integrated Toolbar */}
+            {/* Desktop/Tablet Layout */}
+            <div className="hidden sm:flex items-center justify-between px-6 py-4 border-t border-border/30">
               {/* Left Group - Model Selector */}
               <div className="flex items-center">
-                <div className="bg-muted/60 dark:bg-muted/40 rounded-xl px-3 py-2 border border-border/50">
+                <div className="bg-muted/60 dark:bg-muted/40 rounded-xl px-3 py-2 border border-border/50 max-w-full overflow-hidden">
                   <ChatModelDropdown />
                   {isOpenAIReasoningModel && (
                     <>
@@ -1137,6 +1142,138 @@ function PureChatInput({ threadId, input, status, setInput, append, stop, onRefr
                     )}
               </div>
             </div>
+
+            {/* Mobile Layout - Compact Single Row */}
+            <div className="sm:hidden flex items-center justify-between px-3 py-2 border-t border-border/30">
+              {/* Left - Model Selector (Compact) */}
+              <div className="flex items-center">
+                <div className="bg-muted/60 dark:bg-muted/40 rounded-lg px-2 py-1 border border-border/50">
+                  <ChatModelDropdown />
+                </div>
+              </div>
+
+              {/* Right - Essential Actions Only */}
+              <div className="flex items-center gap-1">
+                {/* File Upload */}
+                <FileUpload
+                  threadId={threadId}
+                  onFileUpload={handleFileUpload}
+                  uploadedFiles={uploadedFiles}
+                  onRemoveFile={handleRemoveFile}
+                  onUploadingChange={setIsUploading}
+                  disabled={status === "streaming" || status === "submitted"}
+                />
+
+                {/* Settings Menu - Persona, Web Search, Artifacts */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 rounded-lg hover:bg-muted/30 text-muted-foreground hover:text-foreground"
+                      disabled={status === "streaming" || status === "submitted"}
+                    >
+                      <Settings className="h-3 w-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="w-48 p-2 max-h-[50vh] overflow-y-auto" align="end" side="top" sideOffset={8}>
+                    <div className="space-y-1">
+                      {/* Persona */}
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button variant="ghost" className="w-full justify-start gap-2 h-8">
+                            {currentPersona && !currentPersona.is_default ? (
+                              <span>{currentPersona.avatar_emoji}</span>
+                            ) : (
+                              <User className="h-3 w-3" />
+                            )}
+                            <span className="text-sm">Persona</span>
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[min(400px,calc(100vw-2rem))] p-0" align="end">
+                          <PersonaTemplateSelector
+                            threadId={threadId}
+                            onPersonaSelect={(persona) => {}}
+                            onTemplateSelect={handleTemplateSelect}
+                            onCreatePersona={() => setCreatePersonaOpen(true)}
+                            onCreateTemplate={() => setCreateTemplateOpen(true)}
+                            onEditPersona={handleEditPersona}
+                            onEditTemplate={handleEditTemplate}
+                            onDeletePersona={handleDeletePersona}
+                            onDeleteTemplate={handleDeleteTemplate}
+                          />
+                        </PopoverContent>
+                      </Popover>
+
+                      {/* Web Search */}
+                      {currentModelSupportsSearch && (
+                        <Button 
+                          variant="ghost" 
+                          className="w-full justify-start gap-2 h-8"
+                          onClick={handleWebSearchToggle}
+                        >
+                          <Search className={cn("h-3 w-3", webSearchEnabled ? "text-blue-600" : "text-muted-foreground")} />
+                          <span className="text-sm">Web Search {webSearchEnabled ? "On" : "Off"}</span>
+                        </Button>
+                      )}
+
+                      {/* Artifacts */}
+                      <Button 
+                        variant="ghost" 
+                        className="w-full justify-start gap-2 h-8"
+                        onClick={() => setArtifactPickerOpen(true)}
+                      >
+                        <Archive className="h-3 w-3" />
+                        <span className="text-sm">Artifacts</span>
+                      </Button>
+                    </div>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                {/* Advanced Tools - Separate Button */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 rounded-lg hover:bg-muted/30 text-muted-foreground hover:text-foreground"
+                      disabled={status === "streaming" || status === "submitted"}
+                    >
+                      <Wrench className="h-3 w-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="w-64 p-2 max-h-[50vh] overflow-y-auto" align="end" side="top" sideOffset={8}>
+                    <ToolsDropdown />
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                {/* Send Button */}
+                {status === "submitted" || status === "streaming" ? (
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={stop}
+                    className="h-6 w-6 rounded-lg border hover:bg-destructive/10 hover:border-destructive/50"
+                  >
+                    <StopIcon size={12} />
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={handleSubmit}
+                    variant="default"
+                    size="icon"
+                    disabled={isDisabled}
+                    className={cn(
+                      "h-6 w-6 rounded-lg shadow-md",
+                      !isDisabled && "hover:scale-110 hover:shadow-lg",
+                      isDisabled && "opacity-50 cursor-not-allowed",
+                    )}
+                  >
+                    {isUploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ArrowUpIcon size={12} />}
+                  </Button>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1348,18 +1485,18 @@ const PureChatModelDropdown = () => {
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
-            className="flex items-center gap-2 h-7 px-2.5 text-sm rounded-lg text-foreground hover:bg-muted/30 focus-visible:ring-1 focus-visible:ring-offset-0 focus-visible:ring-primary transition-all duration-200"
+            className="flex items-center gap-1 sm:gap-2 h-6 sm:h-7 px-2 sm:px-2.5 text-sm rounded-lg text-foreground hover:bg-muted/30 focus-visible:ring-1 focus-visible:ring-offset-0 focus-visible:ring-primary transition-all duration-200"
             aria-label={`Selected model: ${selectedModel}`}
           >
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1 sm:gap-1.5">
               <div className="scale-75">{getModelIcon(selectedModel)}</div>
-              <span className="font-medium max-w-[100px] truncate text-xs">{selectedModel.replace("ollama:", "")}</span>
-              <div className="flex items-center gap-0.5 scale-75">{getModelBadges(selectedModel)}</div>
+              <span className="font-medium max-w-[80px] sm:max-w-[100px] truncate text-xs">{selectedModel.replace("ollama:", "")}</span>
+              <div className="hidden sm:flex items-center gap-0.5 scale-75">{getModelBadges(selectedModel)}</div>
               <ChevronDown className="w-3 h-3 opacity-50" />
             </div>
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent className="w-[480px] max-h-[600px] overflow-hidden p-0" align="start">
+        <DropdownMenuContent className="w-[min(480px,calc(100vw-1rem))] max-h-[70vh] p-0" align="start">
           <div className="bg-background border-0">
             {/* Search Header */}
             <div className="p-4 border-b border-border/50">
@@ -1375,7 +1512,7 @@ const PureChatModelDropdown = () => {
               </div>
             </div>
 
-            <div className="max-h-[500px] overflow-y-auto">
+            <div className="max-h-[calc(70vh-80px)] overflow-y-auto">
               {/* Favorites Section */}
               {filteredFavorites.length > 0 && (
                 <div className="p-4">

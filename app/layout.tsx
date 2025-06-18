@@ -111,6 +111,14 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&display=swap"
           as="style"
         />
+
+        {/* PWA and App Icon metadata */}
+        <link rel="manifest" href="/manifest.json" />
+        <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+        <meta name="theme-color" content="#ffffff" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="LoveChat" />
       </head>
       <body className={`${fontVariables} antialiased font-sans`}>
       <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>

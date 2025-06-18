@@ -47,9 +47,10 @@ import { useThread } from "@/frontend/hooks/useThread"
 interface ArtifactGalleryProps {
   threadId?: string
   className?: string
+  showHeader?: boolean
 }
 
-export function ArtifactGallery({ threadId, className }: ArtifactGalleryProps) {
+export function ArtifactGallery({ threadId, className, showHeader = true }: ArtifactGalleryProps) {
   const {
     artifacts,
     isLoading,
@@ -326,21 +327,23 @@ export function ArtifactGallery({ threadId, className }: ArtifactGalleryProps) {
   return (
     <div className={cn("space-y-4", className)}>
       {/* Header */}
-      <Card className="bg-gradient-to-r from-primary/10 to-primary/5 p-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Archive className="h-6 w-6 text-primary" />
-            <h2 className="text-lg font-semibold">Artifact Management</h2>
+      {showHeader && (
+        <Card className="bg-gradient-to-r from-primary/10 to-primary/5 p-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Archive className="h-6 w-6 text-primary" />
+              <h2 className="text-lg font-semibold">Artifact Management</h2>
+            </div>
+            <Button onClick={() => setShowCreateDialog(true)} size="sm">
+              <Plus className="h-4 w-4 mr-2" />
+              Create Artifact
+            </Button>
           </div>
-          <Button onClick={() => setShowCreateDialog(true)} size="sm">
-            <Plus className="h-4 w-4 mr-2" />
-            Create Artifact
-          </Button>
-        </div>
-      </Card>
+        </Card>
+      )}
 
       {/* Search and Filters */}
-      <Card className="bg-muted/50 p-4">
+      <Card className="bg-muted/50 p-4" style={{ marginTop: showHeader ? undefined : '0' }}>
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />

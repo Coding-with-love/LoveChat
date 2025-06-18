@@ -58,7 +58,7 @@ function PureMessages({
       return acc
     }, {}),
   )
-  const { profile } = useAuth()
+  const { profile, user } = useAuth()
 
   // Text selection and AI actions
   const { selection, clearSelection } = useTextSelection()
@@ -697,7 +697,7 @@ function PureMessages({
     return (
       <ChatLandingPage
         onPromptClick={onPromptClick || (() => {})}
-        userName={profile?.full_name || profile?.username || ""}
+        userName={profile?.full_name || profile?.username || user?.email?.split("@")[0] || ""}
       />
     )
   }

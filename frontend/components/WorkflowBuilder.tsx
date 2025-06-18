@@ -301,10 +301,10 @@ export function WorkflowBuilder({ open, onOpenChange, threadId, onRefreshMessage
                     <span className="xs:hidden">Generate</span>
                   </Button>
                   <Button onClick={handleCreateNew} className="flex items-center gap-2 justify-center" size="sm">
-                    <Plus className="h-4 w-4" />
+                  <Plus className="h-4 w-4" />
                     <span className="hidden xs:inline">New Workflow</span>
                     <span className="xs:hidden">New</span>
-                  </Button>
+                </Button>
                 </div>
               </div>
 
@@ -388,9 +388,9 @@ export function WorkflowBuilder({ open, onOpenChange, threadId, onRefreshMessage
                             <div className="flex items-center gap-1 flex-wrap min-w-0">
                               {workflow.tags.slice(0, 3).map((tag) => (
                                 <Badge key={tag} variant="outline" className="text-xs truncate">
-                                  {tag}
-                                </Badge>
-                              ))}
+                                {tag}
+                              </Badge>
+                            ))}
                               {workflow.tags.length > 3 && (
                                 <Badge variant="outline" className="text-xs">
                                   +{workflow.tags.length - 3}
@@ -637,27 +637,27 @@ export function WorkflowBuilder({ open, onOpenChange, threadId, onRefreshMessage
                 {/* Scrollable variables section */}
                 <div className="max-h-[50vh] overflow-y-auto">
                   <div className="space-y-4 pr-2">
-                    {/* Input variables */}
-                    {extractVariables(workflowToExecute.steps).map((variable) => (
+                {/* Input variables */}
+                {extractVariables(workflowToExecute.steps).map((variable) => (
                       <div key={variable} className="space-y-2">
                         <Label htmlFor={variable} className="text-sm font-medium">
                           {variable.replace(/([A-Z_])/g, " $1").trim().replace(/^\w/, c => c.toUpperCase())}
-                        </Label>
-                        <Textarea
-                          id={variable}
-                          value={executionInputs[variable] || ""}
-                          onChange={(e) =>
-                            setExecutionInputs((prev) => ({
-                              ...prev,
-                              [variable]: e.target.value,
-                            }))
-                          }
+                    </Label>
+                    <Textarea
+                      id={variable}
+                      value={executionInputs[variable] || ""}
+                      onChange={(e) =>
+                        setExecutionInputs((prev) => ({
+                          ...prev,
+                          [variable]: e.target.value,
+                        }))
+                      }
                           placeholder={`Enter ${variable.replace(/([A-Z_])/g, " $1").trim().toLowerCase()}...`}
                           className="min-h-[80px] resize-none"
                           rows={3}
-                        />
-                      </div>
-                    ))}
+                    />
+                  </div>
+                ))}
                   </div>
                 </div>
 

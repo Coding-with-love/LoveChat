@@ -98,7 +98,7 @@ export function ModelManager() {
   const getModelInfo = (model: AIModel): ModelInfo => {
     const config = getModelConfig(model)
     const features = []
-
+    
     // Add feature badges based on model capabilities
     if (config.supportsSearch) {
       features.push({
@@ -107,7 +107,7 @@ export function ModelManager() {
         color: "bg-blue-500/10 text-blue-600 border-blue-500/20",
       })
     }
-
+    
     if (config.supportsThinking) {
       features.push({
         icon: <Sparkles className="h-3 w-3" />,
@@ -159,7 +159,7 @@ export function ModelManager() {
     switch (config.provider) {
       case "openai":
         providerName = "OpenAI"
-
+        
         // OpenAI model descriptions
         if (model.includes("o3")) {
           description = "OpenAI's most advanced reasoning model, excelling at complex problem-solving."
@@ -176,7 +176,7 @@ export function ModelManager() {
 
       case "google":
         providerName = "Google"
-
+        
         // Google model descriptions
         if (model.includes("2.5")) {
           if (model.includes("thinking")) {
@@ -195,7 +195,7 @@ export function ModelManager() {
         } else {
           description = "Advanced language model from Google."
         }
-
+        
         searchUrl = "https://gemini.google.com"
         break
 
@@ -219,7 +219,7 @@ export function ModelManager() {
 
     const hasUserKey = !!getKey(config.provider)
     let hasApiKey = false
-
+    
     // Determine if model has required API keys based on provider requirements
     if (config.provider === "ollama") {
       hasApiKey = true // Ollama doesn't need API keys
@@ -317,16 +317,16 @@ export function ModelManager() {
 
   // Get all available models
   const allModels = [...AI_MODELS, ...customModels]
-
+  
   // Filter and search models
   const filteredModels = allModels.map(getModelInfo).filter((modelInfo) => {
     const matchesSearch =
       modelInfo.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      modelInfo.provider.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      modelInfo.description.toLowerCase().includes(searchQuery.toLowerCase())
-
-    return matchesSearch && modelMatchesFilters(modelInfo)
-  })
+                           modelInfo.provider.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                           modelInfo.description.toLowerCase().includes(searchQuery.toLowerCase())
+      
+      return matchesSearch && modelMatchesFilters(modelInfo)
+    })
 
   // Sort models - by provider when no filters, by relevance when filtered
   const hasActiveFilters =
@@ -335,8 +335,8 @@ export function ModelManager() {
     filters.capabilities.length > 0 ||
     filters.showOnlyAvailable ||
     filters.showOnlyFavorites
-
-  const sortedModels = hasActiveFilters
+  
+  const sortedModels = hasActiveFilters 
     ? filteredModels.sort((a, b) => {
         // Sort by enabled status first, then alphabetically
         if (a.isEnabled !== b.isEnabled) {
@@ -358,12 +358,12 @@ export function ModelManager() {
     ? null
     : sortedModels.reduce(
         (groups, modelInfo) => {
-          const provider = modelInfo.provider
-          if (!groups[provider]) {
-            groups[provider] = []
-          }
-          groups[provider].push(modelInfo)
-          return groups
+    const provider = modelInfo.provider
+    if (!groups[provider]) {
+      groups[provider] = []
+    }
+    groups[provider].push(modelInfo)
+    return groups
         },
         {} as Record<string, ModelInfo[]>,
       )
@@ -408,8 +408,8 @@ export function ModelManager() {
     (info) =>
       info.hasApiKey &&
       (info.model.includes("gpt-4o") ||
-        info.model.includes("gemini-2") ||
-        info.model.includes("o1") ||
+      info.model.includes("gemini-2") || 
+      info.model.includes("o1") ||
         info.model.includes("claude")),
   )
 
@@ -451,7 +451,7 @@ export function ModelManager() {
             Choose which models appear in your model selector. This won't affect existing conversations.
           </p>
         </div>
-
+        
         {/* Search */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -502,23 +502,23 @@ export function ModelManager() {
                     <div>
                       <h5 className="text-xs font-medium text-muted-foreground mb-2">Providers</h5>
                       <div className="space-y-2">
-                        {filterOptions.providers.map((provider) => (
-                          <div key={provider.value} className="flex items-center space-x-2">
-                            <Switch
-                              id={`provider-${provider.value}`}
-                              checked={filters.providers.includes(provider.value)}
+                                               {filterOptions.providers.map((provider) => (
+                           <div key={provider.value} className="flex items-center space-x-2">
+                             <Switch
+                               id={`provider-${provider.value}`}
+                               checked={filters.providers.includes(provider.value)}
                               onCheckedChange={() => updateFilter("providers", provider.value)}
-                              className="scale-75"
-                            />
-                            <label
-                              htmlFor={`provider-${provider.value}`}
-                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center gap-2 cursor-pointer"
-                            >
-                              {provider.icon}
-                              {provider.label}
-                            </label>
-                          </div>
-                        ))}
+                               className="scale-75"
+                             />
+                             <label
+                               htmlFor={`provider-${provider.value}`}
+                               className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center gap-2 cursor-pointer"
+                             >
+                               {provider.icon}
+                               {provider.label}
+                             </label>
+                           </div>
+                         ))}
                       </div>
                     </div>
 
@@ -526,23 +526,23 @@ export function ModelManager() {
                     <div>
                       <h5 className="text-xs font-medium text-muted-foreground mb-2">Features</h5>
                       <div className="space-y-2">
-                        {filterOptions.features.map((feature) => (
-                          <div key={feature.value} className="flex items-center space-x-2">
-                            <Switch
-                              id={`feature-${feature.value}`}
-                              checked={filters.features.includes(feature.value)}
+                                               {filterOptions.features.map((feature) => (
+                           <div key={feature.value} className="flex items-center space-x-2">
+                             <Switch
+                               id={`feature-${feature.value}`}
+                               checked={filters.features.includes(feature.value)}
                               onCheckedChange={() => updateFilter("features", feature.value)}
-                              className="scale-75"
-                            />
-                            <label
-                              htmlFor={`feature-${feature.value}`}
-                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center gap-2 cursor-pointer"
-                            >
-                              <span className={feature.color}>{feature.icon}</span>
-                              {feature.label}
-                            </label>
-                          </div>
-                        ))}
+                               className="scale-75"
+                             />
+                             <label
+                               htmlFor={`feature-${feature.value}`}
+                               className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center gap-2 cursor-pointer"
+                             >
+                               <span className={feature.color}>{feature.icon}</span>
+                               {feature.label}
+                             </label>
+                           </div>
+                         ))}
                       </div>
                     </div>
 
@@ -550,41 +550,41 @@ export function ModelManager() {
                     <div>
                       <h5 className="text-xs font-medium text-muted-foreground mb-2">Capabilities</h5>
                       <div className="space-y-2">
-                        {filterOptions.capabilities.map((capability) => (
-                          <div key={capability.value} className="flex items-center space-x-2">
-                            <Switch
-                              id={`capability-${capability.value}`}
-                              checked={filters.capabilities.includes(capability.value)}
+                                               {filterOptions.capabilities.map((capability) => (
+                           <div key={capability.value} className="flex items-center space-x-2">
+                             <Switch
+                               id={`capability-${capability.value}`}
+                               checked={filters.capabilities.includes(capability.value)}
                               onCheckedChange={() => updateFilter("capabilities", capability.value)}
-                              className="scale-75"
-                            />
-                            <label
-                              htmlFor={`capability-${capability.value}`}
-                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                            >
-                              {capability.label}
-                            </label>
-                          </div>
-                        ))}
+                               className="scale-75"
+                             />
+                             <label
+                               htmlFor={`capability-${capability.value}`}
+                               className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                             >
+                               {capability.label}
+                             </label>
+                           </div>
+                         ))}
                       </div>
                     </div>
 
                     {/* Show Only Available */}
                     <div className="pt-2 border-t">
-                      <div className="flex items-center space-x-2">
-                        <Switch
-                          id="show-only-available"
-                          checked={filters.showOnlyAvailable}
+                                           <div className="flex items-center space-x-2">
+                         <Switch
+                           id="show-only-available"
+                           checked={filters.showOnlyAvailable}
                           onCheckedChange={() => updateFilter("showOnlyAvailable", !filters.showOnlyAvailable)}
-                          className="scale-75"
-                        />
-                        <label
-                          htmlFor="show-only-available"
-                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                        >
-                          Show only available models
-                        </label>
-                      </div>
+                           className="scale-75"
+                         />
+                         <label
+                           htmlFor="show-only-available"
+                           className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                         >
+                           Show only available models
+                         </label>
+                       </div>
                     </div>
 
                     {/* Show Only Favorites */}
@@ -704,13 +704,13 @@ export function ModelManager() {
             <div key={provider} className="space-y-4">
               <div
                 className={cn(
-                  "flex items-center gap-3 p-4 rounded-lg transition-all duration-200",
+                "flex items-center gap-3 p-4 rounded-lg transition-all duration-200",
                   models.some((m) => m.isEnabled) && "bg-primary/5 border border-primary/20",
                 )}
               >
-                <ProviderLogo
-                  provider={provider.toLowerCase() as "openai" | "google" | "openrouter" | "ollama"}
-                  size="md"
+                <ProviderLogo 
+                  provider={provider.toLowerCase() as "openai" | "google" | "openrouter" | "ollama"} 
+                  size="md" 
                 />
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
@@ -775,7 +775,7 @@ export function ModelManager() {
                               </button>
                             </div>
                           </div>
-
+                          
                           {/* Features */}
                           <div className="flex items-center gap-3 flex-wrap ml-12">
                             {/* Core Features */}
@@ -783,29 +783,29 @@ export function ModelManager() {
                               {modelInfo.features
                                 .filter((f) => ["Search", "Vision", "PDFs"].includes(f.label))
                                 .map((feature, index) => (
-                                  <Badge
-                                    key={index}
-                                    variant="secondary"
-                                    className={cn("text-xs gap-1 font-medium", feature.color)}
-                                  >
-                                    {feature.icon}
-                                    {feature.label}
-                                  </Badge>
-                                ))}
+                                <Badge
+                                  key={index}
+                                  variant="secondary"
+                                  className={cn("text-xs gap-1 font-medium", feature.color)}
+                                >
+                                  {feature.icon}
+                                  {feature.label}
+                                </Badge>
+                              ))}
                             </div>
-
+                            
                             {/* Performance Features */}
                             <div className="flex items-center gap-1">
                               {modelInfo.features
                                 .filter((f) => ["Fast", "Thinking", "Reasoning"].includes(f.label))
                                 .map((feature, index) => (
                                   <Badge key={index} variant="outline" className={cn("text-xs gap-1", feature.color)}>
-                                    {feature.icon}
-                                    {feature.label}
-                                  </Badge>
-                                ))}
+                                  {feature.icon}
+                                  {feature.label}
+                                </Badge>
+                              ))}
                             </div>
-
+                            
                             {/* Status Indicators */}
                             {modelInfo.isUsingDefaultKey && (
                               <Badge
@@ -819,7 +819,7 @@ export function ModelManager() {
                           </div>
                         </div>
                       </div>
-
+                      
                       {/* Actions */}
                       <div className="flex items-center gap-3">
                         {modelInfo.searchUrl && (
@@ -858,7 +858,7 @@ export function ModelManager() {
                             )}
                           />
                         </Button>
-
+                        
                         <Switch
                           checked={modelInfo.isEnabled}
                           onCheckedChange={() => handleToggleModel(modelInfo.model)}
@@ -866,7 +866,7 @@ export function ModelManager() {
                         />
                       </div>
                     </div>
-
+                    
                     {/* API Key Required Overlay */}
                     {!modelInfo.hasApiKey && (
                       <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center">
@@ -933,7 +933,7 @@ export function ModelManager() {
                           </button>
                         </div>
                       </div>
-
+                      
                       {/* Features */}
                       <div className="flex items-center gap-3 flex-wrap ml-12">
                         {/* Core Features */}
@@ -941,29 +941,29 @@ export function ModelManager() {
                           {modelInfo.features
                             .filter((f) => ["Search", "Vision", "PDFs"].includes(f.label))
                             .map((feature, index) => (
-                              <Badge
-                                key={index}
-                                variant="secondary"
-                                className={cn("text-xs gap-1 font-medium", feature.color)}
-                              >
-                                {feature.icon}
-                                {feature.label}
-                              </Badge>
-                            ))}
+                            <Badge
+                              key={index}
+                              variant="secondary"
+                              className={cn("text-xs gap-1 font-medium", feature.color)}
+                            >
+                              {feature.icon}
+                              {feature.label}
+                            </Badge>
+                          ))}
                         </div>
-
+                        
                         {/* Performance Features */}
                         <div className="flex items-center gap-1">
                           {modelInfo.features
                             .filter((f) => ["Fast", "Thinking", "Reasoning"].includes(f.label))
                             .map((feature, index) => (
                               <Badge key={index} variant="outline" className={cn("text-xs gap-1", feature.color)}>
-                                {feature.icon}
-                                {feature.label}
-                              </Badge>
-                            ))}
+                              {feature.icon}
+                              {feature.label}
+                            </Badge>
+                          ))}
                         </div>
-
+                        
                         {/* Status Indicators */}
                         {modelInfo.isUsingDefaultKey && (
                           <Badge
@@ -977,7 +977,7 @@ export function ModelManager() {
                       </div>
                     </div>
                   </div>
-
+                  
                   {/* Actions */}
                   <div className="flex items-center gap-3">
                     {modelInfo.searchUrl && (
@@ -1016,7 +1016,7 @@ export function ModelManager() {
                         )}
                       />
                     </Button>
-
+                    
                     <Switch
                       checked={modelInfo.isEnabled}
                       onCheckedChange={() => handleToggleModel(modelInfo.model)}
@@ -1024,7 +1024,7 @@ export function ModelManager() {
                     />
                   </div>
                 </div>
-
+                
                 {/* API Key Required Overlay */}
                 {!modelInfo.hasApiKey && (
                   <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center">

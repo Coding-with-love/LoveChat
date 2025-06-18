@@ -202,8 +202,8 @@ export function ArtifactViewer({ open, onOpenChange, artifact }: ArtifactViewerP
               </Button>
             </div>
           )}
-          <div className="prose prose-sm dark:prose-invert max-w-none w-full prose-table:border-collapse prose-table:border prose-table:border-border prose-th:border prose-th:border-border prose-th:bg-muted/50 prose-th:px-4 prose-th:py-2 prose-th:text-left prose-th:font-medium prose-td:border prose-td:border-border prose-td:px-4 prose-td:py-2 prose-tr:border-b prose-tr:border-border prose-table:w-full prose-table:rounded-md prose-table:shadow-sm">
-            <div className="overflow-x-auto">
+          <div className="prose prose-sm dark:prose-invert max-w-none w-full prose-table:border-collapse prose-table:border prose-table:border-border prose-th:border prose-th:border-border prose-th:bg-muted/50 prose-th:px-2 sm:prose-th:px-4 prose-th:py-2 prose-th:text-left prose-th:font-medium prose-td:border prose-td:border-border prose-td:px-2 sm:prose-td:px-4 prose-td:py-2 prose-tr:border-b prose-tr:border-border prose-table:w-full prose-table:rounded-md prose-table:shadow-sm">
+            <div className="overflow-x-auto max-w-full">
               <MarkdownRenderer 
                 content={contentToRender} 
                 id={`artifact-${artifact.id}`} 
@@ -244,6 +244,7 @@ export function ArtifactViewer({ open, onOpenChange, artifact }: ArtifactViewerP
                 fontSize: "0.875rem",
                 width: "100%",
                 overflowX: "auto",
+                maxWidth: "100%",
               }}
               showLineNumbers
               wrapLines={false}
@@ -273,7 +274,7 @@ export function ArtifactViewer({ open, onOpenChange, artifact }: ArtifactViewerP
           </div>
         )}
         <div className="w-full">
-          <pre className="whitespace-pre text-sm bg-muted p-4 rounded-lg overflow-x-auto">{contentToRender}</pre>
+          <pre className="whitespace-pre-wrap text-sm bg-muted p-3 sm:p-4 rounded-lg overflow-x-auto max-w-full break-words">{contentToRender}</pre>
         </div>
       </div>
     )
@@ -320,8 +321,8 @@ export function ArtifactViewer({ open, onOpenChange, artifact }: ArtifactViewerP
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[98vw] max-w-[1400px] h-[90vh] max-h-[90vh] overflow-hidden flex flex-col p-0">
-        <DialogHeader className="flex-shrink-0 p-6 pb-4 border-b">
+      <DialogContent className="w-[98vw] max-w-[1400px] h-[90vh] max-h-[90vh] overflow-hidden flex flex-col p-0 sm:w-[95vw] sm:h-[85vh]">
+        <DialogHeader className="flex-shrink-0 p-4 sm:p-6 pb-4 border-b">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3 flex-1 min-w-0">
               {artifact.content_type === "code" ||
@@ -342,40 +343,40 @@ export function ArtifactViewer({ open, onOpenChange, artifact }: ArtifactViewerP
 
           {/* Action Buttons */}
           <div className="flex items-center gap-2 pt-3 flex-wrap">
-            <Button variant="outline" size="sm" onClick={handleCopy}>
+            <Button variant="outline" size="sm" onClick={handleCopy} className="flex-shrink-0">
               <Copy className="h-4 w-4 mr-2" />
-              Copy
+              <span className="hidden sm:inline">Copy</span>
             </Button>
-            <Button variant="outline" size="sm" onClick={handleDownload}>
+            <Button variant="outline" size="sm" onClick={handleDownload} className="flex-shrink-0">
               <Download className="h-4 w-4 mr-2" />
-              Download
+              <span className="hidden sm:inline">Download</span>
             </Button>
-            <Button variant="outline" size="sm" onClick={handlePin}>
+            <Button variant="outline" size="sm" onClick={handlePin} className="flex-shrink-0">
               <Pin className="h-4 w-4 mr-2" />
-              {artifact.is_pinned ? "Unpin" : "Pin"}
+              <span className="hidden sm:inline">{artifact.is_pinned ? "Unpin" : "Pin"}</span>
             </Button>
-            <Button variant="outline" size="sm" onClick={handleArchive}>
+            <Button variant="outline" size="sm" onClick={handleArchive} className="flex-shrink-0">
               <Archive className="h-4 w-4 mr-2" />
-              Archive
+              <span className="hidden sm:inline">Archive</span>
             </Button>
           </div>
         </DialogHeader>
 
         <div className="flex-1 overflow-hidden">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
-            <div className="flex justify-center px-6 mt-4">
-              <TabsList className="grid grid-cols-3 flex-shrink-0">
-                <TabsTrigger value="content">Content</TabsTrigger>
-                <TabsTrigger value="metadata">Details</TabsTrigger>
-                <TabsTrigger value="history">History</TabsTrigger>
+            <div className="flex justify-center px-4 sm:px-6 mt-4">
+              <TabsList className="grid grid-cols-3 flex-shrink-0 w-full max-w-md">
+                <TabsTrigger value="content" className="text-xs sm:text-sm">Content</TabsTrigger>
+                <TabsTrigger value="metadata" className="text-xs sm:text-sm">Details</TabsTrigger>
+                <TabsTrigger value="history" className="text-xs sm:text-sm">History</TabsTrigger>
               </TabsList>
             </div>
 
-            <TabsContent value="content" className="flex-1 overflow-hidden mt-4 mx-6 mb-6">
+            <TabsContent value="content" className="flex-1 overflow-hidden mt-4 mx-4 sm:mx-6 mb-4 sm:mb-6">
               <div className="h-full w-full overflow-auto">{renderContent()}</div>
             </TabsContent>
 
-            <TabsContent value="metadata" className="flex-1 overflow-hidden mt-4 mx-6 mb-6">
+            <TabsContent value="metadata" className="flex-1 overflow-hidden mt-4 mx-4 sm:mx-6 mb-4 sm:mb-6">
               <ScrollArea className="h-full w-full">
                 <div className="space-y-6 pr-4">
                   {/* Basic Info */}
@@ -480,7 +481,7 @@ export function ArtifactViewer({ open, onOpenChange, artifact }: ArtifactViewerP
               </ScrollArea>
             </TabsContent>
 
-            <TabsContent value="history" className="flex-1 overflow-hidden mt-4 mx-6 mb-6">
+            <TabsContent value="history" className="flex-1 overflow-hidden mt-4 mx-4 sm:mx-6 mb-4 sm:mb-6">
               <ScrollArea className="h-full w-full">
                 <div className="space-y-4 pr-4">
                   <div className="flex items-center justify-between">
@@ -522,7 +523,7 @@ export function ArtifactViewer({ open, onOpenChange, artifact }: ArtifactViewerP
                               className="h-7 text-xs"
                             >
                               <Eye className="h-3 w-3 mr-1" />
-                              View
+                              <span className="hidden sm:inline">View</span>
                             </Button>
                           </div>
                         </div>
@@ -547,7 +548,7 @@ export function ArtifactViewer({ open, onOpenChange, artifact }: ArtifactViewerP
                               <p className="text-sm text-muted-foreground">
                                 {version.content.length} characters, {version.content.split("\n").length} lines
                               </p>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1 sm:gap-2">
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -555,7 +556,7 @@ export function ArtifactViewer({ open, onOpenChange, artifact }: ArtifactViewerP
                                   className="h-7 text-xs"
                                 >
                                   <Eye className="h-3 w-3 mr-1" />
-                                  View
+                                  <span className="hidden sm:inline">View</span>
                                 </Button>
                                 <Button
                                   variant="ghost"
@@ -564,7 +565,7 @@ export function ArtifactViewer({ open, onOpenChange, artifact }: ArtifactViewerP
                                   className="h-7 text-xs"
                                 >
                                   <Download className="h-3 w-3 mr-1" />
-                                  Download
+                                  <span className="hidden sm:inline">Download</span>
                                 </Button>
                                 <Button
                                   variant="ghost"
@@ -573,22 +574,22 @@ export function ArtifactViewer({ open, onOpenChange, artifact }: ArtifactViewerP
                                   className="h-7 text-xs text-orange-600 hover:text-orange-700"
                                 >
                                   <RotateCcw className="h-3 w-3 mr-1" />
-                                  Restore
+                                  <span className="hidden sm:inline">Restore</span>
                                 </Button>
                               </div>
                             </div>
                           </div>
-                        ))
-                      ) : (
-                        <div className="text-center py-8">
-                          <History className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                          <h3 className="text-lg font-medium mb-2">No version history</h3>
-                          <p className="text-muted-foreground">
-                            This artifact hasn't been updated yet. Version history will appear here when changes are
-                            made.
-                          </p>
-                        </div>
-                      )}
+                                                ))
+                       ) : (
+                          <div className="text-center py-8">
+                            <History className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                            <h3 className="text-lg font-medium mb-2">No version history</h3>
+                            <p className="text-muted-foreground">
+                              This artifact hasn't been updated yet. Version history will appear here when changes are
+                              made.
+                            </p>
+                          </div>
+                       )}
                     </div>
                   )}
                 </div>

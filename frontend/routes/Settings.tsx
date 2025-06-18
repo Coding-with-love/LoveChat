@@ -7,6 +7,7 @@ import CustomizationSettings from "@/frontend/components/CustomizationSettings"
 import HistorySyncSettings from "@/frontend/components/HistorySyncSettings"
 import AttachmentsSettings from "@/frontend/components/AttachmentsSettings"
 import { ArtifactGallery } from "@/frontend/components/ArtifactGallery"
+import { CreateArtifactDialog } from "@/frontend/components/CreateArtifactDialog"
 import { Link } from "react-router"
 import { buttonVariants } from "../components/ui/button"
 import {
@@ -27,6 +28,7 @@ import {
   Clock,
   Lock,
   Globe,
+  Plus,
 } from "lucide-react"
 import { useAuth } from "@/frontend/components/AuthProvider"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/frontend/components/ui/card"
@@ -50,6 +52,7 @@ function Settings() {
   const [showForceLoadShares, setShowForceLoadShares] = useState(false)
   const [globalLoading, setGlobalLoading] = useState(true)
   const [activeTab, setActiveTab] = useState("account")
+  const [createArtifactOpen, setCreateArtifactOpen] = useState(false)
   const { user, signOut } = useAuth()
 
   // Add tab visibility management to refresh state when returning to settings
@@ -351,18 +354,24 @@ function Settings() {
     <div className="space-y-6">
       <Card className="shadow-sm border-0 bg-gradient-to-br from-background to-muted/20">
         <CardHeader className="pb-4">
-          <div className="flex items-center gap-3">
-            <div className="p-3 rounded-xl bg-gradient-to-br from-emerald-500/10 to-teal-500/10 border border-emerald-500/20">
-              <Archive className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-3 rounded-xl bg-gradient-to-br from-emerald-500/10 to-teal-500/10 border border-emerald-500/20">
+                <Archive className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div>
+                <CardTitle className="text-xl">Artifact Management</CardTitle>
+                <CardDescription>Manage your saved artifacts, code snippets, and generated content</CardDescription>
+              </div>
             </div>
-            <div>
-              <CardTitle className="text-xl">Artifact Management</CardTitle>
-              <CardDescription>Manage your saved artifacts, code snippets, and generated content</CardDescription>
-            </div>
+            <Button onClick={() => setCreateArtifactOpen(true)} size="sm">
+              <Plus className="h-4 w-4 mr-2" />
+              Create Artifact
+            </Button>
           </div>
         </CardHeader>
         <CardContent>
-          <ArtifactGallery />
+          <ArtifactGallery showHeader={false} />
         </CardContent>
       </Card>
     </div>
@@ -834,6 +843,12 @@ function Settings() {
           existingShare={editingShare}
         />
       )}
+
+      {/* Create Artifact Dialog */}
+      <CreateArtifactDialog
+        open={createArtifactOpen}
+        onOpenChange={setCreateArtifactOpen}
+      />
     </div>
   )
 }
