@@ -1,12 +1,18 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { Button } from "@/frontend/components/ui/button"
-import { Input } from "@/frontend/components/ui/input"
-import { useOllamaStore } from "@/frontend/stores/OllamaStore"
-import { useModelStore } from "@/frontend/stores/ModelStore"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/frontend/components/ui/card"
-import { Badge } from "@/frontend/components/ui/badge"
+import { useState, useEffect } from "react";
+import { Button } from "@/frontend/components/ui/button";
+import { Input } from "@/frontend/components/ui/input";
+import { useOllamaStore } from "@/frontend/stores/OllamaStore";
+import { useModelStore } from "@/frontend/stores/ModelStore";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/frontend/components/ui/card";
+import { Badge } from "@/frontend/components/ui/badge";
 import {
   Loader2,
   CheckCircle,
@@ -18,99 +24,124 @@ import {
   Lightbulb,
   Sparkles,
   ChevronDown,
-} from "lucide-react"
-import { toast } from "sonner"
-import { Switch } from "@/frontend/components/ui/switch"
-import { ProviderLogo } from "@/frontend/components/ProviderLogo"
-import { cn } from "@/lib/utils"
+  Square,
+  CheckSquare,
+} from "lucide-react";
+import { toast } from "sonner";
+import { Switch } from "@/frontend/components/ui/switch";
+import { ProviderLogo } from "@/frontend/components/ProviderLogo";
+import { cn } from "@/lib/utils";
 
 export function OllamaSettings() {
+  const { baseUrl, setBaseUrl, isConnected, availableModels, testConnection } =
+    useOllamaStore();
   const {
-    baseUrl,
-    setBaseUrl,
-    isConnected,
-    availableModels,
-    testConnection,
-    useDirectConnection,
-    setUseDirectConnection,
-  } = useOllamaStore()
-  const { addCustomModel, removeCustomModel, customModels, selectedModel, setModel } = useModelStore()
+    addCustomModel,
+    removeCustomModel,
+    customModels,
+    selectedModel,
+    setModel,
+  } = useModelStore();
 
-  const [url, setUrl] = useState(baseUrl)
-  const [isLoading, setIsLoading] = useState(false)
-  const [isRefreshing, setIsRefreshing] = useState(false)
-  const [showSetupGuide, setShowSetupGuide] = useState(false)
+  const [url, setUrl] = useState(baseUrl);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showSetupGuide, setShowSetupGuide] = useState(false);
 
   useEffect(() => {
-    setUrl(baseUrl)
-  }, [baseUrl])
+    setUrl(baseUrl);
+  }, [baseUrl]);
 
   const handleConnect = async () => {
-    setIsLoading(true)
+    setIsLoading(true);
     try {
-      setBaseUrl(url)
-      const success = await testConnection()
+      setBaseUrl(url);
+      const success = await testConnection();
 
       if (success) {
-        toast.success("Successfully connected to Ollama")
+        toast.success("Successfully connected to Ollama");
       } else {
-        toast.error("Failed to connect to Ollama")
+        toast.error("Failed to connect to Ollama");
       }
     } catch (error) {
-      console.error("Error connecting to Ollama:", error)
-      toast.error("Error connecting to Ollama")
+      console.error("Error connecting to Ollama:", error);
+      toast.error("Error connecting to Ollama");
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
   const handleRefresh = async () => {
-    setIsRefreshing(true)
+    setIsRefreshing(true);
     try {
-      const success = await testConnection()
+      const success = await testConnection();
 
       if (success) {
-        toast.success("Successfully refreshed Ollama models")
+        toast.success("Successfully refreshed Ollama models");
       } else {
-        toast.error("Failed to refresh Ollama models")
+        toast.error("Failed to refresh Ollama models");
       }
     } catch (error) {
-      console.error("Error refreshing Ollama models:", error)
-      toast.error("Error refreshing Ollama models")
+      console.error("Error refreshing Ollama models:", error);
+      toast.error("Error refreshing Ollama models");
     } finally {
-      setIsRefreshing(false)
+      setIsRefreshing(false);
     }
-  }
+  };
 
   const handleAddModel = (modelName: string) => {
-    const ollamaModel = `ollama:${modelName}` as const
-    addCustomModel(ollamaModel)
-    toast.success(`Added ${modelName} to available models`)
-  }
+    const ollamaModel = `ollama:${modelName}` as const;
+    addCustomModel(ollamaModel);
+    toast.success(`Added ${modelName} to available models`);
+  };
 
   const handleRemoveModel = (modelName: string) => {
-    const ollamaModel = `ollama:${modelName}` as const
-    removeCustomModel(ollamaModel)
-    toast.success(`Removed ${modelName} from available models`)
-  }
+    const ollamaModel = `ollama:${modelName}` as const;
+    removeCustomModel(ollamaModel);
+    toast.success(`Removed ${modelName} from available models`);
+  };
 
   const handleSelectModel = (modelName: string) => {
-    const ollamaModel = `ollama:${modelName}` as const
-    setModel(ollamaModel)
-    toast.success(`Selected ${modelName}`)
-  }
+    const ollamaModel = `ollama:${modelName}` as const;
+    setModel(ollamaModel);
+    toast.success(`Selected ${modelName}`);
+  };
 
   const isModelAdded = (modelName: string) => {
-    return customModels.includes(`ollama:${modelName}` as const)
-  }
+    return customModels.includes(`ollama:${modelName}` as const);
+  };
 
   const isModelSelected = (modelName: string) => {
-    return selectedModel === `ollama:${modelName}`
-  }
+    return selectedModel === `ollama:${modelName}`;
+  };
+
+  // Function to toggle all Ollama models (add/remove from customModels)
+  const handleToggleAllOllamaModels = () => {
+    // Check if all available models are currently added to customModels
+    const allModelsAreAdded = availableModels.every((model) =>
+      isModelAdded(model),
+    );
+
+    if (allModelsAreAdded) {
+      // Deselect All (remove them from customModels)
+      availableModels.forEach((model) => {
+        // Ensure model name is prefixed correctly for removal
+        removeCustomModel(`ollama:${model}` as const);
+      });
+      toast.success("Deselected all Ollama models");
+    } else {
+      // Select All (add them to customModels)
+      availableModels.forEach((model) => {
+        // Ensure model name is prefixed correctly for addition
+        addCustomModel(`ollama:${model}` as const);
+      });
+      toast.success("Selected all Ollama models");
+    }
+  };
 
   // Get model features based on model name
   const getModelFeatures = (modelName: string) => {
-    const features = []
+    const features = [];
 
     // Add features based on model name patterns
     if (modelName.includes("vision") || modelName.includes("llava")) {
@@ -118,7 +149,7 @@ export function OllamaSettings() {
         icon: <Eye className="h-3 w-3" />,
         label: "Vision",
         color: "bg-green-500/10 text-green-600 border-green-500/20",
-      })
+      });
     }
 
     if (modelName.includes("coder") || modelName.includes("code")) {
@@ -126,15 +157,19 @@ export function OllamaSettings() {
         icon: <FileText className="h-3 w-3" />,
         label: "Code",
         color: "bg-blue-500/10 text-blue-600 border-blue-500/20",
-      })
+      });
     }
 
-    if (modelName.includes("reasoning") || modelName.includes("deepseek-r1") || modelName.includes("think")) {
+    if (
+      modelName.includes("reasoning") ||
+      modelName.includes("deepseek-r1") ||
+      modelName.includes("think")
+    ) {
       features.push({
         icon: <Lightbulb className="h-3 w-3" />,
         label: "Reasoning",
         color: "bg-orange-500/10 text-orange-600 border-orange-500/20",
-      })
+      });
     }
 
     if (modelName.includes("instruct") || modelName.includes("chat")) {
@@ -142,34 +177,34 @@ export function OllamaSettings() {
         icon: <Sparkles className="h-3 w-3" />,
         label: "Chat",
         color: "bg-purple-500/10 text-purple-600 border-purple-500/20",
-      })
+      });
     }
 
-    return features
-  }
+    return features;
+  };
 
   // Get model description based on name
   const getModelDescription = (modelName: string) => {
     if (modelName.includes("gemma")) {
-      return "Google's Gemma family model, optimized for efficiency and performance."
+      return "Google's Gemma family model, optimized for efficiency and performance.";
     } else if (modelName.includes("llama")) {
-      return "Meta's Llama model, excellent for general-purpose conversations."
+      return "Meta's Llama model, excellent for general-purpose conversations.";
     } else if (modelName.includes("mistral")) {
-      return "Mistral AI's model, known for strong reasoning capabilities."
+      return "Mistral AI's model, known for strong reasoning capabilities.";
     } else if (modelName.includes("deepseek")) {
-      return "DeepSeek's model, specialized in coding and reasoning tasks."
+      return "DeepSeek's model, specialized in coding and reasoning tasks.";
     } else if (modelName.includes("qwen")) {
-      return "Alibaba's Qwen model, multilingual and versatile."
+      return "Alibaba's Qwen model, multilingual and versatile.";
     } else if (modelName.includes("phi")) {
-      return "Microsoft's Phi model, small but capable."
+      return "Microsoft's Phi model, small but capable.";
     } else if (modelName.includes("vicuna")) {
-      return "Vicuna model, fine-tuned for conversation."
+      return "Vicuna model, fine-tuned for conversation.";
     } else if (modelName.includes("wizard")) {
-      return "WizardCoder model, specialized for programming tasks."
+      return "WizardCoder model, specialized for programming tasks.";
     } else {
-      return "Run this large language model locally on your machine."
+      return "Run this large language model locally on your machine.";
     }
-  }
+  };
 
   return (
     <Card className="shadow-sm border-0 bg-gradient-to-br from-background to-muted/20">
@@ -178,7 +213,9 @@ export function OllamaSettings() {
           <ProviderLogo provider="ollama" size="md" />
           <div>
             <CardTitle className="text-lg">Ollama Connection</CardTitle>
-            <CardDescription>Connect to your local or remote Ollama server</CardDescription>
+            <CardDescription>
+              Connect to your local or remote Ollama server
+            </CardDescription>
           </div>
         </div>
       </CardHeader>
@@ -195,7 +232,11 @@ export function OllamaSettings() {
                 onChange={(e) => setUrl(e.target.value)}
                 className="flex-1"
               />
-              <Button onClick={handleConnect} disabled={isLoading} className="min-w-[100px]">
+              <Button
+                onClick={handleConnect}
+                disabled={isLoading}
+                className="min-w-[100px]"
+              >
                 {isLoading ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -216,8 +257,12 @@ export function OllamaSettings() {
                   <CheckCircle className="h-5 w-5 text-green-600" />
                 </div>
                 <div>
-                  <span className="text-sm font-medium text-green-700 dark:text-green-400">🎉 Connected to Ollama</span>
-                  <p className="text-xs text-green-600 dark:text-green-500">Ready to use local models</p>
+                  <span className="text-sm font-medium text-green-700 dark:text-green-400">
+                    🎉 Connected to Ollama
+                  </span>
+                  <p className="text-xs text-green-600 dark:text-green-500">
+                    Ready to use local models
+                  </p>
                 </div>
               </>
             ) : (
@@ -229,36 +274,68 @@ export function OllamaSettings() {
                   <span className="text-sm font-medium text-orange-700 dark:text-orange-400">
                     ⏳ Waiting for connection
                   </span>
-                  <p className="text-xs text-orange-600 dark:text-orange-500">Make sure Ollama is running</p>
+                  <p className="text-xs text-orange-600 dark:text-orange-500">
+                    Make sure Ollama is running
+                  </p>
                 </div>
               </>
             )}
           </div>
         </div>
 
-        {/* Refresh Button */}
+        {/* Refresh and Select All/Deselect All Buttons */}
         <div className="flex justify-between items-center">
           <h3 className="text-base font-medium">Available Models</h3>
-          {isConnected && (
-            <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isRefreshing}>
-              {isRefreshing ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4 mr-2" />
-              )}
-              Refresh Models
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {" "}
+            {/* Group buttons here */}
+            {/* Conditionally render the Select/Deselect All button */}
+            {isConnected && availableModels.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleToggleAllOllamaModels}
+              >
+                {availableModels.every((model) => isModelAdded(model)) ? (
+                  <>
+                    <Square className="h-4 w-4 mr-2" />
+                    Deselect All
+                  </>
+                ) : (
+                  <>
+                    <CheckSquare className="h-4 w-4 mr-2" />
+                    Select All
+                  </>
+                )}
+              </Button>
+            )}
+            {/* Refresh button */}
+            {isConnected && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+              >
+                {isRefreshing ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                )}
+                Refresh Models
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Available Models - New Beautiful Card Layout */}
         {isConnected && availableModels.length > 0 && (
           <div className="space-y-4">
             {availableModels.map((model) => {
-              const features = getModelFeatures(model)
-              const description = getModelDescription(model)
-              const added = isModelAdded(model)
-              const selected = isModelSelected(model)
+              const features = getModelFeatures(model);
+              const description = getModelDescription(model);
+              const added = isModelAdded(model);
+              const selected = isModelSelected(model);
 
               return (
                 <div
@@ -278,7 +355,9 @@ export function OllamaSettings() {
                       <div className="flex-1 min-w-0 space-y-2">
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
-                            <h4 className="text-base font-semibold text-foreground truncate">{model}</h4>
+                            <h4 className="text-base font-semibold text-foreground truncate">
+                              {model}
+                            </h4>
                             {selected && (
                               <Badge
                                 variant="secondary"
@@ -288,14 +367,20 @@ export function OllamaSettings() {
                               </Badge>
                             )}
                           </div>
-                          <p className="text-sm text-muted-foreground">{description}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {description}
+                          </p>
                         </div>
 
                         {/* Features */}
                         {features.length > 0 && (
                           <div className="flex items-center gap-2 flex-wrap">
                             {features.map((feature, index) => (
-                              <Badge key={index} variant="secondary" className={cn("text-xs gap-1", feature.color)}>
+                              <Badge
+                                key={index}
+                                variant="secondary"
+                                className={cn("text-xs gap-1", feature.color)}
+                              >
                                 {feature.icon}
                                 {feature.label}
                               </Badge>
@@ -330,19 +415,28 @@ export function OllamaSettings() {
                           )}
                         </>
                       ) : (
-                        <Button variant="outline" size="sm" onClick={() => handleAddModel(model)} className="gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleAddModel(model)}
+                          className="gap-2"
+                        >
                           Add Model
                         </Button>
                       )}
 
                       <Switch
                         checked={added}
-                        onCheckedChange={() => (added ? handleRemoveModel(model) : handleAddModel(model))}
+                        onCheckedChange={() =>
+                          added
+                            ? handleRemoveModel(model)
+                            : handleAddModel(model)
+                        }
                       />
                     </div>
                   </div>
                 </div>
-              )
+              );
             })}
           </div>
         )}
@@ -352,7 +446,10 @@ export function OllamaSettings() {
             <div className="text-muted-foreground space-y-2">
               <p>No models found on your Ollama server.</p>
               <p className="text-sm">
-                Try pulling a model: <code className="bg-muted px-2 py-1 rounded">ollama pull gemma2</code>
+                Try pulling a model:{" "}
+                <code className="bg-muted px-2 py-1 rounded">
+                  ollama pull gemma2
+                </code>
               </p>
             </div>
           </div>
@@ -373,10 +470,17 @@ export function OllamaSettings() {
               </div>
               <div className="text-left">
                 <h3 className="text-base font-semibold">Setup Assistant</h3>
-                <p className="text-sm text-muted-foreground">Complete Ollama integration guide</p>
+                <p className="text-sm text-muted-foreground">
+                  Complete Ollama integration guide
+                </p>
               </div>
             </div>
-            <ChevronDown className={cn("h-4 w-4 transition-transform", showSetupGuide && "rotate-180")} />
+            <ChevronDown
+              className={cn(
+                "h-4 w-4 transition-transform",
+                showSetupGuide && "rotate-180",
+              )}
+            />
           </Button>
 
           {showSetupGuide && (
@@ -384,12 +488,22 @@ export function OllamaSettings() {
               {/* Progress Indicator */}
               <div className="flex items-center gap-2 mb-6">
                 <div className="flex items-center gap-2">
-                  <div className={cn("w-3 h-3 rounded-full", isConnected ? "bg-green-500" : "bg-muted-foreground")} />
+                  <div
+                    className={cn(
+                      "w-3 h-3 rounded-full",
+                      isConnected ? "bg-green-500" : "bg-muted-foreground",
+                    )}
+                  />
                   <span className="text-sm font-medium">Step 1: Install</span>
                 </div>
                 <div className="flex-1 h-px bg-border" />
                 <div className="flex items-center gap-2">
-                  <div className={cn("w-3 h-3 rounded-full", isConnected ? "bg-green-500" : "bg-muted-foreground")} />
+                  <div
+                    className={cn(
+                      "w-3 h-3 rounded-full",
+                      isConnected ? "bg-green-500" : "bg-muted-foreground",
+                    )}
+                  />
                   <span className="text-sm font-medium">Step 2: Connect</span>
                 </div>
                 <div className="flex-1 h-px bg-border" />
@@ -397,7 +511,9 @@ export function OllamaSettings() {
                   <div
                     className={cn(
                       "w-3 h-3 rounded-full",
-                      availableModels.length > 0 ? "bg-green-500" : "bg-muted-foreground",
+                      availableModels.length > 0
+                        ? "bg-green-500"
+                        : "bg-muted-foreground",
                     )}
                   />
                   <span className="text-sm font-medium">Step 3: Models</span>
@@ -411,7 +527,9 @@ export function OllamaSettings() {
                   <div className="w-6 h-6 rounded-full bg-blue-500 text-white text-sm font-semibold flex items-center justify-center">
                     1
                   </div>
-                  <h4 className="text-base font-medium text-foreground">Install & Setup Ollama</h4>
+                  <h4 className="text-base font-medium text-foreground">
+                    Install & Setup Ollama
+                  </h4>
                 </div>
                 <div className="ml-8 space-y-3">
                   <p className="text-sm text-muted-foreground">
@@ -428,10 +546,14 @@ export function OllamaSettings() {
                   </p>
                   <div className="space-y-2">
                     <div className="bg-black/5 dark:bg-white/5 border rounded-lg p-3">
-                      <code className="text-sm font-mono text-foreground">ollama pull gemma2</code>
+                      <code className="text-sm font-mono text-foreground">
+                        ollama pull gemma2
+                      </code>
                     </div>
                     <div className="bg-black/5 dark:bg-white/5 border rounded-lg p-3">
-                      <code className="text-sm font-mono text-foreground">ollama serve</code>
+                      <code className="text-sm font-mono text-foreground">
+                        ollama serve
+                      </code>
                     </div>
                   </div>
                   <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
@@ -451,7 +573,9 @@ export function OllamaSettings() {
                   <div className="w-6 h-6 rounded-full bg-green-500 text-white text-sm font-semibold flex items-center justify-center">
                     2
                   </div>
-                  <h4 className="text-base font-medium text-foreground">Setup ngrok (for Production Access)</h4>
+                  <h4 className="text-base font-medium text-foreground">
+                    Setup ngrok (for Production Access)
+                  </h4>
                 </div>
                 <div className="ml-8 space-y-3">
                   <p className="text-sm text-muted-foreground">
@@ -477,10 +601,14 @@ export function OllamaSettings() {
                   </p>
                   <div className="space-y-2">
                     <div className="bg-black/5 dark:bg-white/5 border rounded-lg p-3">
-                      <code className="text-sm font-mono text-foreground">brew install ngrok</code>
+                      <code className="text-sm font-mono text-foreground">
+                        brew install ngrok
+                      </code>
                     </div>
                     <div className="bg-black/5 dark:bg-white/5 border rounded-lg p-3">
-                      <code className="text-sm font-mono text-foreground">ngrok config add-authtoken YOUR_TOKEN</code>
+                      <code className="text-sm font-mono text-foreground">
+                        ngrok config add-authtoken YOUR_TOKEN
+                      </code>
                     </div>
                     <div className="bg-black/5 dark:bg-white/5 border rounded-lg p-3">
                       <code className="text-sm font-mono text-foreground">
@@ -497,13 +625,17 @@ export function OllamaSettings() {
                   <div className="w-6 h-6 rounded-full bg-purple-500 text-white text-sm font-semibold flex items-center justify-center">
                     3
                   </div>
-                  <h4 className="text-base font-medium text-foreground">Configure This App</h4>
+                  <h4 className="text-base font-medium text-foreground">
+                    Configure This App
+                  </h4>
                 </div>
                 <div className="ml-8 space-y-3">
                   <p className="text-sm text-muted-foreground">
                     Copy the ngrok HTTPS URL (e.g.,{" "}
-                    <code className="bg-muted px-2 py-1 rounded font-mono">https://abc123.ngrok.app</code>) into the URL
-                    field above and click "Connect".
+                    <code className="bg-muted px-2 py-1 rounded font-mono">
+                      https://abc123.ngrok.app
+                    </code>
+                    ) into the URL field above and click "Connect".
                   </p>
                 </div>
               </div>
@@ -515,13 +647,16 @@ export function OllamaSettings() {
                     <span className="text-lg">🔒</span>
                   </div>
                   <div className="space-y-2">
-                    <h4 className="text-sm font-semibold text-yellow-800 dark:text-yellow-200">Security Note</h4>
+                    <h4 className="text-sm font-semibold text-yellow-800 dark:text-yellow-200">
+                      Security Note
+                    </h4>
                     <p className="text-sm text-yellow-700 dark:text-yellow-300">
                       Your ngrok URL is public! Consider adding authentication:
                     </p>
                     <div className="bg-yellow-100 dark:bg-yellow-900 border border-yellow-300 dark:border-yellow-700 rounded-lg p-3 mt-2">
                       <code className="text-sm font-mono text-yellow-800 dark:text-yellow-200">
-                        ngrok http 11434 --basic-auth "user:password" --host-header=localhost
+                        ngrok http 11434 --basic-auth "user:password"
+                        --host-header=localhost
                       </code>
                     </div>
                   </div>
@@ -535,25 +670,36 @@ export function OllamaSettings() {
                     <span className="text-lg">📋</span>
                   </div>
                   <div className="space-y-3">
-                    <h4 className="text-sm font-semibold text-foreground">Usage Modes</h4>
+                    <h4 className="text-sm font-semibold text-foreground">
+                      Usage Modes
+                    </h4>
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
                         <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
                         <span className="text-sm">
-                          <span className="font-medium">Local Development:</span> Use{" "}
-                          <code className="bg-muted px-2 py-1 rounded font-mono text-xs">http://localhost:11434</code>
+                          <span className="font-medium">
+                            Local Development:
+                          </span>{" "}
+                          Use{" "}
+                          <code className="bg-muted px-2 py-1 rounded font-mono text-xs">
+                            http://localhost:11434
+                          </code>
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="w-2 h-2 bg-green-500 rounded-full"></span>
                         <span className="text-sm">
-                          <span className="font-medium">Production/Remote:</span> Use your ngrok HTTPS URL
+                          <span className="font-medium">
+                            Production/Remote:
+                          </span>{" "}
+                          Use your ngrok HTTPS URL
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
                         <span className="text-sm">
-                          <span className="font-medium">Team Sharing:</span> Share your ngrok URL with team members
+                          <span className="font-medium">Team Sharing:</span>{" "}
+                          Share your ngrok URL with team members
                         </span>
                       </div>
                     </div>
@@ -580,5 +726,5 @@ export function OllamaSettings() {
         </div>
       </div>
     </Card>
-  )
+  );
 }

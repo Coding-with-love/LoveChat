@@ -1,4 +1,3 @@
-// src/components/models/ModelList.tsx
 "use client";
 
 import type React from "react";
