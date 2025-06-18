@@ -61,15 +61,34 @@ export function useAuthenticatedChat({
       try {
         console.log("🔑 Custom fetch for chat:", url, "Web search enabled:", webSearchEnabled)
 
-        // Add model-specific API key
+        // Add model-specific API key (optional - will fallback to server defaults)
         const apiKey = getKey(modelConfig.provider)
-        // Only require API key for providers that need it
-        if (modelConfig.provider !== "ollama" && !apiKey) {
-          throw new Error(`${modelConfig.provider} API key is required`)
-        }
+        console.log("🔑 User API key check:", {
+          provider: modelConfig.provider,
+          hasUserKey: !!apiKey,
+          keyLength: apiKey?.length || 0
+        })
 
         const headers = new Headers(options?.headers || {})
-        headers.set(modelConfig.headerKey, apiKey)
+        if (apiKey) {
+          headers.set(modelConfig.headerKey, apiKey)
+        }
+
+        // For Ollama, add the base URL header (use window global to avoid import issues)
+        if (modelConfig.provider === "ollama") {
+          try {
+            // Access the store from window global if available
+            const storedSettings = window.localStorage?.getItem('ollama-settings')
+            const ollamaBaseUrl = storedSettings 
+              ? JSON.parse(storedSettings).state?.baseUrl || "http://localhost:11434"
+              : "http://localhost:11434"
+            headers.set("x-ollama-base-url", ollamaBaseUrl)
+            console.log("🦙 Set Ollama base URL header:", ollamaBaseUrl)
+          } catch (error) {
+            console.warn("⚠️ Failed to access Ollama store:", error)
+            headers.set("x-ollama-base-url", "http://localhost:11434")
+          }
+        }
 
         // Parse the existing body to add web search flag and preserve all data
         const existingBody = options?.body ? JSON.parse(options.body as string) : {}

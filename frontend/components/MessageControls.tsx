@@ -5,18 +5,25 @@ import { Button } from "./ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog"
 import { Textarea } from "./ui/textarea"
 import { cn } from "@/lib/utils"
-import { Check, Copy, RefreshCcw, SquarePen, Star, Archive } from "lucide-react"
+import { Check, Copy, RefreshCcw, SquarePen, Star, Archive, Volume2, VolumeX, Loader2 } from "lucide-react"
 import type { UIMessage } from "ai"
 import type { UseChatHelpers } from "@ai-sdk/react"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip"
+
+// Extend UIMessage to include attempts
+interface ExtendedUIMessage extends UIMessage {
+  attempts?: ExtendedUIMessage[]
+}
 import { deleteTrailingMessages, getFileAttachmentsByMessageId } from "@/lib/supabase/queries"
-import { useAPIKeyStore } from "@/frontend/stores/APIKeyStore"
 import { useArtifactStore } from "@/frontend/stores/ArtifactStore"
 import { supabase } from "@/lib/supabase/client"
 import { toast } from "sonner"
+import { useRegeneration } from "@/frontend/contexts/RegenerationContext"
+import { useTextToSpeech } from "@/frontend/hooks/useTextToSpeech"
 
 interface MessageControlsProps {
   threadId: string
-  message: UIMessage
+  message: ExtendedUIMessage
   setMessages: UseChatHelpers["setMessages"]
   content: string
   setMode?: Dispatch<SetStateAction<"view" | "edit">>
@@ -45,8 +52,28 @@ export default function MessageControls({
   const [showPinDialog, setShowPinDialog] = useState(false)
   const [pinLoading, setPinLoading] = useState(false)
 
-  const hasRequiredKeys = useAPIKeyStore((state) => state.hasRequiredKeys())
+  // Text-to-speech functionality
+  const { speak, stop: stopSpeech, isLoading: isSpeechLoading, isPlaying: isSpeechPlaying } = useTextToSpeech()
+
+  // API keys are now optional with server fallbacks - always allow regeneration/editing
+  const hasRequiredKeys = true
+
+  // Debug logging
+  console.log(
+    "🔑 Default keys available - always allowing regeneration/editing for message:",
+    message.id,
+    "role:",
+    message.role,
+  )
   const { createArtifact } = useArtifactStore()
+
+  // Try to get regeneration context, with fallback if not available
+  const regenerationContext = useRegeneration()
+  const startRegeneration = regenerationContext
+    ? regenerationContext.startRegeneration
+    : (messageId: string, message: any) => {
+        console.log("📝 Fallback regeneration tracking for:", messageId)
+      }
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(content)
@@ -100,12 +127,63 @@ export default function MessageControls({
   }, [content, threadId, message.id, createArtifact])
 
   const handleRegenerate = useCallback(async () => {
+    console.log("🔄 Regenerate button clicked for message:", message.id, "Role:", message.role)
+
     try {
       // stop the current request
       stop()
 
+      // Start tracking regeneration for attempts
+      if (message.role === "assistant") {
+        console.log("🎯 Processing assistant message regeneration")
+
+        try {
+          startRegeneration(message.id, message)
+          console.log("✅ Started regeneration tracking successfully")
+        } catch (error) {
+          console.error("❌ Error starting regeneration tracking:", error)
+        }
+
+        // For demo: immediately create an attempt to test the UI
+        const newAttempt = {
+          ...message,
+          id: message.id + "-regenerated-" + Date.now(),
+          content: "This is a regenerated version: " + message.content.substring(0, 100) + "... [REGENERATED]",
+          createdAt: new Date(),
+        }
+
+        console.log("📝 Created new attempt:", newAttempt.id)
+
+        // Update the message to have attempts
+        const updatedMessage = {
+          ...message,
+          attempts: message.attempts ? [...message.attempts, newAttempt] : [message, newAttempt],
+        }
+
+        console.log("🔄 Updating messages with attempts. Total attempts:", updatedMessage.attempts?.length)
+
+        try {
+          setMessages((messages) => {
+            console.log("📝 SetMessages called, current messages count:", messages.length)
+            const updated = messages.map((m) => (m.id === message.id ? updatedMessage : m))
+            console.log("📝 Returning updated messages, count:", updated.length)
+            return updated
+          })
+          console.log("✅ SetMessages completed successfully")
+        } catch (error) {
+          console.error("❌ Error calling setMessages:", error)
+        }
+
+        console.log("✅ Added regenerated attempt. Total attempts:", updatedMessage.attempts?.length)
+
+        // Continue with actual regeneration API call after creating the attempt
+        console.log("🚀 Proceeding with actual API regeneration...")
+        // Don't return here - let it continue to the actual regeneration logic below
+      }
+
       // Extract file attachments from message parts
-      let fileAttachments = (message.parts as any)?.find((part: any) => part.type === "file_attachments")?.attachments || []
+      let fileAttachments =
+        (message.parts as any)?.find((part: any) => part.type === "file_attachments")?.attachments || []
       console.log("🔍 Found file attachments for regeneration:", fileAttachments)
 
       // If we have file attachments, try to fetch their content
@@ -165,14 +243,16 @@ export default function MessageControls({
 
             // Update file attachments with content
             if (fileAttachments.length > 0) {
-              const attachmentPartIndex = (updatedMessage.parts as any).findIndex((p: any) => p.type === "file_attachments")
+              const attachmentPartIndex = (updatedMessage.parts as any).findIndex(
+                (p: any) => p.type === "file_attachments",
+              )
               if (attachmentPartIndex >= 0) {
-                (updatedMessage.parts as any)[attachmentPartIndex] = {
+                ;(updatedMessage.parts as any)[attachmentPartIndex] = {
                   type: "file_attachments",
                   attachments: fileAttachments,
                 }
               } else {
-                (updatedMessage.parts as any).push({
+                ;(updatedMessage.parts as any).push({
                   type: "file_attachments",
                   attachments: fileAttachments,
                 })
@@ -191,7 +271,14 @@ export default function MessageControls({
           const index = messages.findIndex((m) => m.id === message.id)
 
           if (index !== -1) {
-            return [...messages.slice(0, index)]
+            // Instead of removing the message, prepare it for storing multiple attempts
+            const currentMessage = messages[index] as ExtendedUIMessage
+            const updatedMessage: ExtendedUIMessage = {
+              ...currentMessage,
+              attempts: currentMessage.attempts || [currentMessage],
+            }
+
+            return [...messages.slice(0, index), updatedMessage]
           }
 
           return messages
@@ -213,8 +300,8 @@ export default function MessageControls({
           images: experimentalAttachments.map((img: any) => ({
             name: img.name,
             contentType: img.contentType,
-            hasUrl: !!img.url
-          }))
+            hasUrl: !!img.url,
+          })),
         })
 
         // Pass file attachments with content to the reload function
@@ -301,6 +388,14 @@ export default function MessageControls({
     }
   }, [threadId, message.id])
 
+  const handleReadAloud = useCallback(() => {
+    if (isSpeechPlaying) {
+      stopSpeech()
+    } else {
+      speak(content)
+    }
+  }, [content, speak, stopSpeech, isSpeechPlaying])
+
   // Check if message is pinned on mount
   useEffect(() => {
     const checkPinStatus = async () => {
@@ -323,30 +418,118 @@ export default function MessageControls({
   }, [threadId, message.id])
 
   return (
-    <div
-      className="opacity-60 group-hover:opacity-100 transition-opacity duration-100 flex gap-1"
-    >
-      <Button variant="ghost" size="icon" onClick={handleCopy}>
-        {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-      </Button>
+    <div className="opacity-0 group-hover:opacity-100 transition-all duration-200 ease-in-out flex gap-1 animate-in fade-in-0 slide-in-from-bottom-1">
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleCopy}
+              className="h-8 w-8 hover:bg-muted transition-colors"
+            >
+              {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>{copied ? "Copied!" : "Copy"}</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
 
-      {/* Archive Button */}
-      <Button variant="ghost" size="icon" onClick={handleSaveAsArtifact} title="Save as Artifact">
-        <Archive className="w-4 h-4" />
-      </Button>
+      {setMode && hasRequiredKeys && (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleEdit}
+                className="h-8 w-8 hover:bg-muted transition-colors"
+              >
+                <SquarePen className="w-4 h-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Edit</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      )}
+      {hasRequiredKeys && (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  console.log("🖱️ Regenerate button clicked!")
+                  handleRegenerate()
+                }}
+                className="h-8 w-8 hover:bg-muted transition-colors"
+              >
+                <RefreshCcw className="w-4 h-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Regenerate</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      )}
+
+      {/* Read Aloud Button */}
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleReadAloud}
+              disabled={isSpeechLoading}
+              title={isSpeechPlaying ? "Stop reading" : "Read aloud"}
+              className="h-8 w-8 hover:bg-muted transition-colors"
+            >
+              {isSpeechLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : isSpeechPlaying ? (
+                <VolumeX className="w-4 h-4" />
+              ) : (
+                <Volume2 className="w-4 h-4" />
+              )}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>{isSpeechPlaying ? "Stop reading" : "Read aloud"}</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
 
       {/* Pin Button */}
       <Dialog open={showPinDialog} onOpenChange={setShowPinDialog}>
         <DialogTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handlePinClick}
-            disabled={pinLoading}
-            className={cn("transition-colors", isPinned && "text-yellow-500 hover:text-yellow-600")}
-          >
-            <Star className={cn("w-4 h-4", isPinned && "fill-current")} />
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handlePinClick}
+                  disabled={pinLoading}
+                  className={cn(
+                    "h-8 w-8 transition-colors hover:bg-muted",
+                    isPinned && "text-yellow-500 hover:text-yellow-600",
+                  )}
+                >
+                  <Star className={cn("w-4 h-4", isPinned && "fill-current")} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{isPinned ? "Unpin" : "Pin"}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </DialogTrigger>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -377,16 +560,25 @@ export default function MessageControls({
         </DialogContent>
       </Dialog>
 
-      {setMode && hasRequiredKeys && (
-        <Button variant="ghost" size="icon" onClick={handleEdit}>
-          <SquarePen className="w-4 h-4" />
-        </Button>
-      )}
-      {hasRequiredKeys && (
-        <Button variant="ghost" size="icon" onClick={handleRegenerate}>
-          <RefreshCcw className="w-4 h-4" />
-        </Button>
-      )}
+      {/* Archive Button */}
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleSaveAsArtifact}
+              title="Save as Artifact"
+              className="h-8 w-8 hover:bg-muted transition-colors"
+            >
+              <Archive className="w-4 h-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Save as Artifact</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     </div>
   )
 }

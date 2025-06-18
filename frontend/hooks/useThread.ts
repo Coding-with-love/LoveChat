@@ -9,6 +9,7 @@ interface Thread {
   created_at: string
   title: string
   user_id: string
+  is_archived?: boolean
 }
 
 export const useThread = (threadId: string | null) => {
@@ -43,6 +44,36 @@ export const useThread = (threadId: string | null) => {
 
     fetchThread()
   }, [id])
+
+  // Set up real-time subscription for thread updates
+  useEffect(() => {
+    if (!id || !user) return
+
+    console.log("🔄 Setting up real-time thread subscription for:", id)
+
+    const channel = supabase
+      .channel(`thread_${id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "threads",
+          filter: `id=eq.${id}`,
+        },
+        (payload) => {
+          console.log("📡 Thread update received:", payload.new)
+          const updatedThread = payload.new as Thread
+          setThread(updatedThread)
+        }
+      )
+      .subscribe()
+
+    return () => {
+      console.log("🧹 Cleaning up thread subscription for:", id)
+      supabase.removeChannel(channel)
+    }
+  }, [id, user])
 
   const updateTitle = async (newTitle: string, threadId?: string): Promise<boolean> => {
     if (!newTitle.trim()) return false

@@ -9,6 +9,8 @@ import { supabaseServer } from "@/lib/supabase/server"
 import { v4 as uuidv4 } from "uuid"
 import { CustomResumableStream } from "@/lib/resumable-streams-server"
 import { StreamProtection, StreamCircuitBreaker } from "@/lib/stream-protection"
+import type { GoogleGenerativeAIProviderOptions } from "@ai-sdk/google"
+import { search } from "@/lib/tools"
 
 // Artifact creation utilities
 interface ArtifactCandidate {
@@ -47,50 +49,40 @@ function extractArtifacts(content: string, messageId: string): ArtifactCandidate
     }
   }
 
-  // Extract structured documents (markdown with headers, lists, etc.)
-  if (content.includes("# ") || content.includes("## ") || content.includes("### ")) {
-    const hasSubstantialContent =
-      content.length > 500 && (content.includes("- ") || content.includes("1. ") || content.includes("| "))
-
-    if (hasSubstantialContent) {
-      const title = extractDocumentTitle(content)
+  // Extract display math ($$...$$)
+  const displayMathRegex = /\$\$([\s\S]*?)\$\$/g
+  while ((match = displayMathRegex.exec(content)) !== null) {
+    const mathContent = match[1].trim()
+    if (mathContent.length > 10) { // Only substantial math expressions
       artifacts.push({
         type: "document",
-        title,
-        content,
+        title: "Mathematical Expression",
+        content: `$$${mathContent}$$`,
+        language: "latex",
+        fileExtension: "tex",
+        description: "Generated mathematical expression",
+      })
+    }
+  }
+
+  // Extract markdown tables
+  const tableRegex = /(\|[^\n]*\|\n\|[-:\s|]*\|\n(?:\|[^\n]*\|\n?)*)/g
+  while ((match = tableRegex.exec(content)) !== null) {
+    const tableContent = match[1].trim()
+    const rows = tableContent.split('\n').filter(row => row.trim())
+    
+    // Only create artifacts for tables with at least 3 rows (header + separator + data)
+    if (rows.length >= 3) {
+      // Extract table title from surrounding context or use generic title
+      const tableTitle = extractTableTitle(content, match.index) || "Generated Table"
+      
+      artifacts.push({
+        type: "data",
+        title: tableTitle,
+        content: tableContent,
+        language: "markdown",
         fileExtension: "md",
-        description: "Generated documentation",
-      })
-    }
-  }
-
-  // Extract JSON/YAML data structures
-  const jsonRegex = /\`\`\`json\n([\s\S]*?)\`\`\`/g
-  while ((match = jsonRegex.exec(content)) !== null) {
-    const jsonContent = match[1].trim()
-    if (jsonContent.length > 50) {
-      artifacts.push({
-        type: "data",
-        title: "Generated JSON Data",
-        content: jsonContent,
-        language: "json",
-        fileExtension: "json",
-        description: "Generated JSON data structure",
-      })
-    }
-  }
-
-  const yamlRegex = /\`\`\`ya?ml\n([\s\S]*?)\`\`\`/g
-  while ((match = yamlRegex.exec(content)) !== null) {
-    const yamlContent = match[1].trim()
-    if (yamlContent.length > 50) {
-      artifacts.push({
-        type: "data",
-        title: "Generated YAML Configuration",
-        content: yamlContent,
-        language: "yaml",
-        fileExtension: "yml",
-        description: "Generated YAML configuration",
+        description: "Generated markdown table",
       })
     }
   }
@@ -274,6 +266,90 @@ function generateCodeTitle(code: string, language: string): string {
   return smartDefaults[language.toLowerCase()] || `${language.charAt(0).toUpperCase() + language.slice(1)} Code`
 }
 
+function extractTableTitle(content: string, tableIndex: number): string | null {
+  // Look for a heading or descriptive text before the table
+  const beforeTable = content.substring(0, tableIndex)
+  const lines = beforeTable.split('\n').reverse()
+  
+  // Look for the closest heading or descriptive line
+  for (let i = 0; i < Math.min(lines.length, 8); i++) { // Increased search range
+    const line = lines[i].trim()
+    
+    // Skip empty lines
+    if (!line) continue
+    
+    // Check for markdown headings (# ## ### etc.)
+    const headingMatch = line.match(/^#+\s*(.+)$/)
+    if (headingMatch) {
+      return headingMatch[1].trim()
+    }
+    
+    // Check for lines that might describe the table (expanded keywords)
+    if (line.length > 5 && line.length < 150) {
+      const lowercaseLine = line.toLowerCase()
+      const tableIndicators = [
+        'table', 'data', 'comparison', 'results', 'summary', 'overview',
+        'breakdown', 'analysis', 'report', 'chart', 'list', 'features',
+        'requirements', 'specifications', 'details', 'information',
+        'key', 'main', 'important', 'following', 'below', 'above'
+      ]
+      
+      if (tableIndicators.some(indicator => lowercaseLine.includes(indicator))) {
+        // Clean up the line for use as title
+        return line.replace(/[.!?:]+$/, '').trim()
+      }
+    }
+    
+    // Look for sentences that precede the table (context clues)
+    if (line.length > 10 && line.length < 120 && 
+        (line.includes(':') || line.endsWith('.') || line.endsWith('!'))) {
+      // This might be descriptive text about the table
+      return line.replace(/[.!?:]+$/, '').trim()
+    }
+  }
+  
+  // Analyze the table content itself to generate a meaningful title
+  const afterTable = content.substring(tableIndex)
+  const tableMatch = afterTable.match(/(\|[^\n]*\|\n\|[-:\s|]*\|\n(?:\|[^\n]*\|\n?)*)/)
+  
+  if (tableMatch) {
+    const tableContent = tableMatch[1]
+    const rows = tableContent.split('\n').filter(row => row.trim() && !row.match(/^[\|\s\-:]+$/))
+    
+    if (rows.length > 0) {
+      // Extract headers from first row
+      const headerRow = rows[0]
+      const headers = headerRow.split('|').map(h => h.trim()).filter(h => h)
+      
+      if (headers.length > 0) {
+        // Create title based on content analysis
+        const firstHeader = headers[0].toLowerCase()
+        const hasMultipleColumns = headers.length > 1
+        
+        // Smart title generation based on headers
+        if (firstHeader.includes('feature') || firstHeader.includes('requirement')) {
+          return hasMultipleColumns ? 'Feature Comparison Table' : 'Feature List'
+        } else if (firstHeader.includes('step') || firstHeader.includes('stage')) {
+          return 'Process Steps Table'
+        } else if (firstHeader.includes('name') || firstHeader.includes('item')) {
+          return hasMultipleColumns ? 'Summary Table' : 'Item List'
+        } else if (firstHeader.includes('category') || firstHeader.includes('type')) {
+          return 'Category Breakdown'
+        } else if (headers.some(h => h.toLowerCase().includes('price') || h.toLowerCase().includes('cost'))) {
+          return 'Pricing Table'
+        } else if (headers.some(h => h.toLowerCase().includes('date') || h.toLowerCase().includes('time'))) {
+          return 'Timeline Table'
+        } else {
+          // Generic but descriptive titles
+          return hasMultipleColumns ? `${headers[0]} Comparison` : `${headers[0]} Overview`
+        }
+      }
+    }
+  }
+  
+  return null
+}
+
 function extractDocumentTitle(content: string): string {
   // Look for the first # header
   const headerMatch = content.match(/^#\s+(.+)$/m)
@@ -407,11 +483,63 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 })
     }
 
-    const { messages, model, webSearchEnabled, apiKey: bodyApiKey, data, experimental_attachments } = json
+    const { messages, model, webSearchEnabled: userWebSearchEnabled, apiKey: bodyApiKey, data, experimental_attachments } = json
     const headersList = await headers()
+
+    // Analyze user message to determine if web search should be automatically enabled
+    const shouldAutoEnableWebSearch = (messages: any[]) => {
+      if (!messages || messages.length === 0) return false
+      
+      const lastMessage = messages[messages.length - 1]
+      if (!lastMessage || lastMessage.role !== "user") return false
+      
+      const content = lastMessage.content?.toLowerCase() || ""
+      
+      // Keywords that indicate web search is needed
+      const webSearchIndicators = [
+        // Direct search requests
+        "search for", "look up", "find information", "research", "investigate",
+        "what's happening", "current", "latest", "recent", "news", "today",
+        
+        // URLs provided
+        "http://", "https://", "www.", ".com", ".org", ".net", ".edu", ".gov",
+        
+        // Time-sensitive queries
+        "weather", "stock price", "exchange rate", "current events", "breaking news",
+        "what time", "when is", "schedule", "upcoming", "trending",
+        
+        // Market/financial queries
+        "price of", "cost of", "market cap", "stock", "crypto", "bitcoin", "ethereum",
+        
+        // Travel and live information
+        "flight", "restaurant", "hours", "open now", "near me", "directions",
+        
+        // Fact-checking and current data
+        "verify", "fact check", "is it true", "according to", "source",
+        "statistics", "data", "survey", "study", "report",
+        
+        // Technology and product queries
+        "release date", "new version", "update", "download", "specs", "review",
+        
+        // General research terms
+        "compare", "vs", "versus", "best", "top", "ranking", "list of"
+      ]
+      
+      // Check if content contains any web search indicators
+      return webSearchIndicators.some(indicator => content.includes(indicator))
+    }
+
+    // Determine final web search enabled state
+    const webSearchEnabled = userWebSearchEnabled || shouldAutoEnableWebSearch(messages)
+    
+    // Log the decision
+    if (!userWebSearchEnabled && webSearchEnabled) {
+      console.log("🤖 Automatically enabled web search based on user query")
+    }
 
     console.log("📨 Received messages:", messages?.length || 0)
     console.log("🤖 Using model:", model)
+    console.log("🔍 Web search enabled:", webSearchEnabled, "(user:", userWebSearchEnabled, ", auto:", !userWebSearchEnabled && webSearchEnabled, ")")
     console.log("🖼️ Image attachments received:", experimental_attachments?.length || 0)
     console.log("🚨 FULL REQUEST JSON:", JSON.stringify(json, null, 2))
     console.log("📦 Request data received:", data ? "present" : "not present")
@@ -502,6 +630,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Try to get user's API key from database first
     if (!apiKey) {
       console.log("❌ Missing API key for provider:", modelConfig.provider)
 
@@ -519,12 +648,37 @@ export async function POST(req: NextRequest) {
           console.error("❌ Database error fetching API key:", dbError)
         } else if (dbApiKey?.api_key) {
           apiKey = dbApiKey.api_key
-          console.log("✅ Found API key in database for provider:", modelConfig.provider)
+          console.log("✅ Found user API key in database for provider:", modelConfig.provider)
         } else {
-          console.log("❌ No API key found in database for provider:", modelConfig.provider)
+          console.log("❌ No user API key found in database for provider:", modelConfig.provider)
         }
       } catch (dbError) {
         console.error("❌ Error fetching API key from database:", dbError)
+      }
+    }
+
+    // Fallback to environment variables if no user key is found (only for Google)
+    if (!apiKey) {
+      console.log("🔄 Checking if fallback API key is allowed for provider:", modelConfig.provider)
+      
+      switch (modelConfig.provider.toLowerCase()) {
+        case "openai":
+          // OpenAI requires user-provided API key - no fallback
+          console.log("❌ OpenAI requires user-provided API key - no server fallback allowed")
+          break
+        case "google":
+          // Google allows server fallback
+          apiKey = process.env.GOOGLE_API_KEY || null
+          if (apiKey) {
+            console.log("✅ Using server fallback API key for Google")
+          } else {
+            console.log("❌ No server fallback API key available for Google")
+          }
+          break
+        case "openrouter":
+          // OpenRouter requires user-provided API key - no fallback
+          console.log("❌ OpenRouter requires user-provided API key - no server fallback allowed")
+          break
       }
     }
 
@@ -583,6 +737,13 @@ export async function POST(req: NextRequest) {
         try {
           const openaiClient = createOpenAI({ apiKey: apiKey! })
           aiModel = openaiClient(modelConfig.modelId)
+          
+          // Check if web search is enabled and supported
+          if (webSearchEnabled && modelConfig.supportsSearch) {
+            console.log("🔍 OpenAI model supports web search")
+            modelSupportsSearch = true
+          }
+          
           console.log("✅ OpenAI model initialized successfully")
         } catch (error) {
           console.error("❌ Error initializing OpenAI model:", error)
@@ -655,7 +816,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Process messages - create AI-specific content with file data AND artifact data
-    const processedMessages = []
+    const processedMessages: any[] = []
 
     for (const msg of messages) {
       console.log(`🔄 Processing message role: ${msg.role}`)
@@ -827,6 +988,42 @@ export async function POST(req: NextRequest) {
         console.log("🔑 API Key present:", apiKey ? `${apiKey.substring(0, 10)}...` : "MISSING")
         console.log("🎯 Model ID:", modelConfig.modelId)
 
+        // Prepare tools for OpenAI reasoning models web search
+        let tools = undefined
+        if (webSearchEnabled && modelSupportsSearch) {
+          console.log("🔍 Adding Serper web search tool to reasoning model")
+          // Check if Serper API key is available
+          const serperApiKey = process.env.SERPER_API_KEY
+          if (serperApiKey) {
+            // For the Responses API, we need to convert our tool to the format expected
+            tools = [{
+              type: "function",
+              function: {
+                name: "web_search",
+                description: "Search the web for current information using Google search results",
+                parameters: {
+                  type: "object",
+                  properties: {
+                    query: {
+                      type: "string",
+                      description: "The search query to look up"
+                    },
+                    maxResults: {
+                      type: "number",
+                      description: "Maximum number of results to return",
+                      default: 5
+                    }
+                  },
+                  required: ["query"]
+                }
+              }
+            }]
+            console.log("✅ Serper web search tool configured for reasoning model")
+          } else {
+            console.warn("⚠️ SERPER_API_KEY not found, skipping web search tool for reasoning model")
+          }
+        }
+
         const requestBody = {
           model: modelConfig.modelId,
           reasoning: { 
@@ -835,6 +1032,7 @@ export async function POST(req: NextRequest) {
           },
           input: inputMessages,
           max_output_tokens: 25000, // Reserve space for reasoning as recommended
+          tools: tools,
         }
 
         console.log("📤 Request body:", JSON.stringify(requestBody, null, 2))
@@ -1030,10 +1228,53 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
           reasoningExplanation,
         )
 
-        // Return the result in the expected data stream format for the AI SDK
-        const dataStreamResponse = `0:${JSON.stringify(responseText)}\nd:{"finishReason":"stop"}\n`
+        // Create a streaming response that emits reasoning events first, then the text
+        // This ensures the MessageReasoning component appears immediately
+        const stream = new ReadableStream({
+          start(controller) {
+            try {
+              // First, emit reasoning start event
+              const reasoningStartEvent = `r:${JSON.stringify({ type: "reasoning-start" })}\n`
+              controller.enqueue(new TextEncoder().encode(reasoningStartEvent))
+              
+              // Then emit the reasoning content (if available)
+              if (reasoningExplanation) {
+                const reasoningDeltaEvent = `r:${JSON.stringify({ 
+                  type: "reasoning-delta", 
+                  content: reasoningExplanation 
+                })}\n`
+                controller.enqueue(new TextEncoder().encode(reasoningDeltaEvent))
+              }
+              
+              // Calculate reasoning duration (estimate based on reasoning tokens)
+              const reasoningTokens = responseData.usage?.output_tokens_details?.reasoning_tokens || 0
+              const estimatedDuration = Math.max(1, Math.floor(reasoningTokens / 100)) // Rough estimate
+              
+              // Emit reasoning end event
+              const reasoningEndEvent = `r:${JSON.stringify({ 
+                type: "reasoning-end", 
+                duration: estimatedDuration,
+                totalReasoning: reasoningExplanation || ""
+              })}\n`
+              controller.enqueue(new TextEncoder().encode(reasoningEndEvent))
+              
+              // Finally, emit the actual response text
+              const textChunk = `0:${JSON.stringify(responseText)}\n`
+              controller.enqueue(new TextEncoder().encode(textChunk))
+              
+              // Emit finish event
+              const finishChunk = `d:{"finishReason":"stop"}\n`
+              controller.enqueue(new TextEncoder().encode(finishChunk))
+              
+              controller.close()
+            } catch (error) {
+              console.error("❌ Error in OpenAI reasoning stream:", error)
+              controller.error(error)
+            }
+          }
+        })
         
-        return new Response(dataStreamResponse, {
+        return new Response(stream, {
           headers: {
             "Content-Type": "text/plain; charset=utf-8",
             "Cache-Control": "no-cache",
@@ -1071,21 +1312,26 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
           let cleanedText = text
           let reasoning = null
 
-          if (text.includes("<Thinking>") && text.includes("</Thinking>")) {
+          if (text.includes("<think>") || text.includes("<Thinking>")) {
             console.log("🧠 Detected thinking content in response")
-
-            // Extract thinking content
-            const thinkMatch = text.match(/<Thinking>([\s\S]*?)<\/Thinking>/)
-            if (thinkMatch) {
-              reasoning = thinkMatch[1].trim()
+            
+            // Extract all thinking blocks
+            const thinkMatches = text.match(/<think>([\s\S]*?)<\/think>|<Thinking>([\s\S]*?)<\/Thinking>/g)
+            if (thinkMatches) {
+              reasoning = thinkMatches
+                .map((match: string) => match.replace(/<think>|<\/think>|<Thinking>|<\/Thinking>/g, "").trim())
+                .join("\n\n")
               console.log("🧠 Extracted reasoning:", reasoning.substring(0, 100) + "...")
             }
 
             // Remove thinking tags from the main content
-            cleanedText = text.replace(/<Thinking>[\s\S]*?<\/think>/g, "").trim()
-            console.log("🧠 Cleaned text length:", cleanedText.length)
+            cleanedText = text
+              .replace(/<think>[\s\S]*?<\/think>/g, "")
+              .replace(/<Thinking>[\s\S]*?<\/Thinking>/g, "")
+              .trim()
           }
 
+          // Save to database
           await handleMessageSave(
             threadId,
             aiMessageId,
@@ -1095,7 +1341,7 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
             providerMetadata,
             modelConfig,
             apiKey!,
-            reasoning,
+            reasoning
           )
         },
       }
@@ -1117,12 +1363,12 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
 
         // Initialize enhanced stream protection for thinking models
         const streamProtection = new StreamProtection({
-          maxRepetitions: 3, // Reduced from 4 to catch repetitions earlier
+          maxRepetitions: 10, // Increased to allow for legitimate thinking tags
           repetitionWindowSize: 50, // Reduced from 100 to detect smaller repetition patterns
           maxResponseLength: 40000,
           timeoutMs: 180000, // 3 minutes for thinking models
-          maxSimilarChunks: 4, // Reduced from 6 to be more aggressive about similar content
-          minRepetitionLength: 5, // Add minimum length for repetition detection
+          maxSimilarChunks: 20, // Significantly increased for Ollama's incremental streaming
+          minRepetitionLength: 15, // Increased to skip short patterns like thinking tags
         })
 
         // Create a custom readable stream that filters out thinking content AND protects against loops
@@ -1131,7 +1377,14 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
             const reader = result.toDataStream().getReader()
             let buffer = ""
             let insideThinking = false
-            let lastThinkingTag = ""
+            let currentThinkingContent = ""
+            let fullResponse = ""
+            let reasoning = ""
+            let cleanedText = ""
+            let sentContent = ""
+            let hasEmittedReasoningStart = false
+            let lastThinkingEmitTime = 0
+            const THINKING_EMIT_DELAY = 100 // Reduced delay for more responsive thinking updates
 
             const safeEnqueue = (chunk: Uint8Array) => {
               try {
@@ -1141,148 +1394,106 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
               }
             }
 
-            const safeClose = () => {
-              try {
-                controller.close()
-              } catch (error) {
-                console.warn("⚠️ Failed to close controller (may already be closed):", error)
-              }
-            }
-
             try {
               while (true) {
                 const { done, value } = await reader.read()
                 if (done) break
 
-                const chunk = new TextDecoder().decode(value)
-                buffer += chunk
+                // Properly decode the incoming value as UTF-8 text
+                const decodedValue = new TextDecoder().decode(value)
+                buffer += decodedValue
+                let processedChunk = ""
+                let i = 0
 
-                // For Google models, we don't need to filter thinking tags since they don't use them
-                // Just process the content normally with protection
-                if (modelConfig.provider === "google") {
-                  // Google thinking models don't use <Thinking> tags, so process normally
-                  // But we still need to parse the data stream format properly
-                  const lines = chunk.split('\n').filter(Boolean)
-                  
-                  for (const line of lines) {
-                    if (line.startsWith('0:')) {
-                      // This is a text chunk
-                      try {
-                        const content = JSON.parse(line.substring(2))
-                        if (content) {
-                          const protectionResult = streamProtection.analyzeChunk(content)
-                          
-                          if (!protectionResult.allowed) {
-                            console.warn(`🛡️ Stream protection triggered:`, protectionResult.reason)
-                            const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
-                            const encodedError = `0:${JSON.stringify(errorMsg)}\n`
-                            safeEnqueue(new TextEncoder().encode(encodedError))
-                            safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
-                            safeClose()
-                            return
-                          }
-                          
-                          // Forward the properly formatted chunk
-                          safeEnqueue(new TextEncoder().encode(line + '\n'))
-                        }
-                      } catch (e) {
-                        console.warn('Failed to parse data stream chunk:', e)
-                        // Forward as-is if parsing fails
-                        safeEnqueue(new TextEncoder().encode(line + '\n'))
-                      }
-                    } else {
-                      // Forward other data stream parts (like finish messages) as-is
-                      safeEnqueue(new TextEncoder().encode(line + '\n'))
-                    }
-                  }
-                } else {
-                  // For non-Google thinking models (OpenAI, etc.), process <Thinking> tags
-                  let processedChunk = ""
-                  let i = 0
-
-                  while (i < buffer.length) {
-                    if (!insideThinking) {
-                      // Look for start of thinking
-                      const thinkStart = buffer.indexOf("<Thinking>", i)
-                      if (thinkStart !== -1) {
-                        // Add content before thinking tag
-                        processedChunk += buffer.substring(i, thinkStart)
-                        // Also include the thinking tag in the output for real-time processing
-                        processedChunk += "<Thinking>"
-                        insideThinking = true
-                        i = thinkStart + 10 // Skip "<Thinking>"
-                        lastThinkingTag = "<Thinking>"
-                      } else {
-                        // No thinking tag found, add rest of buffer
-                        processedChunk += buffer.substring(i)
-                        break
-                      }
-                    } else {
-                      // Look for end of thinking
-                      const thinkEnd = buffer.indexOf("</Thinking>", i)
-                      if (thinkEnd !== -1) {
-                        // Include thinking content in the output
-                        const thinkingContent = buffer.substring(i, thinkEnd)
-                        processedChunk += thinkingContent
-                        processedChunk += "<Thinking></Thinking>" // Include closing tag
-
-                        insideThinking = false
-                        i = thinkEnd + 11 // Skip "<Thinking></Thinking>"
-                        lastThinkingTag = "</Thinking>"
-                      } else {
-                        // Still inside thinking, include partial thinking content
-                        processedChunk += buffer.substring(i)
-                        break
-                      }
-                    }
-                  }
-
-                  // Update buffer to keep unprocessed content
-                  if (i < buffer.length) {
-                    buffer = buffer.substring(i)
-                  } else {
-                    buffer = ""
-                  }
-
-                  // Send processed chunk if we have content - but check for protection first
-                  if (processedChunk) {
-                    // Check with stream protection
-                    const protectionResult = streamProtection.analyzeChunk(processedChunk)
+                while (i < buffer.length) {
+                  if (!insideThinking) {
+                    // Look for start of thinking (both formats)
+                    const thinkStart = Math.min(
+                      buffer.indexOf("<think>", i) === -1 ? Infinity : buffer.indexOf("<think>", i),
+                      buffer.indexOf("<Thinking>", i) === -1 ? Infinity : buffer.indexOf("<Thinking>", i)
+                    )
                     
-                    if (!protectionResult.allowed) {
-                      console.warn(`🛡️ Stream protection triggered:`, protectionResult.reason)
-                      const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
-                      const encodedError = `0:${JSON.stringify(errorMsg)}\n`
-                      safeEnqueue(new TextEncoder().encode(encodedError))
-                      safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
-                      safeClose()
-                      return
+                    if (thinkStart !== Infinity) {
+                      // Add content before thinking
+                      processedChunk += buffer.substring(i, thinkStart)
+                      insideThinking = true
+                      // Skip the appropriate tag length
+                      i = thinkStart + (buffer.substring(thinkStart, thinkStart + 9) === "<Thinking>" ? 9 : 7)
+                      
+                      // Emit a reasoning start event if we haven't already
+                      if (!hasEmittedReasoningStart) {
+                        safeEnqueue(new TextEncoder().encode(`r:${JSON.stringify({ type: "reasoning-start" })}\n`))
+                        hasEmittedReasoningStart = true
+                      }
+                    } else {
+                      // No thinking tag found, add rest of buffer
+                      processedChunk += buffer.substring(i)
+                      break
                     }
-
-                    // Re-encode as proper data stream format with proper JSON escaping
-                    const encodedChunk = `0:${JSON.stringify(processedChunk)}\n`
-                    safeEnqueue(new TextEncoder().encode(encodedChunk))
+                  } else {
+                    // Look for end of thinking (both formats)
+                    const thinkEnd = Math.min(
+                      buffer.indexOf("</think>", i) === -1 ? Infinity : buffer.indexOf("</think>", i),
+                      buffer.indexOf("</Thinking>", i) === -1 ? Infinity : buffer.indexOf("</Thinking>", i)
+                    )
+                    
+                    if (thinkEnd !== Infinity) {
+                      // Capture thinking content
+                      currentThinkingContent += buffer.substring(i, thinkEnd)
+                      
+                      // Emit reasoning delta event
+                      safeEnqueue(new TextEncoder().encode(`r:${JSON.stringify({ 
+                        type: "reasoning-delta", 
+                        content: currentThinkingContent 
+                      })}\n`))
+                      
+                      // Store for final reasoning and reset buffer
+                      reasoning += currentThinkingContent + "\n"
+                      currentThinkingContent = ""
+                      
+                      // Exit thinking mode
+                      insideThinking = false
+                      // Skip the appropriate tag length
+                      i = thinkEnd + (buffer.substring(thinkEnd, thinkEnd + 10) === "</Thinking>" ? 10 : 8)
+                    } else {
+                      // Still inside thinking, accumulate content
+                      currentThinkingContent += buffer.substring(i)
+                      break
+                    }
                   }
                 }
+
+                // Only emit processed text if we have any
+                if (processedChunk && !sentContent.includes(processedChunk)) {
+                  const protectionResult = streamProtection.analyzeChunk(processedChunk)
+                  if (protectionResult.allowed) {
+                    // Send the text chunk directly
+                    safeEnqueue(new TextEncoder().encode(`0:${JSON.stringify(processedChunk)}\n`))
+                    sentContent += processedChunk
+                    cleanedText += processedChunk
+                  }
+                }
+
+                // Update buffer to remaining unprocessed content
+                buffer = buffer.substring(i)
               }
 
-              // Send any remaining buffer content (outside thinking) for non-Google models
-              if (buffer && !insideThinking && modelConfig.provider !== "google") {
+              // Send any remaining buffer content (outside thinking)
+              if (buffer && !insideThinking) {
                 // Final protection check
                 const protectionResult = streamProtection.analyzeChunk(buffer)
                 if (protectionResult.allowed) {
-                  const encodedChunk = `0:${JSON.stringify(buffer)}\n`
-                  safeEnqueue(new TextEncoder().encode(encodedChunk))
+                  safeEnqueue(new TextEncoder().encode(`0:${JSON.stringify(buffer)}\n`))
                 }
               }
 
               // Send properly formatted completion marker with finishReason
               safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
             } catch (error) {
-              console.error("❌ Error in thinking stream processing:", error)
-              safeClose()
+              console.error("❌ Error in stream processing:", error)
+              controller.error(error)
             }
-          },
+          }
         })
 
         return new Response(customStream, {
@@ -1290,12 +1501,12 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
             "Content-Type": "text/plain; charset=utf-8",
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-          },
+          }
         })
       })
     } else if (isThinkingModel && modelConfig.provider === "google") {
-      // Google thinking models - use proper thinking configuration based on official docs
-      console.log("🧠 Using Google thinking model processing for:", modelConfig.modelId)
+      // Google thinking models - use AI SDK with proper thinking configuration
+      console.log("🧠 Using Google thinking model processing with AI SDK for:", modelConfig.modelId)
       console.log("🤖 Model provider:", modelConfig.provider)
       console.log("🤖 Is thinking model:", isThinkingModel)
       
@@ -1304,47 +1515,59 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
         messages: processedMessages,
         system: systemPrompt,
         experimental_attachments: experimental_attachments || undefined,
-        // Proper Google thinking configuration based on official docs
-        experimental_providerOptions: {
+        // Proper Google thinking configuration using AI SDK
+        providerOptions: {
           google: {
             thinkingConfig: {
-              includeThoughts: true, // Enable thought summaries
+              includeThoughts: true,
+              // thinkingBudget: 2048, // Optional
             },
-          },
+          } satisfies GoogleGenerativeAIProviderOptions,
         },
-        onFinish: async ({ text, finishReason, usage, sources, providerMetadata }: any) => {
-          console.log("🏁 AI generation finished")
+        onFinish: async ({ text, finishReason, usage, sources, providerMetadata, reasoning, reasoningDetails }: any) => {
+          console.log("🏁 AI generation finished for Google thinking model")
+          console.log("🔍 Full response text:", text)
+          console.log("🔍 Response length:", text?.length)
+          console.log("🔍 Reasoning from AI SDK:", reasoning)
+          console.log("🔍 Reasoning details from AI SDK:", reasoningDetails)
           console.log("🔍 Provider metadata:", JSON.stringify(providerMetadata, null, 2))
           
-          // Extract reasoning from Google thinking model response
+          // Extract reasoning from AI SDK response
           let cleanedText = text
-          let reasoning = null
+          let extractedReasoning = reasoning || null
           
-          // Check if the response contains thinking parts based on official docs
-          if (providerMetadata?.parts) {
+          // If we have reasoning details, use that as well
+          if (reasoningDetails && !extractedReasoning) {
+            extractedReasoning = reasoningDetails
+          }
+          
+          // Also check provider metadata for additional reasoning
+          if (!extractedReasoning && providerMetadata?.parts) {
             console.log("🔍 Found parts in provider metadata:", providerMetadata.parts.length)
             const thoughtParts = providerMetadata.parts.filter((part: any) => part.thought)
-            console.log("🔍 Found thought parts:", thoughtParts.length)
             if (thoughtParts.length > 0) {
-              reasoning = thoughtParts.map((part: any) => part.thought).join('\n\n')
-              console.log("🧠 Extracted Google thinking reasoning:", reasoning.substring(0, 100) + "...")
+              extractedReasoning = thoughtParts.map((part: any) => part.thought).join('\n\n')
+              console.log("🧠 Extracted reasoning from provider metadata:", extractedReasoning.substring(0, 200) + "...")
             }
-          } else {
-            console.log("🔍 No parts found in provider metadata")
           }
           
           try {
-            await handleMessageSave(threadId, aiMessageId, user.id, cleanedText, sources, providerMetadata, modelConfig, apiKey!, reasoning)
-            console.log("✅ Message saved successfully")
+            await handleMessageSave(threadId, aiMessageId, user.id, cleanedText, sources, providerMetadata, modelConfig, apiKey!, extractedReasoning)
+            console.log("✅ Google thinking model message saved successfully")
+            if (extractedReasoning) {
+              console.log("✅ Reasoning was included in save")
+            } else {
+              console.log("⚠️ No reasoning was saved for Google thinking model")
+            }
           } catch (saveError) {
-            console.error("❌ Error saving message:", saveError)
+            console.error("❌ Error saving Google thinking model message:", saveError)
           }
         },
       }
 
-      console.log("🚀 Starting Google thinking model generation...")
+      console.log("🚀 Starting Google thinking model generation with AI SDK...")
       console.log("🤖 Final system prompt being sent to AI (Google thinking):", systemPrompt)
-      console.log("🔧 Google thinking config:", JSON.stringify(streamOptions.experimental_providerOptions, null, 2))
+      console.log("🔧 Google thinking config:", JSON.stringify(streamOptions.providerOptions, null, 2))
 
       // Wrap the stream creation in circuit breaker
       return await streamCircuitBreaker.execute(async () => {
@@ -1362,43 +1585,117 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
             } else if (error.message.includes("QUOTA_EXCEEDED") || error.message.includes("429")) {
               throw new Error("Google API quota exceeded. Please try again later.")
             } else if (error.message.includes("model not found") || error.message.includes("404")) {
-              throw new Error(`Model ${modelConfig.modelId} not found or not available.`)
+              throw new Error(`Google model '${modelConfig.modelId}' not found. Please check the model name.`)
             }
           }
           throw error
         }
 
-        // Use the AI SDK's built-in data stream response with error handling
-        return result.toDataStreamResponse({
+                 // Create a custom stream to handle reasoning parts during streaming
+         const customStream = new ReadableStream({
+           async start(controller) {
+             const reader = result.fullStream.getReader()
+             const encoder = new TextEncoder()
+             let reasoning = ""
+             let hasStartedReasoning = false
+             let hasFinishedReasoning = false
+             let reasoningStartTime = Date.now()
+
+             const safeEnqueue = (chunk: Uint8Array) => {
+               try {
+                 controller.enqueue(chunk)
+               } catch (error) {
+                 console.warn("⚠️ Failed to enqueue chunk:", error)
+               }
+             }
+
+             const safeClose = () => {
+               try {
+                 controller.close()
+               } catch (error) {
+                 console.warn("⚠️ Failed to close controller:", error)
+               }
+             }
+
+             try {
+               while (true) {
+                 const { done, value } = await reader.read()
+                 if (done) break
+
+                 if (value.type === 'reasoning') {
+                   // Handle reasoning parts during streaming - STREAM THEM TO CLIENT
+                   reasoning += value.textDelta
+                   console.log("🧠 Found reasoning during streaming:", value.textDelta.substring(0, 100))
+                   
+                   if (!hasStartedReasoning) {
+                     // Send reasoning start marker
+                     const reasoningStartChunk = `r:${JSON.stringify({ type: 'reasoning-start' })}\n`
+                     safeEnqueue(encoder.encode(reasoningStartChunk))
+                     hasStartedReasoning = true
+                     reasoningStartTime = Date.now()
+                     console.log("🧠 Started streaming reasoning to client")
+                   }
+                   
+                   // Stream reasoning content to client in real-time
+                   const reasoningChunk = `r:${JSON.stringify({ type: 'reasoning-delta', content: value.textDelta })}\n`
+                   safeEnqueue(encoder.encode(reasoningChunk))
+                   
+                 } else if (value.type === 'text-delta') {
+                   // If we were streaming reasoning and now we have text, mark reasoning as finished
+                   if (hasStartedReasoning && !hasFinishedReasoning) {
+                     const reasoningEndTime = Date.now()
+                     const thinkingDuration = Math.round((reasoningEndTime - reasoningStartTime) / 1000)
+                     const reasoningEndChunk = `r:${JSON.stringify({ 
+                       type: 'reasoning-end', 
+                       duration: thinkingDuration,
+                       totalReasoning: reasoning 
+                     })}\n`
+                     safeEnqueue(encoder.encode(reasoningEndChunk))
+                     hasFinishedReasoning = true
+                     console.log(`🧠 Finished streaming reasoning to client (${thinkingDuration}s)`)
+                   }
+                   
+                   // Stream text content to client
+                   const streamChunk = `0:${JSON.stringify(value.textDelta)}\n`
+                   safeEnqueue(encoder.encode(streamChunk))
+                 } else if (value.type === 'finish') {
+                   // If reasoning never finished (edge case), finish it now
+                   if (hasStartedReasoning && !hasFinishedReasoning) {
+                     const reasoningEndTime = Date.now()
+                     const thinkingDuration = Math.round((reasoningEndTime - reasoningStartTime) / 1000)
+                     const reasoningEndChunk = `r:${JSON.stringify({ 
+                       type: 'reasoning-end', 
+                       duration: thinkingDuration,
+                       totalReasoning: reasoning 
+                     })}\n`
+                     safeEnqueue(encoder.encode(reasoningEndChunk))
+                     console.log(`🧠 Finished reasoning on completion (${thinkingDuration}s)`)
+                   }
+                   
+                   // Send completion marker
+                   safeEnqueue(encoder.encode('d:{"finishReason":"stop"}\n'))
+                 }
+               }
+
+               safeClose()
+             } catch (error) {
+               console.error("❌ Error in Google thinking stream processing:", error)
+               safeClose()
+             }
+           }
+         })
+
+        return new Response(customStream, {
           headers: {
             "Content-Type": "text/plain; charset=utf-8",
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
           },
-          getErrorMessage: (error: unknown) => {
-            console.error("🚨 Google thinking model stream error:", error)
-            if (error == null) {
-              return 'Unknown error occurred'
-            }
-            if (typeof error === 'string') {
-              return error
-            }
-            if (error instanceof Error) {
-              console.error("🚨 Error details:", {
-                name: error.name,
-                message: error.message,
-                stack: error.stack,
-                cause: error.cause
-              })
-              return error.message
-            }
-            return JSON.stringify(error)
-          },
         })
       })
-    } else {
-      // Regular models - use standard processing with protection
-      console.log("🤖 Using standard model processing for:", modelConfig.modelId)
+    } else if (needsCustomThinkingProcessor) {
+      // OpenRouter thinking models - use custom thinking processor
+      console.log("🧠 Using custom thinking processor for OpenRouter model:", modelConfig.modelId)
       console.log("🤖 Model provider:", modelConfig.provider)
       console.log("🤖 Is thinking model:", isThinkingModel)
       
@@ -1408,15 +1705,362 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
         system: systemPrompt,
         experimental_attachments: experimental_attachments || undefined,
         onFinish: async ({ text, finishReason, usage, sources, providerMetadata }: any) => {
-          console.log("🏁 AI generation finished")
+          console.log("🏁 AI generation finished for thinking model")
+          console.log("🔍 Full response text:", text)
+          console.log("🔍 Response length:", text?.length)
+          console.log("🔍 Contains <think>:", text?.includes("<think>"))
+          console.log("🔍 Contains </think>:", text?.includes("</think>"))
+
+          // Parse thinking content from text for OpenRouter models
+          let cleanedText = text
+          let reasoning = null
+
+          if (text.includes("<think>") && text.includes("</think>")) {
+            console.log("🧠 Detected thinking content in OpenRouter response")
+
+            // Extract thinking content
+            const thinkMatches = text.match(/<think>([\s\S]*?)<\/think>/g)
+            if (thinkMatches) {
+              reasoning = thinkMatches.map((match: string) => 
+                match.replace(/<think>|<\/think>/g, "")
+              ).join('\n\n')
+              console.log("🧠 Extracted reasoning length:", reasoning.length)
+              console.log("🧠 Extracted reasoning preview:", reasoning.substring(0, 200) + "...")
+            }
+
+            // Remove thinking tags from the main content
+            cleanedText = text.replace(/<think>[\s\S]*?<\/think>/g, "").trim()
+            console.log("🧠 Cleaned text length:", cleanedText.length)
+            console.log("🧠 Cleaned text preview:", cleanedText.substring(0, 200) + "...")
+          } else {
+            console.log("🧠 No thinking tags found in response")
+            console.log("🔍 Response preview:", text?.substring(0, 500) + "...")
+          }
+
           try {
-          await handleMessageSave(threadId, aiMessageId, user.id, text, sources, providerMetadata, modelConfig, apiKey!)
+            await handleMessageSave(threadId, aiMessageId, user.id, cleanedText, sources, providerMetadata, modelConfig, apiKey!, reasoning)
+            console.log("✅ OpenRouter thinking model message saved successfully")
+            if (reasoning) {
+              console.log("✅ Reasoning was included in save")
+            } else {
+              console.log("⚠️ No reasoning was saved")
+            }
+          } catch (saveError) {
+            console.error("❌ Error saving OpenRouter thinking model message:", saveError)
+          }
+        },
+      }
+
+      console.log("🚀 Starting OpenRouter thinking model generation...")
+      console.log("🤖 Final system prompt being sent to AI (OpenRouter thinking):", systemPrompt)
+
+      // Wrap the stream creation in circuit breaker
+      return await streamCircuitBreaker.execute(async () => {
+        console.log("🔄 Executing streamText with OpenRouter thinking model")
+        let result
+        try {
+          result = streamText(streamOptions)
+          console.log("✅ streamText initialized successfully for OpenRouter thinking model")
+        } catch (error) {
+          console.error("❌ Error in streamText initialization for OpenRouter thinking model:", error)
+          throw error
+        }
+
+        // Create a custom data stream that filters out <think> tags during streaming and sends real-time thinking
+        const customStream = new ReadableStream({
+          async start(controller) {
+            const reader = result.toDataStream().getReader()
+            const encoder = new TextEncoder()
+            const decoder = new TextDecoder()
+            
+            let textBuffer = ""
+            let insideThinking = false
+            let thinkingContent = ""
+            let hasStartedReasoning = false
+            let reasoningStartTime = 0
+            let lastThinkingLength = 0
+
+            const safeEnqueue = (chunk: Uint8Array) => {
+              try {
+                controller.enqueue(chunk)
+              } catch (error) {
+                console.warn("⚠️ Failed to enqueue chunk:", error)
+              }
+            }
+
+            const safeClose = () => {
+              try {
+                controller.close()
+              } catch (error) {
+                console.warn("⚠️ Failed to close controller:", error)
+              }
+            }
+
+            try {
+              while (true) {
+                const { done, value } = await reader.read()
+                if (done) {
+                  // If we were in thinking mode when stream ended, send reasoning end
+                  if (hasStartedReasoning) {
+                    const reasoningEndTime = Date.now()
+                    const thinkingDuration = Math.round((reasoningEndTime - reasoningStartTime) / 1000)
+                    const reasoningEndChunk = `r:${JSON.stringify({ 
+                      type: 'reasoning-end', 
+                      duration: thinkingDuration,
+                      totalReasoning: thinkingContent 
+                    })}\n`
+                    safeEnqueue(encoder.encode(reasoningEndChunk))
+                    console.log(`🧠 Finished streaming OpenRouter reasoning to client (${thinkingDuration}s)`)
+                  }
+                  break
+                }
+
+                const chunk = decoder.decode(value)
+                
+                // Check if this is a text delta chunk
+                if (chunk.startsWith('0:')) {
+                  // Extract the text content from the data stream format
+                  const textMatch = chunk.match(/0:"([^"]*)"/)
+                  if (textMatch) {
+                    const textDelta = textMatch[1]
+                    textBuffer += textDelta
+                    
+                    let processedText = ""
+                    let i = 0
+
+                    while (i < textBuffer.length) {
+                      if (!insideThinking) {
+                        // Look for start of thinking
+                        const thinkStart = textBuffer.indexOf("<think>", i)
+                        if (thinkStart !== -1) {
+                          // Add content before thinking to output
+                          processedText += textBuffer.substring(i, thinkStart)
+                          insideThinking = true
+                          i = thinkStart + 7 // Skip "<think>"
+                          
+                          // Send reasoning start marker if not already sent
+                          if (!hasStartedReasoning) {
+                            const reasoningStartChunk = `r:${JSON.stringify({ type: 'reasoning-start' })}\n`
+                            safeEnqueue(encoder.encode(reasoningStartChunk))
+                            hasStartedReasoning = true
+                            reasoningStartTime = Date.now()
+                            console.log("🧠 Started streaming OpenRouter reasoning to client")
+                          }
+                        } else {
+                          // No thinking tag found, add rest of buffer to output
+                          processedText += textBuffer.substring(i)
+                          break
+                        }
+                      } else {
+                        // Look for end of thinking
+                        const thinkEnd = textBuffer.indexOf("</think>", i)
+                        if (thinkEnd !== -1) {
+                          // Capture thinking content and stream it to client
+                          const newThinkingContent = textBuffer.substring(i, thinkEnd)
+                          thinkingContent += newThinkingContent
+                          
+                          // Send thinking delta if we have new content
+                          if (newThinkingContent) {
+                            const reasoningChunk = `r:${JSON.stringify({ type: 'reasoning-delta', content: newThinkingContent })}\n`
+                            safeEnqueue(encoder.encode(reasoningChunk))
+                          }
+                          
+                          // End of thinking block - send reasoning end
+                          const reasoningEndTime = Date.now()
+                          const thinkingDuration = Math.round((reasoningEndTime - reasoningStartTime) / 1000)
+                          const reasoningEndChunk = `r:${JSON.stringify({ 
+                            type: 'reasoning-end', 
+                            duration: thinkingDuration,
+                            totalReasoning: thinkingContent 
+                          })}\n`
+                          safeEnqueue(encoder.encode(reasoningEndChunk))
+                          console.log(`🧠 Finished streaming OpenRouter reasoning block to client (${thinkingDuration}s)`)
+                          
+                          insideThinking = false
+                          hasStartedReasoning = false // Reset for potential multiple thinking blocks
+                          i = thinkEnd + 8 // Skip "</think>"
+                        } else {
+                          // Still inside thinking, capture content and stream to client
+                          const newThinkingContent = textBuffer.substring(i)
+                          thinkingContent += newThinkingContent
+                          
+                          // Send thinking delta for real-time updates
+                          if (newThinkingContent) {
+                            const reasoningChunk = `r:${JSON.stringify({ type: 'reasoning-delta', content: newThinkingContent })}\n`
+                            safeEnqueue(encoder.encode(reasoningChunk))
+                          }
+                          
+                          break
+                        }
+                      }
+                    }
+
+                    // Send processed text delta (without thinking content) to client
+                    if (processedText) {
+                      const processedChunk = `0:"${processedText}"\n`
+                      safeEnqueue(encoder.encode(processedChunk))
+                    }
+
+                    // Update buffer to remaining unprocessed content
+                    textBuffer = textBuffer.substring(i)
+                  } else {
+                    // Pass through non-text chunks as-is
+                    safeEnqueue(value)
+                  }
+                } else {
+                  // Pass through non-text chunks (like finish reason, etc.)
+                  safeEnqueue(value)
+                }
+              }
+
+              safeClose()
+            } catch (error) {
+              console.error("❌ Error in OpenRouter thinking stream processing:", error)
+              safeClose()
+            }
+          }
+        })
+
+        return new Response(customStream, {
+          headers: {
+            "Content-Type": "text/plain; charset=utf-8",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+          },
+        })
+      })
+    } else {
+      // Regular models - use standard processing with protection
+      console.log("🤖 Using standard model processing for:", modelConfig.modelId)
+      console.log("🤖 Model provider:", modelConfig.provider)
+      console.log("🤖 Is thinking model:", isThinkingModel)
+      
+      // Prepare tools for OpenAI web search
+      let tools = undefined
+      let toolChoice = undefined
+      
+      console.log("🔍 Web search debug info:", {
+        provider: modelConfig.provider,
+        webSearchEnabled,
+        modelSupportsSearch,
+        shouldAddWebSearch: modelConfig.provider === "openai" && webSearchEnabled && modelSupportsSearch
+      })
+      
+      if (webSearchEnabled && modelSupportsSearch) {
+        console.log("🔍 Adding Serper web search tool")
+        try {
+          // Check if Serper API key is available
+          const serperApiKey = process.env.SERPER_API_KEY
+          if (!serperApiKey) {
+            console.warn("⚠️ SERPER_API_KEY not found, skipping web search tool")
+          } else {
+            tools = {
+              search: search,
+            }
+            console.log("✅ Serper web search tool configured successfully")
+          }
+        } catch (error) {
+          console.error("❌ Error configuring Serper web search tool:", error)
+        }
+      } else {
+        console.log("🚫 Web search tool not added - conditions not met")
+      }
+
+      const streamOptions = {
+        model: aiModel,
+        messages: processedMessages,
+        system: systemPrompt,
+        experimental_attachments: experimental_attachments || undefined,
+        tools: tools,
+        toolChoice: toolChoice,
+        onFinish: async ({ text, finishReason, usage, sources, providerMetadata, toolResults }: any) => {
+          console.log("🏁 AI generation finished")
+          console.log("🔧 Tool results:", toolResults)
+          
+          // Extract sources from tool results if available
+          let extractedSources: any[] = []
+          
+          if (toolResults && toolResults.length > 0) {
+            for (const toolResult of toolResults) {
+              console.log("🔧 Processing tool result:", {
+                toolName: toolResult.toolName,
+                resultType: typeof toolResult.result,
+                hasResults: !!(toolResult.result?.results)
+              })
+              
+              if (toolResult.toolName === "search" && toolResult.result?.results) {
+                const results = toolResult.result.results
+                const query = toolResult.result.query
+                
+                console.log("🔍 Found web search results in tool result:", {
+                  query,
+                  resultsCount: results.length,
+                  resultsPreview: results.slice(0, 2).map((r: any) => ({ title: r.title, url: r.url }))
+                })
+                
+                // Convert tool results to expected source format
+                extractedSources = results.map((result: any) => ({
+                  title: result.title,
+                  snippet: result.content,
+                  url: result.url,
+                  source: result.domain,
+                  domain: result.domain,
+                  query: query
+                }))
+              }
+            }
+          }
+          
+          // Get sources from global variables as fallback
+          const webSearchSources = global.lastSearchSources || []
+          const webSearchQuery = global.lastSearchQuery || null
+          
+          if (webSearchSources.length > 0) {
+            console.log("🔍 Web search sources from global fallback:", {
+              sourcesCount: webSearchSources.length,
+              query: webSearchQuery,
+              sourcesPreview: webSearchSources.slice(0, 2).map((s: any) => ({ title: s.title, url: s.url }))
+            })
+          }
+          
+          // Clear global sources after use
+          global.lastSearchSources = []
+          global.lastSearchQuery = null
+          
+          console.log("🔍 AI SDK sources:", sources)
+          console.log("🔍 Sources type:", typeof sources)
+          console.log("🔍 Sources length:", sources?.length)
+          console.log("🔍 Finish reason:", finishReason)
+          console.log("🔍 Provider metadata:", providerMetadata)
+          
+          // Use extracted sources from tools first, then web search sources, then AI SDK sources
+          const finalSources = extractedSources.length > 0 ? extractedSources 
+                               : webSearchSources.length > 0 ? webSearchSources 
+                               : sources
+          
+          console.log("🎯 Final sources to save:", {
+            sourcesCount: finalSources?.length || 0,
+            sourceType: extractedSources.length > 0 ? "tool_results" 
+                        : webSearchSources.length > 0 ? "global_fallback" 
+                        : "ai_sdk"
+          })
+          
+          try {
+          await handleMessageSave(threadId, aiMessageId, user.id, text, finalSources, providerMetadata, modelConfig, apiKey!)
             console.log("✅ Message saved successfully")
           } catch (saveError) {
             console.error("❌ Error saving message:", saveError)
           }
         },
       }
+
+      console.log("🔍 Stream options debug:", {
+        hasTools: !!tools,
+        toolsKeys: tools ? Object.keys(tools) : [],
+        hasToolChoice: !!toolChoice,
+        modelId: modelConfig.modelId,
+        messagesCount: processedMessages.length
+      })
 
       console.log("🚀 Starting AI generation...")
       console.log("🤖 Final system prompt being sent to AI (non-thinking):", systemPrompt)
@@ -1513,6 +2157,504 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
       },
       { status: 500 },
     )
+  }
+}
+
+async function handleOllamaChat(req: NextRequest, messages: any[], model: string, headersList: Headers, data?: any) {
+  try {
+    console.log("🦙 Handling Ollama chat request")
+
+    // Get authorization header and authenticate user
+    const authHeader = headersList.get("authorization")
+    let user = null
+    let userEmail = ""
+
+    if (authHeader?.startsWith("Bearer ")) {
+      const token = authHeader.substring(7)
+      const authResult = await supabaseServer.auth.getUser(token)
+      if (!authResult.error && authResult.data.user) {
+        user = authResult.data.user
+        userEmail = user.email || ""
+        console.log("✅ Ollama user authenticated:", user.id)
+      }
+    }
+
+    const ollamaModel = model.replace("ollama:", "")
+    console.log("🦙 Using Ollama model:", ollamaModel)
+
+    // Get the Ollama base URL from headers (sent by frontend) or fallback to environment/default
+    const ollamaUrl = headersList.get('x-ollama-base-url') || 
+                      headersList.get('X-Ollama-Base-URL') || 
+                      process.env.OLLAMA_URL || 
+                      "http://localhost:11434"
+    console.log("🦙 Ollama URL:", ollamaUrl)
+
+    // Get model config to check if this is a thinking model
+    const modelConfig = getModelConfig(model as AIModel)
+    const isThinkingModel = modelConfig.supportsThinking
+    console.log("🧠 Ollama model supports thinking:", isThinkingModel)
+
+    const threadId = req.nextUrl.searchParams.get("threadId") as string
+    const aiMessageId = uuidv4()
+
+    // Get thread persona if one is assigned and user is authenticated
+    let threadPersona = null
+    if (threadId && user) {
+      try {
+        console.log("🎭 Looking up persona for Ollama thread:", threadId)
+
+        const { data: threadPersonaData, error: personaError } = await supabaseServer
+          .from("thread_personas")
+          .select(`
+            *,
+            personas (
+              id,
+              name,
+              description,
+              system_prompt,
+              avatar_emoji,
+              color,
+              is_default,
+              is_public
+            )
+          `)
+          .eq("thread_id", threadId)
+          .eq("user_id", user.id)
+          .single()
+
+        if (!personaError && threadPersonaData?.personas) {
+          threadPersona = threadPersonaData.personas
+          console.log("✅ Found persona for Ollama thread:", threadPersona.name)
+        } else {
+          console.log("ℹ️ No persona assigned to Ollama thread")
+        }
+      } catch (error) {
+        console.log("⚠️ Error looking up persona for Ollama:", error)
+      }
+    }
+
+    // Extract user preferences from request data
+    const userPreferences = data?.userPreferences || null
+    const reasoningEffort = data?.reasoningEffort || "medium"
+    console.log("👤 Ollama user preferences:", userPreferences ? "present" : "not found")
+
+    // Create system prompt for Ollama
+    const systemPrompt = getSystemPrompt(false, false, userEmail, threadPersona, userPreferences)
+    console.log("📝 Ollama generated system prompt preview:", systemPrompt.substring(0, 200) + "...")
+
+    // Prepare messages for Ollama - inject system prompt as system message
+    const ollamaMessages = [
+      {
+        role: "system",
+        content: systemPrompt,
+      },
+      ...messages,
+    ]
+
+    console.log("📨 Ollama messages prepared:", ollamaMessages.length)
+
+    const response = await fetch(`${ollamaUrl}/api/chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: ollamaModel,
+        messages: ollamaMessages,
+        stream: true,
+      }),
+    })
+
+    if (!response.ok) {
+      console.error("❌ Ollama API error:", response.status, response.statusText)
+      return NextResponse.json({ error: "Ollama API error" }, { status: response.status })
+    }
+
+    console.log("✅ Ollama response received, streaming...")
+
+    // For thinking models, we need special handling
+    if (isThinkingModel) {
+      console.log("🧠 Using thinking-aware stream processing for Ollama")
+
+      // Initialize stream protection for Ollama thinking models
+      const streamProtection = new StreamProtection({
+        maxRepetitions: 10,
+        repetitionWindowSize: 50,
+        maxResponseLength: 40000,
+        timeoutMs: 180000,
+        maxSimilarChunks: 20,
+        minRepetitionLength: 15,
+      })
+
+      // Create a readable stream from the Ollama response with thinking handling AND protection
+      const stream = new ReadableStream({
+        async start(controller) {
+          const reader = response.body?.getReader()
+          if (!reader) {
+            controller.close()
+            return
+          }
+
+          let isClosed = false
+          let insideThinking = false
+          let fullResponse = ""
+          let reasoning = null
+          let cleanedText = ""
+
+          const safeEnqueue = (chunk: Uint8Array) => {
+            if (!isClosed) {
+              try {
+                controller.enqueue(chunk)
+              } catch (error) {
+                console.warn("⚠️ Controller already closed, ignoring chunk")
+                isClosed = true
+              }
+            }
+          }
+
+          const safeClose = () => {
+            if (!isClosed) {
+              try {
+                controller.close()
+                isClosed = true
+              } catch (error) {
+                console.warn("⚠️ Controller already closed")
+              }
+            }
+          }
+
+          try {
+            while (true) {
+              const { done, value } = await reader.read()
+              if (done) break
+
+              // Properly decode the incoming value as UTF-8 text
+              const decodedValue = new TextDecoder().decode(value)
+              buffer += decodedValue
+              let processedChunk = ""
+              let i = 0
+
+              while (i < buffer.length) {
+                if (isClosed) break
+
+                try {
+                  const data = JSON.parse(buffer)
+                  if (data.message?.content) {
+                    const content = data.message.content
+                    fullResponse += content
+
+                    // For thinking models, we need to handle <think> tags
+                    if (!insideThinking) {
+                      // Check if this token starts a thinking section
+                      if (content.includes("<think>")) {
+                        const parts = content.split("<think>")
+                        const beforeThink = parts[0]
+                        
+                        // Send content before <think> tag
+                        if (beforeThink) {
+                          const protectionResult = streamProtection.analyzeChunk(beforeThink)
+                          if (!protectionResult.allowed) {
+                            console.warn("🛡️ Ollama stream protection triggered:", protectionResult.reason)
+                            const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
+                            const encodedError = `0:${JSON.stringify(errorMsg)}\n`
+                            safeEnqueue(new TextEncoder().encode(encodedError))
+                            safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
+                            safeClose()
+                            return
+                          }
+                          const streamChunk = `0:${JSON.stringify(beforeThink)}\n`
+                          safeEnqueue(new TextEncoder().encode(streamChunk))
+                        }
+                        
+                        // Enter thinking mode
+                        insideThinking = true
+                        
+                        // Handle any thinking content in this same token
+                        if (parts.length > 1) {
+                          const thinkingPart = parts.slice(1).join("<think>")
+                          if (thinkingPart.includes("</think>")) {
+                            const thinkParts = thinkingPart.split("</think>")
+                            const thinkContent = thinkParts[0]
+                            if (!reasoning) reasoning = thinkContent
+                            else reasoning += thinkContent
+                            
+                            // Exit thinking mode
+                            insideThinking = false
+                            
+                            // Send any content after </think>
+                            if (thinkParts.length > 1) {
+                              const afterThink = thinkParts.slice(1).join("</think>")
+                              if (afterThink) {
+                                const protectionResult = streamProtection.analyzeChunk(afterThink)
+                                if (!protectionResult.allowed) {
+                                  console.warn("🛡️ Ollama stream protection triggered:", protectionResult.reason)
+                                  const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
+                                  const encodedError = `0:${JSON.stringify(errorMsg)}\n`
+                                  safeEnqueue(new TextEncoder().encode(encodedError))
+                                  safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
+                                  safeClose()
+                                  return
+                                }
+                                const streamChunk = `0:${JSON.stringify(afterThink)}\n`
+                                safeEnqueue(new TextEncoder().encode(streamChunk))
+                              }
+                            }
+                          } else {
+                            // Still inside thinking, add to reasoning
+                            if (!reasoning) reasoning = thinkingPart
+                            else reasoning += thinkingPart
+                          }
+                        }
+                      } else {
+                        // Normal content outside thinking - send it directly
+                        const protectionResult = streamProtection.analyzeChunk(content)
+                        if (!protectionResult.allowed) {
+                          console.warn("🛡️ Ollama stream protection triggered:", protectionResult.reason)
+                          const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
+                          const encodedError = `0:${JSON.stringify(errorMsg)}\n`
+                          safeEnqueue(new TextEncoder().encode(encodedError))
+                          safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
+                          safeClose()
+                          return
+                        }
+                        const streamChunk = `0:${JSON.stringify(content)}\n`
+                        safeEnqueue(new TextEncoder().encode(streamChunk))
+                      }
+                    } else {
+                      // We're inside thinking - check for end tag
+                      if (content.includes("</think>")) {
+                        const parts = content.split("</think>")
+                        const thinkContent = parts[0]
+                        if (!reasoning) reasoning = thinkContent
+                        else reasoning += thinkContent
+                        
+                        // Exit thinking mode
+                        insideThinking = false
+                        
+                        // Send any content after </think>
+                        if (parts.length > 1) {
+                          const afterThink = parts.slice(1).join("</think>")
+                          if (afterThink) {
+                            const protectionResult = streamProtection.analyzeChunk(afterThink)
+                            if (!protectionResult.allowed) {
+                              console.warn("🛡️ Ollama stream protection triggered:", protectionResult.reason)
+                              const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
+                              const encodedError = `0:${JSON.stringify(errorMsg)}\n`
+                              safeEnqueue(new TextEncoder().encode(encodedError))
+                              safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
+                              safeClose()
+                              return
+                            }
+                            const streamChunk = `0:${JSON.stringify(afterThink)}\n`
+                            safeEnqueue(new TextEncoder().encode(streamChunk))
+                          }
+                        }
+                      } else {
+                        // Still inside thinking, add to reasoning
+                        if (!reasoning) reasoning = content
+                        else reasoning += content
+                      }
+                    }
+                  }
+
+                  if (data.done) {
+                    safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
+
+                    // Save the message with reasoning
+                    if (threadId && user) {
+                      // Clean the full response by removing thinking tags
+                      cleanedText = fullResponse.replace(/<think>[\s\S]*?<\/think>/g, "").trim()
+
+                      await handleMessageSave(
+                        threadId,
+                        aiMessageId,
+                        user.id,
+                        cleanedText,
+                        null, // sources
+                        null, // providerMetadata
+                        modelConfig,
+                        "", // Ollama doesn't use API keys
+                        reasoning,
+                      )
+                    }
+                    // In the thinking model section, after saving the message, add:
+                    if (threadId && user && cleanedText && cleanedText.trim().length > 0) {
+                      await createArtifactsFromContent(cleanedText, threadId, aiMessageId, user.id)
+                    }
+
+                    safeClose()
+                    return
+                  }
+                } catch (parseError) {
+                  console.warn("⚠️ Failed to parse Ollama chunk:", parseError)
+                }
+              }
+            }
+          } catch (error) {
+            console.error("❌ Error reading Ollama stream:", error)
+            if (!isClosed) {
+              try {
+                controller.error(error)
+              } catch (controllerError) {
+                console.warn("⚠️ Failed to signal error to controller")
+              }
+            }
+          } finally {
+            safeClose()
+          }
+        },
+      })
+
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+        },
+      })
+    } else {
+      // Regular non-thinking Ollama model
+      console.log("🦙 Using standard stream processing for Ollama")
+
+      // Initialize stream protection for regular Ollama models
+      const streamProtection = new StreamProtection({
+        maxRepetitions: 5,
+        repetitionWindowSize: 80,
+        maxResponseLength: 50000,
+        timeoutMs: 120000, // 2 minutes for regular models
+        maxSimilarChunks: 8,
+      })
+
+      // Create a readable stream from the Ollama response with protection
+      const stream = new ReadableStream({
+        async start(controller) {
+          const reader = response.body?.getReader()
+          if (!reader) {
+            controller.close()
+            return
+          }
+
+          let isClosed = false
+          let fullResponse = "" // Accumulate the full response for saving
+
+          const safeEnqueue = (chunk: Uint8Array) => {
+            if (!isClosed) {
+              try {
+                controller.enqueue(chunk)
+              } catch (error) {
+                console.warn("⚠️ Controller already closed, ignoring chunk")
+                isClosed = true
+              }
+            }
+          }
+
+          const safeClose = () => {
+            if (!isClosed) {
+              try {
+                controller.close()
+                isClosed = true
+              } catch (error) {
+                console.warn("⚠️ Controller already closed")
+              }
+            }
+          }
+
+          try {
+            while (true) {
+              const { done, value } = await reader.read()
+              if (done) break
+
+              // Properly decode the incoming value as UTF-8 text
+              const decodedValue = new TextDecoder().decode(value)
+              buffer += decodedValue
+              let processedChunk = ""
+              let i = 0
+
+              while (i < buffer.length) {
+                if (isClosed) break
+
+                try {
+                  const data = JSON.parse(buffer)
+                  if (data.message?.content) {
+                    const content = data.message.content
+
+                    // Accumulate the full response
+                    fullResponse += content
+
+                    // Check with stream protection
+                    const protectionResult = streamProtection.analyzeChunk(content)
+
+                    if (!protectionResult.allowed) {
+                      console.warn("🛡️ Ollama stream protection triggered:", protectionResult.reason)
+                      console.log("📊 Ollama stream stats:", streamProtection.getStats())
+
+                      // Send error message to client
+                      const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
+                      const encodedError = `0:${JSON.stringify(errorMsg)}\n`
+                      safeEnqueue(new TextEncoder().encode(encodedError))
+
+                      // Terminate the stream
+                      safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
+                      safeClose()
+                      return
+                    }
+
+                    // Format as AI SDK compatible stream
+                    const streamChunk = `0:${JSON.stringify(content)}\n`
+                    safeEnqueue(new TextEncoder().encode(streamChunk))
+                  }
+                  if (data.done) {
+                    safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
+
+                    // Save the message for non-thinking Ollama models (similar to thinking models)
+                    if (threadId && user && fullResponse && fullResponse.trim().length > 0) {
+                      await handleMessageSave(
+                        threadId,
+                        aiMessageId,
+                        user.id,
+                        fullResponse.trim(),
+                        null, // sources
+                        null, // providerMetadata
+                        modelConfig,
+                        "", // Ollama doesn't use API keys
+                        null, // no reasoning for non-thinking models
+                      )
+                    }
+
+                    safeClose()
+                    return
+                  }
+                } catch (parseError) {
+                  console.warn("⚠️ Failed to parse Ollama chunk:", parseError)
+                }
+              }
+            }
+          } catch (error) {
+            console.error("❌ Error reading Ollama stream:", error)
+            if (!isClosed) {
+              try {
+                controller.error(error)
+              } catch (controllerError) {
+                console.warn("⚠️ Failed to signal error to controller")
+              }
+            }
+          } finally {
+            safeClose()
+          }
+        },
+      })
+
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+        },
+      })
+    }
+  } catch (error) {
+    console.error("💥 Ollama handler error:", error)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
 
@@ -1619,6 +2761,38 @@ You can also work with user artifacts (code, documents, data they've created):
 - For inserted artifacts, analyze the content directly and provide detailed feedback
 - Artifacts are user-created content from their personal library
 
+WORKFLOW EXECUTION SYSTEM:
+When you receive a message containing "[EXECUTE_WORKFLOW]" and "[/EXECUTE_WORKFLOW]", you should:
+1. Parse the workflow data from the structured format
+2. Execute each step sequentially with real-time progress indicators
+3. Use web search when WEB_SEARCH is true for individual steps AND you have search capabilities
+4. Display results clearly with proper formatting
+5. Show completion status at the end
+
+IMPORTANT: Do NOT acknowledge the workflow execution message itself. Start directly with the workflow execution.
+
+For workflow steps:
+- Start with: 🚀 **Executing workflow: [WORKFLOW_NAME]**
+- For each step: 
+  - ⚡ **Step X: [Step Name]**
+  - If WEB_SEARCH is true for the step: 🔍 **Searching the web...** (actually search for relevant information)
+  - 🤖 **Processing with AI...**
+  - **Result:** [detailed content based on step prompt and any search results]
+  - Use "---" separator between steps
+- End with: 🎉 **Workflow completed successfully!**
+
+Parse the workflow data from these fields:
+- WORKFLOW_NAME: The name of the workflow
+- WORKFLOW_DESCRIPTION: Description of what the workflow does
+- INPUT_DATA: JSON object with input variables
+- WORKFLOW_STEPS: Individual step definitions with WEB_SEARCH flags
+- WEB_SEARCH_ENABLED: Global web search setting
+- SELECTED_MODEL: The model being used
+
+CRITICAL: When a step has WEB_SEARCH: true, you MUST actually search for information relevant to that step's prompt and input data. Use your search grounding capabilities to find real-time information.
+
+IMPORTANT: For content generation steps (like writing blog posts, articles, etc.), you MUST generate the FULL content requested. Do NOT use placeholders like "(This section would contain...)" or "(Due to length constraints...)". Always provide complete, detailed content as requested. If a step asks for an 800-1200 word blog post, write the entire blog post with that word count.
+
 When you receive files or artifacts:
 1. Immediately acknowledge you can see them: "I can see the file(s)/artifact(s) you've shared: [names]"
 2. Provide detailed analysis of the content
@@ -1700,7 +2874,21 @@ async function handleMessageSave(
       const messageParts = [{ type: "text", text }]
 
       if (sources && sources.length > 0) {
+        console.log("💾 Adding sources to message parts:", {
+          sourcesCount: sources.length,
+          sourcesPreview: sources.slice(0, 2).map((s: any) => ({
+            url: s?.url,
+            title: s?.title,
+            snippet: s?.snippet?.substring(0, 100)
+          }))
+        })
         messageParts.push({ type: "sources", sources } as any)
+      } else {
+        console.log("💾 No sources to add to message parts:", {
+          hasSources: !!sources,
+          sourcesType: typeof sources,
+          sourcesLength: sources?.length
+        })
       }
 
       if (reasoning) {
@@ -1743,447 +2931,5 @@ async function handleMessageSave(
     }
   } catch (error) {
     console.error("💥 Error saving AI message:", error)
-  }
-}
-
-// Ollama handler function
-async function handleOllamaChat(req: NextRequest, messages: any[], model: string, headersList: Headers, data?: any) {
-  try {
-    console.log("🦙 Handling Ollama chat request")
-
-    // Get authorization header and authenticate user
-    const authHeader = headersList.get("authorization")
-    let user = null
-    let userEmail = ""
-
-    if (authHeader?.startsWith("Bearer ")) {
-      const token = authHeader.substring(7)
-      const authResult = await supabaseServer.auth.getUser(token)
-      if (!authResult.error && authResult.data.user) {
-        user = authResult.data.user
-        userEmail = user.email || ""
-        console.log("✅ Ollama user authenticated:", user.id)
-      }
-    }
-
-    const ollamaModel = model.replace("ollama:", "")
-    console.log("🦙 Using Ollama model:", ollamaModel)
-
-    const ollamaUrl = process.env.OLLAMA_URL || "http://localhost:11434"
-    console.log("🦙 Ollama URL:", ollamaUrl)
-
-    // Get model config to check if this is a thinking model
-    const modelConfig = getModelConfig(model as AIModel)
-    const isThinkingModel = modelConfig.supportsThinking
-    console.log("🧠 Ollama model supports thinking:", isThinkingModel)
-
-    const threadId = req.nextUrl.searchParams.get("threadId") as string
-    const aiMessageId = uuidv4()
-
-    // Get thread persona if one is assigned and user is authenticated
-    let threadPersona = null
-    if (threadId && user) {
-      try {
-        console.log("🎭 Looking up persona for Ollama thread:", threadId)
-
-        const { data: threadPersonaData, error: personaError } = await supabaseServer
-          .from("thread_personas")
-          .select(`
-            *,
-            personas (
-              id,
-              name,
-              description,
-              system_prompt,
-              avatar_emoji,
-              color,
-              is_default,
-              is_public
-            )
-          `)
-          .eq("thread_id", threadId)
-          .eq("user_id", user.id)
-          .single()
-
-        if (!personaError && threadPersonaData?.personas) {
-          threadPersona = threadPersonaData.personas
-          console.log("✅ Found persona for Ollama thread:", threadPersona.name)
-        } else {
-          console.log("ℹ️ No persona assigned to Ollama thread")
-        }
-      } catch (error) {
-        console.log("⚠️ Error looking up persona for Ollama:", error)
-      }
-    }
-
-    // Extract user preferences from request data
-    const userPreferences = data?.userPreferences || null
-    const reasoningEffort = data?.reasoningEffort || "medium" // Default to medium if not specified
-    console.log("👤 Ollama user preferences:", userPreferences ? "present" : "not found")
-    console.log("🧠 Reasoning effort:", reasoningEffort)
-    if (userPreferences) {
-      console.log("👤 Ollama user preferences details:", {
-        preferredName: userPreferences.preferredName,
-        occupation: userPreferences.occupation,
-        assistantTraits: userPreferences.assistantTraits,
-        customInstructions: userPreferences.customInstructions,
-      })
-    }
-
-    // Create system prompt for Ollama (will be injected as system message)
-    const systemPrompt = getSystemPrompt(false, false, userEmail, threadPersona, userPreferences) // Ollama doesn't support web search in this context
-    console.log("📝 Ollama generated system prompt preview:", systemPrompt.substring(0, 200) + "...")
-    console.log("🤖 Full Ollama system prompt being sent:", systemPrompt)
-
-    // Prepare messages for Ollama - inject system prompt as system message
-    const ollamaMessages = [
-      {
-        role: "system",
-        content: systemPrompt,
-      },
-      ...messages,
-    ]
-
-    console.log("📨 Ollama messages prepared:", ollamaMessages.length)
-
-    const response = await fetch(`${ollamaUrl}/api/chat`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: ollamaModel,
-        messages: ollamaMessages,
-        stream: true,
-      }),
-    })
-
-    if (!response.ok) {
-      console.error("❌ Ollama API error:", response.status, response.statusText)
-      return NextResponse.json({ error: "Ollama API error" }, { status: response.status })
-    }
-
-    console.log("✅ Ollama response received, streaming...")
-
-    // For thinking models, we need special handling
-    if (isThinkingModel) {
-      console.log("🧠 Using thinking-aware stream processing for Ollama")
-
-      // Initialize stream protection for Ollama thinking models
-      const streamProtection = new StreamProtection({
-        maxRepetitions: 3, // Reduced from 4 to catch repetitions earlier
-        repetitionWindowSize: 50, // Reduced from 100 to detect smaller repetition patterns
-        maxResponseLength: 40000,
-        timeoutMs: 180000, // 3 minutes for thinking models
-        maxSimilarChunks: 4, // Reduced from 6 to be more aggressive about similar content
-        minRepetitionLength: 5, // Add minimum length for repetition detection
-      })
-
-      // Create a readable stream from the Ollama response with thinking handling AND protection
-      const stream = new ReadableStream({
-        async start(controller) {
-          const reader = response.body?.getReader()
-          if (!reader) {
-            controller.close()
-            return
-          }
-
-          let isClosed = false
-          let buffer = ""
-          let insideThinking = false
-          let fullResponse = ""
-          let reasoning = null
-          let cleanedText = "" // Declare cleanedText here
-
-          const safeEnqueue = (chunk: Uint8Array) => {
-            if (!isClosed) {
-              try {
-                controller.enqueue(chunk)
-              } catch (error) {
-                console.warn("⚠️ Controller already closed, ignoring chunk")
-                isClosed = true
-              }
-            }
-          }
-
-          const safeClose = () => {
-            if (!isClosed) {
-              try {
-                controller.close()
-                isClosed = true
-              } catch (error) {
-                console.warn("⚠️ Controller already closed")
-              }
-            }
-          }
-
-          try {
-            while (true) {
-              const { done, value } = await reader.read()
-              if (done) break
-
-              // Parse the Ollama response chunks
-              const chunk = new TextDecoder().decode(value)
-              const lines = chunk.split("\n").filter((line) => line.trim())
-
-              for (const line of lines) {
-                if (isClosed) break
-
-                try {
-                  const data = JSON.parse(line)
-                  if (data.message?.content) {
-                    const content = data.message.content
-                    fullResponse += content
-
-                    // Process for thinking tags
-                    buffer += content
-                    let processedContent = ""
-
-                    // Simple state machine to extract thinking content
-                    let i = 0
-                    while (i < buffer.length) {
-                      if (!insideThinking) {
-                        // Look for start of thinking
-                        const thinkStart = buffer.indexOf("<Thinking>", i)
-                        if (thinkStart !== -1) {
-                          // Add content before thinking
-                          processedContent += buffer.substring(i, thinkStart)
-                          // Also include the thinking tag in the output for real-time processing
-                          processedContent += "<Thinking>"
-                          insideThinking = true
-                          i = thinkStart + 10 // Skip "<Thinking>"
-                        } else {
-                          // No thinking tag found, add rest of buffer
-                          processedContent += buffer.substring(i)
-                          break
-                        }
-                      } else {
-                        // Look for end of thinking
-                        const thinkEnd = buffer.indexOf("</Thinking>", i)
-                        if (thinkEnd !== -1) {
-                          // Capture thinking content
-                          const thinkingContent = buffer.substring(i, thinkEnd)
-                          if (!reasoning) reasoning = thinkingContent
-                          else reasoning += thinkingContent
-
-                          // Skip thinking content
-                          insideThinking = false
-                          i = thinkEnd + 11 // Skip "</Thinking>"
-                        } else {
-                          // Still inside thinking, skip rest of buffer
-                          break
-                        }
-                      }
-                    }
-
-                    // Update buffer to keep unprocessed content
-                    if (i < buffer.length) {
-                      buffer = buffer.substring(i)
-                    } else {
-                      buffer = ""
-                    }
-
-                    // Only send non-thinking content - but check protection first
-                    if (processedContent) {
-                      // Check with stream protection
-                      const protectionResult = streamProtection.analyzeChunk(processedContent)
-
-                      if (!protectionResult.allowed) {
-                        console.warn("🛡️ Ollama stream protection triggered:", protectionResult.reason)
-                        console.log("📊 Ollama stream stats:", streamProtection.getStats())
-
-                        // Send error message to client
-                        const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
-                        const encodedError = `0:"${errorMsg.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
-                        safeEnqueue(new TextEncoder().encode(encodedError))
-
-                        // Terminate the stream
-                        safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
-                        safeClose()
-                        return
-                      }
-
-                      // Format as AI SDK compatible stream
-                      const streamChunk = `0:"${processedContent.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
-                      safeEnqueue(new TextEncoder().encode(streamChunk))
-                    }
-                  }
-
-                  if (data.done) {
-                    safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
-
-                    // Save the message with reasoning
-                    if (threadId && user) {
-                      // Clean the full response by removing thinking tags
-                      cleanedText = fullResponse.replace(/<Thinking>[\s\S]*?<\/think>/g, "").trim()
-
-                      await handleMessageSave(
-                        threadId,
-                        aiMessageId,
-                        user.id,
-                        cleanedText,
-                        null, // sources
-                        null, // providerMetadata
-                        modelConfig,
-                        "", // Ollama doesn't use API keys
-                        reasoning,
-                      )
-                    }
-                    // In the thinking model section, after saving the message, add:
-                    if (threadId && user && cleanedText && cleanedText.trim().length > 0) {
-                      await createArtifactsFromContent(cleanedText, threadId, aiMessageId, user.id)
-                    }
-
-                    safeClose()
-                    return
-                  }
-                } catch (parseError) {
-                  console.warn("⚠️ Failed to parse Ollama chunk:", parseError)
-                }
-              }
-            }
-          } catch (error) {
-            console.error("❌ Error reading Ollama stream:", error)
-            if (!isClosed) {
-              try {
-                controller.error(error)
-              } catch (controllerError) {
-                console.warn("⚠️ Failed to signal error to controller")
-              }
-            }
-          } finally {
-            safeClose()
-          }
-        },
-      })
-
-      return new Response(stream, {
-        headers: {
-          "Content-Type": "text/plain; charset=utf-8",
-          "Cache-Control": "no-cache",
-          "Connection": "keep-alive",
-        },
-      })
-    } else {
-      // Regular non-thinking Ollama model
-      console.log("🦙 Using standard stream processing for Ollama")
-
-      // Initialize stream protection for regular Ollama models
-      const streamProtection = new StreamProtection({
-        maxRepetitions: 5,
-        repetitionWindowSize: 80,
-        maxResponseLength: 50000,
-        timeoutMs: 120000, // 2 minutes for regular models
-        maxSimilarChunks: 8,
-      })
-
-      // Create a readable stream from the Ollama response with protection
-      const stream = new ReadableStream({
-        async start(controller) {
-          const reader = response.body?.getReader()
-          if (!reader) {
-            controller.close()
-            return
-          }
-
-          let isClosed = false
-
-          const safeEnqueue = (chunk: Uint8Array) => {
-            if (!isClosed) {
-              try {
-                controller.enqueue(chunk)
-              } catch (error) {
-                console.warn("⚠️ Controller already closed, ignoring chunk")
-                isClosed = true
-              }
-            }
-          }
-
-          const safeClose = () => {
-            if (!isClosed) {
-              try {
-                controller.close()
-                isClosed = true
-              } catch (error) {
-                console.warn("⚠️ Controller already closed")
-              }
-            }
-          }
-
-          try {
-            while (true) {
-              const { done, value } = await reader.read()
-              if (done) break
-
-              // Parse the Ollama response chunks
-              const chunk = new TextDecoder().decode(value)
-              const lines = chunk.split("\n").filter((line) => line.trim())
-
-              for (const line of lines) {
-                if (isClosed) break
-
-                try {
-                  const data = JSON.parse(line)
-                  if (data.message?.content) {
-                    const content = data.message.content
-
-                    // Check with stream protection
-                    const protectionResult = streamProtection.analyzeChunk(content)
-
-                    if (!protectionResult.allowed) {
-                      console.warn("🛡️ Ollama stream protection triggered:", protectionResult.reason)
-                      console.log("📊 Ollama stream stats:", streamProtection.getStats())
-
-                      // Send error message to client
-                      const errorMsg = `\n\n[Stream interrupted: ${protectionResult.reason}. Please try again with a different approach.]`
-                      const encodedError = `0:"${errorMsg.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
-                      safeEnqueue(new TextEncoder().encode(encodedError))
-
-                      // Terminate the stream
-                      safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
-                      safeClose()
-                      return
-                    }
-
-                    // Format as AI SDK compatible stream
-                    const streamChunk = `0:"${content.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"\n`
-                    safeEnqueue(new TextEncoder().encode(streamChunk))
-                  }
-                  if (data.done) {
-                    safeEnqueue(new TextEncoder().encode('d:{"finishReason":"stop"}\n'))
-                    safeClose()
-                    return
-                  }
-                } catch (parseError) {
-                  console.warn("⚠️ Failed to parse Ollama chunk:", parseError)
-                }
-              }
-            }
-          } catch (error) {
-            console.error("❌ Error reading Ollama stream:", error)
-            if (!isClosed) {
-              try {
-                controller.error(error)
-              } catch (controllerError) {
-                console.warn("⚠️ Failed to signal error to controller")
-              }
-            }
-          } finally {
-            safeClose()
-          }
-        },
-      })
-
-      return new Response(stream, {
-        headers: {
-          "Content-Type": "text/plain; charset=utf-8",
-          "Cache-Control": "no-cache",
-          "Connection": "keep-alive",
-        },
-      })
-    }
-  } catch (error) {
-    console.error("💥 Ollama handler error:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

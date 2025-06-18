@@ -13,6 +13,7 @@ import {
 import { useAPIKeyStore } from "@/frontend/stores/APIKeyStore"
 import { toast } from "sonner"
 import { getAuthHeaders } from "@/lib/auth-headers"
+import { useState as useReactState, useEffect as useReactEffect } from "react"
 
 interface CodeConversion {
   id: string
@@ -54,12 +55,14 @@ export default function CodeConverter({
   const [activeTab, setActiveTab] = useState<TabType>("new")
   const [hasHistory, setHasHistory] = useState(false)
   const [dropdownPosition, setDropdownPosition] = useState<'above' | 'below'>('above')
+  const [hasGoogleAccess, setHasGoogleAccess] = useState(false)
+  const [isCheckingGoogleAccess, setIsCheckingGoogleAccess] = useState(true)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   // Get the API key store and Google API key
-  const { getKey } = useAPIKeyStore()
+  const { getKey, hasDefaultKeys } = useAPIKeyStore()
   const googleApiKey = getKey("google")
 
   const detectedLanguage = detectLanguageFromCode(code)
@@ -140,6 +143,33 @@ export default function CodeConverter({
     }
   }, [isOpen, activeTab])
 
+  // Check for Google API access (user key or server fallback)
+  useEffect(() => {
+    const checkGoogleAccess = async () => {
+      setIsCheckingGoogleAccess(true)
+      try {
+        // If user has their own Google API key, use it
+        if (googleApiKey) {
+          console.log("✅ Using user-provided Google API key")
+          setHasGoogleAccess(true)
+          return
+        }
+
+        // Otherwise, check if server has fallback Google API key
+        const hasServerKey = await hasDefaultKeys("google")
+        console.log("🔍 Server Google API key available:", hasServerKey)
+        setHasGoogleAccess(hasServerKey)
+      } catch (error) {
+        console.error("❌ Error checking Google API access:", error)
+        setHasGoogleAccess(false)
+      } finally {
+        setIsCheckingGoogleAccess(false)
+      }
+    }
+
+    checkGoogleAccess()
+  }, [googleApiKey, hasDefaultKeys])
+
   // Fetch previous conversions when the component mounts or when code/language changes
   useEffect(() => {
     if (threadId && messageId) {
@@ -219,8 +249,8 @@ export default function CodeConverter({
     setIsOpen(false)
     setSearchTerm("")
 
-    if (!googleApiKey) {
-      toast.error("Google API key required for code conversion. Please add it in Settings.")
+    if (!hasGoogleAccess) {
+      toast.error("Google API access required for code conversion. Please add a Google API key in Settings or ensure server has one configured.")
       return
     }
 
@@ -232,10 +262,14 @@ export default function CodeConverter({
       const headers = await getAuthHeaders()
       console.log("🔑 Auth headers for conversion:", Object.keys(headers))
 
-      const allHeaders = {
+      const allHeaders: Record<string, string> = {
         ...headers,
         "Content-Type": "application/json",
-        "X-Google-API-Key": googleApiKey,
+      }
+
+      // Only add Google API key header if user has one
+      if (googleApiKey) {
+        allHeaders["X-Google-API-Key"] = googleApiKey
       }
 
       console.log("📤 Sending conversion request with headers:", Object.keys(allHeaders))
@@ -323,8 +357,30 @@ export default function CodeConverter({
     setActiveTab(tab)
   }
 
-  // Only show if we have a Google API key and available targets
-  if (!googleApiKey || availableTargets.length === 0) {
+  // Debug logging for convert button visibility
+  if (availableTargets.length > 0) {
+    console.log("🔍 CodeConverter render check:", {
+      hasGoogleApiKey: !!googleApiKey,
+      hasGoogleAccess,
+      isCheckingGoogleAccess,
+      availableTargetsCount: availableTargets.length,
+      language,
+      willRender: hasGoogleAccess && availableTargets.length > 0 && !isCheckingGoogleAccess
+    })
+  }
+
+  // Don't render while checking Google access
+  if (isCheckingGoogleAccess) {
+    return null
+  }
+
+  // Only show if we have Google API access and available targets
+  if (!hasGoogleAccess || availableTargets.length === 0) {
+    console.log("❌ CodeConverter not rendering:", {
+      reason: !hasGoogleAccess ? "No Google API access" : "No available targets",
+      hasGoogleAccess,
+      availableTargetsCount: availableTargets.length
+    })
     return null
   }
 

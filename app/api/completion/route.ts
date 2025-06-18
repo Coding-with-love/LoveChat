@@ -33,6 +33,23 @@ export async function POST(req: Request) {
 
     console.log("✅ User authenticated:", user.id)
 
+    // Get the request body early since we might need it for fallback
+    const { prompt, isTitle, messageId, threadId } = await req.json()
+    console.log("📝 Request body:", {
+      promptLength: prompt?.length || 0,
+      isTitle,
+      messageId,
+      threadId,
+    })
+
+    if (!threadId) {
+      return NextResponse.json({ error: "Thread ID is required" }, { status: 400 })
+    }
+
+    if (!prompt) {
+      return NextResponse.json({ error: "Prompt is required" }, { status: 400 })
+    }
+
     // Check all headers for debugging
     console.log("📋 Available headers:", Object.fromEntries(headersList.entries()))
 
@@ -68,31 +85,88 @@ export async function POST(req: Request) {
       }
     }
 
-    if (!googleApiKey) {
-      return NextResponse.json(
-        {
-          error: "Google API key is required to enable chat title generation.",
-        },
-        { status: 400 },
-      )
+    // Fallback to server environment variable if no user key found
+    if (!googleApiKey && process.env.GOOGLE_API_KEY) {
+      googleApiKey = process.env.GOOGLE_API_KEY
+      console.log("✅ Using server fallback Google API key")
     }
 
-    // Get the request body
-    const { prompt, isTitle, messageId, threadId } = await req.json()
-    console.log("📝 Request body:", {
-      promptLength: prompt?.length || 0,
-      isTitle,
-      messageId,
-      threadId,
-    })
+          if (!googleApiKey) {
+        // Check if the user is using Ollama - if so, provide a fallback title
+      
+      if (isTitle && prompt) {
+        // Generate a simple fallback title for Ollama users
+        const fallbackTitle = prompt.length > 50 
+          ? prompt.substring(0, 47) + "..." 
+          : prompt
+        
+        console.log("📝 Using fallback title for Ollama user:", fallbackTitle)
+        
+        // Update thread title with fallback
+        const { error: updateError } = await supabaseServer
+          .from("threads")
+          .update({
+            title: fallbackTitle,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", threadId)
+          .eq("user_id", user.id)
 
-    if (!threadId) {
-      return NextResponse.json({ error: "Thread ID is required" }, { status: 400 })
+        if (updateError) {
+          console.error("❌ Failed to update thread title:", updateError)
+          return NextResponse.json({ error: "Failed to update thread title" }, { status: 500 })
+        }
+
+        console.log("✅ Thread title updated with fallback")
+        return NextResponse.json({ title: fallbackTitle, isTitle, messageId, threadId })
+      }
+      
+      // For non-title requests (message summaries), create fallback summary
+      if (messageId && prompt) {
+        const fallbackSummary = prompt.length > 50 
+          ? prompt.substring(0, 47) + "..." 
+          : prompt
+        
+        console.log("📝 Using fallback summary for message:", fallbackSummary)
+        
+        // Create message summary with fallback
+        try {
+          const { error: summaryError } = await supabaseServer.from("message_summaries").insert({
+            thread_id: threadId,
+            message_id: messageId,
+            user_id: user.id,
+            content: fallbackSummary,
+          })
+
+          if (summaryError) {
+            console.error("❌ Failed to create fallback message summary:", summaryError)
+          } else {
+            console.log("✅ Fallback message summary created successfully")
+          }
+        } catch (summaryError) {
+          console.error("❌ Exception creating fallback message summary:", summaryError)
+        }
+
+        return NextResponse.json({ 
+          title: fallbackSummary, 
+          isTitle: false, 
+          messageId, 
+          threadId,
+          note: "Using fallback summary generation" 
+        })
+      }
+      
+      // For requests without messageId or prompt, just return success
+      return NextResponse.json({ 
+        title: "Chat", 
+        isTitle: false, 
+        messageId, 
+        threadId,
+        note: "Summary generation requires Google API key. Using fallback." 
+      })
     }
 
-    if (!prompt) {
-      return NextResponse.json({ error: "Prompt is required" }, { status: 400 })
-    }
+    // Request body already parsed above
 
     // Verify user owns the thread
     const { data: thread, error: threadError } = await supabaseServer
@@ -102,9 +176,31 @@ export async function POST(req: Request) {
       .eq("user_id", user.id)
       .single()
 
-    if (threadError || !thread) {
+    if (threadError) {
       console.error("❌ Thread verification failed:", threadError)
-      return NextResponse.json({ error: "Thread not found or access denied" }, { status: 404 })
+      
+      // If thread doesn't exist, try to create it for Ollama users
+      if (threadError.code === "PGRST116") {
+        console.log("🔗 Thread doesn't exist, creating it for completion...")
+        try {
+          const { error: createError } = await supabaseServer.from("threads").insert({
+            id: threadId,
+            title: "New Chat",
+            user_id: user.id,
+          })
+
+          if (createError) {
+            console.error("❌ Failed to create thread for completion:", createError)
+            return NextResponse.json({ error: "Thread not found or access denied" }, { status: 404 })
+          }
+          console.log("✅ Thread created successfully for completion")
+        } catch (createError) {
+          console.error("❌ Exception creating thread for completion:", createError)
+          return NextResponse.json({ error: "Thread not found or access denied" }, { status: 404 })
+        }
+      } else {
+        return NextResponse.json({ error: "Thread not found or access denied" }, { status: 404 })
+      }
     }
 
     console.log("✅ Thread verified for user")
@@ -180,7 +276,52 @@ export async function POST(req: Request) {
 
       if (genError instanceof Error) {
         if (genError.message.includes("API_KEY_INVALID")) {
-          return NextResponse.json({ error: "Invalid Google API key" }, { status: 400 })
+          // For Ollama users, provide fallback instead of error
+          console.log("🦙 Google API key invalid, providing Ollama fallback")
+          const fallbackTitle = prompt.length > 50 ? prompt.substring(0, 47) + "..." : prompt
+          
+          if (isTitle) {
+            // Update thread title with fallback
+            const { error: updateError } = await supabaseServer
+              .from("threads")
+              .update({
+                title: fallbackTitle,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", threadId)
+              .eq("user_id", user.id)
+
+            if (updateError) {
+              console.error("❌ Failed to update thread title:", updateError)
+              return NextResponse.json({ error: "Failed to update thread title" }, { status: 500 })
+            }
+          } else if (messageId) {
+            // Create message summary with fallback
+            try {
+              const { error: summaryError } = await supabaseServer.from("message_summaries").insert({
+                thread_id: threadId,
+                message_id: messageId,
+                user_id: user.id,
+                content: fallbackTitle,
+              })
+
+              if (summaryError) {
+                console.error("❌ Failed to create fallback message summary:", summaryError)
+              } else {
+                console.log("✅ Fallback message summary created successfully")
+              }
+            } catch (summaryError) {
+              console.error("❌ Exception creating fallback message summary:", summaryError)
+            }
+          }
+          
+          return NextResponse.json({ 
+            title: fallbackTitle, 
+            isTitle, 
+            messageId, 
+            threadId,
+            note: "Using fallback title generation" 
+          })
         } else if (genError.message.includes("QUOTA_EXCEEDED")) {
           return NextResponse.json({ error: "Google API quota exceeded" }, { status: 429 })
         } else {

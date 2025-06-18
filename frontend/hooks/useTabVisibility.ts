@@ -15,7 +15,7 @@ let isGlobalRefreshInProgress = false
 let lastGlobalRefreshTime = 0
 
 export function useTabVisibility(options: TabVisibilityOptions = {}) {
-  const { onVisible, onHidden, refreshStoresOnVisible = true } = options
+  const { onVisible, onHidden, refreshStoresOnVisible = false } = options
   const { user } = useAuth()
   const [isVisible, setIsVisible] = useState(!document.hidden)
   const loadKeys = useAPIKeyStore((state) => state.loadKeys)
@@ -30,38 +30,48 @@ export function useTabVisibility(options: TabVisibilityOptions = {}) {
       console.log(`🔄 [${componentId.current}] Tab became visible after`, wasHiddenFor, "ms")
       setIsVisible(true)
       
-      // Global refresh coordination to prevent multiple components from refreshing stores simultaneously
-      // Only refresh if hidden for more than 5 seconds (increased from 1 second) to reduce disruption
-      if (refreshStoresOnVisible && wasHiddenFor > 5000 && user && !isGlobalRefreshInProgress) {
+      // Much more conservative global refresh coordination
+      // Only refresh if hidden for more than 30 seconds (increased from 5 seconds)
+      if (refreshStoresOnVisible && wasHiddenFor > 30000 && user && !isGlobalRefreshInProgress) {
         const timeSinceLastGlobalRefresh = now - lastGlobalRefreshTime
         
-        // Only allow one global refresh every 5 seconds (increased from 2 seconds)
-        if (timeSinceLastGlobalRefresh > 5000) {
+        // Only allow one global refresh every 60 seconds (increased from 5 seconds)
+        if (timeSinceLastGlobalRefresh > 60000) {
           isGlobalRefreshInProgress = true
           lastGlobalRefreshTime = now
           
-          console.log(`🔄 [${componentId.current}] Coordinating global store refresh`)
+          console.log(`🔄 [${componentId.current}] Coordinating global store refresh (hidden for ${Math.round(wasHiddenFor/1000)}s)`)
+          
+          // Add timeout to prevent stuck refresh states
+          const refreshTimeout = setTimeout(() => {
+            console.warn(`⚠️ [${componentId.current}] Global refresh timeout - forcing completion`)
+            isGlobalRefreshInProgress = false
+          }, 15000) // 15 second timeout
           
           try {
-            // Only refresh API keys if they're not already loaded
-            // This prevents unnecessary reloading that can disrupt model state
+            // Only refresh API keys if they're not already loaded AND we've been hidden for a significant time
             const apiKeyStore = useAPIKeyStore.getState()
             const hasAnyKeys = Object.keys(apiKeyStore.keys).length > 0
             
-            if (!hasAnyKeys || wasHiddenFor > 30000) { // Only reload if no keys or hidden for 30+ seconds
+            // Only reload if no keys exist OR hidden for more than 2 minutes
+            if (!hasAnyKeys || wasHiddenFor > 120000) {
+              console.log(`🔄 [${componentId.current}] Refreshing API keys (hasKeys: ${hasAnyKeys}, hiddenFor: ${Math.round(wasHiddenFor/1000)}s)`)
               await loadKeys()
               console.log(`✅ [${componentId.current}] API keys refreshed successfully`)
             } else {
-              console.log(`🔄 [${componentId.current}] Skipping API key refresh - keys already loaded`)
+              console.log(`🔄 [${componentId.current}] Skipping API key refresh - keys already loaded and not stale`)
             }
           } catch (error) {
             console.error(`❌ [${componentId.current}] Error refreshing API keys:`, error)
           } finally {
+            clearTimeout(refreshTimeout)
             isGlobalRefreshInProgress = false
           }
         } else {
-          console.log(`🔄 [${componentId.current}] Skipping refresh - too soon after last global refresh (${timeSinceLastGlobalRefresh}ms ago)`)
+          console.log(`🔄 [${componentId.current}] Skipping refresh - too soon after last global refresh (${Math.round(timeSinceLastGlobalRefresh/1000)}s ago)`)
         }
+      } else if (refreshStoresOnVisible && wasHiddenFor <= 30000) {
+        console.log(`🔄 [${componentId.current}] Skipping refresh - hidden for only ${Math.round(wasHiddenFor/1000)}s (threshold: 30s)`)
       }
       
       // Always call component-specific onVisible callback

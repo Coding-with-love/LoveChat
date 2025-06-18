@@ -6,6 +6,8 @@ import { Download, X, Maximize2, ExternalLink, Eye } from "lucide-react"
 import { Button } from "./ui/button"
 import { Dialog, DialogContent, DialogClose } from "./ui/dialog"
 import { getFileIcon, formatFileSize } from "@/lib/supabase/file-upload"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip"
+import FileTypeIcon from "./FileTypeIcon"
 
 // Add the canPreviewFile function locally
 const canPreviewFile = (fileType: string): boolean => {
@@ -75,37 +77,81 @@ export default function FileAttachmentViewer({ attachments }: FileAttachmentView
     }
 
     return (
-      <div className="flex flex-col items-center p-3 border rounded w-32 h-32 justify-between">
+      <div className="flex flex-col items-center p-3 border rounded-lg w-32 h-32 justify-between shadow-sm hover:shadow-md transition-shadow duration-200 bg-background/50 backdrop-blur-sm">
         <div className="flex flex-col items-center flex-1 justify-center">
-          <div className="text-2xl mb-1">{icon}</div>
-          <p className="text-xs truncate w-full text-center font-medium">
-            {attachment.fileName.length > 15 ? `${attachment.fileName.substring(0, 12)}...` : attachment.fileName}
-          </p>
+          <div className="text-2xl mb-1 p-2 rounded-lg bg-muted/50">
+            <FileTypeIcon mimeType={attachment.fileType} className="h-6 w-6" showColor={true} />
+          </div>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <p className="text-xs truncate w-full text-center font-medium cursor-help">
+                  {attachment.fileName.length > 15
+                    ? `${attachment.fileName.substring(0, 6)}...${attachment.fileName.substring(attachment.fileName.lastIndexOf("."))}`
+                    : attachment.fileName}
+                </p>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="max-w-xs break-all">{attachment.fileName}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
           <p className="text-xs text-muted-foreground">{formatFileSize(attachment.fileSize)}</p>
         </div>
 
         <div className="flex gap-1 w-full">
           {canPreview ? (
-            <a href={attachment.fileUrl} target="_blank" rel="noopener noreferrer" className="flex-1">
-              <Button variant="outline" size="sm" className="h-6 px-2 py-1 text-xs w-full">
-                <Eye className="h-3 w-3 mr-1" />
-                View
-              </Button>
-            </a>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <a href={attachment.fileUrl} target="_blank" rel="noopener noreferrer" className="flex-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 px-2 py-1 text-xs w-full hover:bg-primary/10 transition-colors"
+                    >
+                      <Eye className="h-3 w-3 mr-1" />
+                      <span className="hidden sm:inline">View</span>
+                    </Button>
+                  </a>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Preview file</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           ) : (
-            <a href={attachment.fileUrl} target="_blank" rel="noopener noreferrer" className="flex-1">
-              <Button variant="outline" size="sm" className="h-6 px-2 py-1 text-xs w-full">
-                <ExternalLink className="h-3 w-3 mr-1" />
-                Open
-              </Button>
-            </a>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <a href={attachment.fileUrl} target="_blank" rel="noopener noreferrer" className="flex-1">
+                    <Button variant="outline" size="sm" className="h-6 px-2 py-1 text-xs w-full">
+                      <ExternalLink className="h-3 w-3 mr-1" />
+                      Open
+                    </Button>
+                  </a>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Open file in new tab</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           )}
 
-          <a href={attachment.fileUrl} download={attachment.fileName}>
-            <Button variant="outline" size="sm" className="h-6 w-6 p-0">
-              <Download className="h-3 w-3" />
-            </Button>
-          </a>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <a href={attachment.fileUrl} download={attachment.fileName}>
+                  <Button variant="outline" size="sm" className="h-6 w-6 p-0">
+                    <Download className="h-3 w-3" />
+                  </Button>
+                </a>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Download file</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
       </div>
     )

@@ -36,10 +36,12 @@
   --sidebar-accent-foreground: oklch(0.25 0.03 240);
   --sidebar-border: oklch(0.9 0.015 240);
   --sidebar-ring: oklch(0.55 0.15 240);
-  --font-sans: Geist, sans-serif;
+  --font-sans: var(--font-fira-code), Fira Code, monospace;
   --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
-  --font-mono: Geist Mono, monospace;
+  --font-mono: var(--font-fira-mono), Fira Mono, monospace;
   --radius: 0.625rem;
+  --font-size-base: 16px;
+  --font-size-scale: 1;
   --shadow-2xs: 0 1px 3px 0px hsl(240 20% 0% / 0.05);
   --shadow-xs: 0 1px 3px 0px hsl(240 20% 0% / 0.05);
   --shadow-sm: 0 1px 3px 0px hsl(240 20% 0% / 0.1), 0 1px 2px -1px hsl(240 20% 0% / 0.1);
@@ -85,10 +87,12 @@
   --sidebar-accent-foreground: oklch(0.9 0.015 240);
   --sidebar-border: oklch(0.3 0.04 240);
   --sidebar-ring: oklch(0.65 0.18 240);
-  --font-sans: Geist, sans-serif;
+  --font-sans: var(--font-fira-code), Fira Code, monospace;
   --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
-  --font-mono: Geist Mono, monospace;
+  --font-mono: var(--font-fira-mono), Fira Mono, monospace;
   --radius: 0.625rem;
+  --font-size-base: 16px;
+  --font-size-scale: 1;
   --shadow-2xs: 0 1px 3px 0px hsl(240 30% 0% / 0.1);
   --shadow-xs: 0 1px 3px 0px hsl(240 30% 0% / 0.1);
   --shadow-sm: 0 1px 3px 0px hsl(240 30% 0% / 0.15), 0 1px 2px -1px hsl(240 30% 0% / 0.15);
@@ -158,6 +162,17 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-size: var(--font-size-base);
+  }
+  
+  /* Ensure all text elements inherit the font size */
+  html {
+    font-size: var(--font-size-base);
+  }
+  
+  /* Make sure common UI elements respect the base font size */
+  input, textarea, button, select {
+    font-size: inherit;
   }
 }
 
@@ -169,10 +184,101 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+  
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
 }
 
 .shiki {
   @apply !rounded-none;
+  max-width: 100% !important;
+  overflow-x: auto !important;
+  width: 100% !important;
+}
+
+/* Fix shiki internal elements */
+.shiki pre {
+  max-width: 100% !important;
+  overflow-x: auto !important;
+  white-space: pre !important;
+  word-wrap: normal !important;
+  margin: 0 !important;
+  padding: 1rem !important;
+}
+
+.shiki code {
+  white-space: pre !important;
+  word-wrap: normal !important;
+  overflow-wrap: normal !important;
+}
+
+/* Mobile code block wrapping */
+@media (max-width: 768px) {
+  .shiki pre {
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+    word-break: break-word !important;
+    overflow-x: hidden !important;
+    hyphens: none !important;
+  }
+  
+  .shiki code {
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+    word-break: break-word !important;
+    hyphens: none !important;
+  }
+  
+  /* Ensure code tokens also wrap */
+  .shiki .line {
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+    word-break: break-word !important;
+    display: block !important;
+  }
+  
+  /* Handle shiki spans/tokens */
+  .shiki span {
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+    word-break: break-word !important;
+  }
+  
+  /* Force wrapping for long strings in code */
+  .shiki .token.string,
+  .shiki .token.template-string,
+  .shiki .token.url {
+    word-break: break-all !important;
+    overflow-wrap: break-word !important;
+  }
+  
+  /* Handle attributes and long identifiers */
+  .shiki .token.attr-name,
+  .shiki .token.attr-value,
+  .shiki .token.property,
+  .shiki .token.function {
+    word-break: break-word !important;
+    overflow-wrap: break-word !important;
+  }
+}
+
+/* Fix shiki table elements if any */
+.shiki table {
+  max-width: 100% !important;
+  table-layout: auto !important;
+}
+
+.shiki td, .shiki th {
+  white-space: pre !important;
+  word-wrap: normal !important;
 }
 
 /* KaTeX Math Styling */
@@ -312,6 +418,215 @@
   }
 }
 
+/* Add comprehensive responsive fixes for mobile */
+@media (max-width: 768px) {
+  /* Ensure the main content area doesn't exceed viewport */
+  main {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+  
+  /* Fix chat container width */
+  .relative.w-full {
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+  
+  /* Ensure message containers don't overflow */
+  [data-message-content-part="true"] {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+  
+  /* Fix prose content width */
+  .prose {
+    max-width: 100% !important;
+    overflow-x: hidden;
+  }
+  
+  /* Ensure code blocks are responsive */
+  .prose pre {
+    overflow-x: auto;
+    max-width: 100%;
+  }
+  
+  /* Fix table wrapper overflow */
+  .table-wrapper {
+    overflow-x: auto;
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  /* Ensure all text content doesn't overflow */
+  [data-message-text-content="true"] {
+    max-width: 100%;
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+    hyphens: auto;
+  }
+  
+  /* Fix pinned messages panel width on mobile */
+  .fixed.top-16.right-4.z-40.w-80 {
+    width: calc(100vw - 2rem) !important;
+    max-width: 20rem;
+    left: 1rem;
+    right: 1rem;
+  }
+  
+  /* Fix chat navigator width on mobile */
+  .fixed.right-0.top-0.h-full.w-80 {
+    width: 100vw !important;
+    max-width: 20rem;
+  }
+  
+  /* Ensure all containers respect viewport width */
+  * {
+    box-sizing: border-box;
+  }
+  
+  /* Prevent horizontal scroll on body and html */
+  html, body {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+  
+  /* Fix any elements that might cause overflow */
+  .flex-col, .flex {
+    min-width: 0;
+  }
+  
+  /* Ensure shiki code blocks don't overflow */
+  .shiki {
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    width: 100% !important;
+  }
+  
+  /* Fix code block containers */
+  [data-code-block="true"] {
+    max-width: 100% !important;
+    overflow: visible !important;
+    word-wrap: break-word !important;
+  }
+  
+  /* Fix code block content containers */
+  [data-code-block-content="true"] {
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    overflow-y: visible !important;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(155, 155, 155, 0.3) transparent;
+  }
+  
+  /* Add custom scrollbar for code blocks */
+  [data-code-block-content="true"]::-webkit-scrollbar {
+    height: 8px;
+  }
+  
+  [data-code-block-content="true"]::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  [data-code-block-content="true"]::-webkit-scrollbar-thumb {
+    background-color: rgba(155, 155, 155, 0.3);
+    border-radius: 4px;
+  }
+  
+  [data-code-block-content="true"]::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(155, 155, 155, 0.5);
+  }
+  
+  /* Ensure the relative container doesn't overflow */
+  [data-code-block-content="true"] .relative {
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    overflow-y: visible !important;
+  }
+  
+  /* Ensure Shiki components don't break layout */
+  [data-code-block-content="true"] .shiki {
+    max-width: none !important;
+    width: auto !important;
+    background: transparent !important;
+    margin: 0 !important;
+    padding: 1rem !important;
+  }
+  
+  [data-code-block-content="true"] .shiki pre {
+    background: transparent !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    white-space: pre !important;
+    word-wrap: normal !important;
+  }
+  
+  [data-code-block-content="true"] .shiki code {
+    background: transparent !important;
+    padding: 0 !important;
+    font-size: inherit !important;
+    line-height: inherit !important;
+    white-space: pre !important;
+    word-wrap: normal !important;
+  }
+  
+  /* Fix specific component widths */
+  .group {
+    max-width: 100%;
+  }
+  
+  /* Ensure inline elements break properly */
+  code {
+    word-break: break-all;
+    overflow-wrap: break-word;
+  }
+}
+
+/* Specific mobile fixes for very small screens */
+@media (max-width: 480px) {
+  /* Reduce user message max width on very small screens */
+  .max-w-\[80\%\] {
+    max-width: 95% !important;
+  }
+  
+  /* Ensure math display doesn't overflow */
+  .math-display-wrapper {
+    padding: 0 0.5rem;
+  }
+  
+  /* Fix code block padding */
+  .prose pre {
+    padding: 0.75rem;
+    margin: 0.5rem 0;
+  }
+  
+  /* Ensure reasoning component is responsive */
+  .max-w-3xl {
+    max-width: 100% !important;
+  }
+  
+  /* More aggressive code wrapping for tiny screens */
+  .shiki pre {
+    padding: 0.5rem !important;
+    font-size: 0.75rem !important;
+    line-height: 1.3 !important;
+  }
+  
+  .shiki code {
+    font-size: 0.75rem !important;
+    line-height: 1.3 !important;
+  }
+  
+  /* Ensure all text breaks on very small screens */
+  .shiki * {
+    word-break: break-word !important;
+    overflow-wrap: break-word !important;
+    max-width: 100% !important;
+  }
+}
+
 /* Add spacing between sidebar and content */
 .sidebar-with-spacing {
   margin-right: 1rem;
@@ -355,5 +670,21 @@
   /* Add padding to main content area */
   main {
     padding-left: 0.5rem;
+  }
+}
+
+/* Ensure collapsed sidebar button stays at bottom on all screen sizes */
+.sidebar-collapsed-trigger {
+  position: fixed !important;
+  bottom: 1rem !important;
+  left: 1rem !important;
+  z-index: 50 !important;
+}
+
+/* Mobile specific positioning for collapsed sidebar button */
+@media (max-width: 768px) {
+  .sidebar-collapsed-trigger {
+    bottom: 1rem !important;
+    left: 1rem !important;
   }
 }

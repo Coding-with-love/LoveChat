@@ -44,8 +44,8 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   occupation: "",
   assistantTraits: ["helpful", "creative", "precise"],
   customInstructions: "",
-  uiFont: "Inter",
-  codeFont: "JetBrains Mono",
+  uiFont: "Fira Code",
+  codeFont: "Fira Mono",
   fontSize: "medium",
 }
 
@@ -239,10 +239,44 @@ export const useUserPreferencesStore = create<UserPreferencesState>()(
       },
 
       loadFromDatabase: async () => {
+        // Prevent concurrent loads and add timeout protection
+        const currentState = get()
+        if (currentState.isLoading) {
+          console.log("📥 loadFromDatabase already in progress, skipping...")
+          return
+        }
+
+        // Set loading timeout to prevent stuck states
+        const loadingTimeout = setTimeout(() => {
+          const state = get()
+          if (state.isLoading) {
+            console.warn("⚠️ UserPreferences loadFromDatabase timeout - clearing loading state")
+            set({ isLoading: false, hasLoadedFromDB: true })
+          }
+        }, 8000) // Increased to 8 second timeout
+
         try {
           set({ isLoading: true })
           console.log("📥 Attempting to load preferences from database...")
-          const dbPreferences = await getUserPreferences()
+          
+          // Try to load preferences with a more graceful timeout approach
+          let dbPreferences = null
+          
+          try {
+            // Create a promise that resolves to null on timeout instead of rejecting
+            const dbPromise = getUserPreferences()
+            const timeoutPromise = new Promise<null>((resolve) => 
+              setTimeout(() => {
+                console.log("📥 Database query taking longer than expected, continuing with defaults...")
+                resolve(null)
+              }, 5000) // 5 second timeout for the query itself
+            )
+            
+            dbPreferences = await Promise.race([dbPromise, timeoutPromise])
+          } catch (queryError) {
+            console.warn("📥 Database query failed, using defaults:", queryError)
+            dbPreferences = null
+          }
 
           if (dbPreferences) {
             console.log("📥 Loading preferences from database:", dbPreferences)
@@ -257,31 +291,36 @@ export const useUserPreferencesStore = create<UserPreferencesState>()(
               hasLoadedFromDB: true,
             })
           } else {
-            console.log("📥 No preferences found in database or table doesn't exist, using localStorage preferences")
+            console.log("📥 No preferences found in database or query timed out, using localStorage preferences")
             set({ hasLoadedFromDB: true })
-            // Try to save current localStorage preferences to database if table exists
+            
+            // Try to save current localStorage preferences to database (non-blocking)
             const state = get()
-            try {
-              await saveUserPreferences({
-                preferred_name: state.preferredName,
-                occupation: state.occupation,
-                assistant_traits: state.assistantTraits,
-                custom_instructions: state.customInstructions,
-                ui_font: state.uiFont,
-                code_font: state.codeFont,
-                font_size: state.fontSize,
-              })
-              console.log("📥 Saved localStorage preferences to database")
-            } catch (saveError) {
-              console.log("📥 Could not save to database (table may not exist), will continue with localStorage only")
-            }
+            setTimeout(async () => {
+              try {
+                await saveUserPreferences({
+                  preferred_name: state.preferredName,
+                  occupation: state.occupation,
+                  assistant_traits: state.assistantTraits,
+                  custom_instructions: state.customInstructions,
+                  ui_font: state.uiFont,
+                  code_font: state.codeFont,
+                  font_size: state.fontSize,
+                })
+                console.log("📥 Saved localStorage preferences to database (background)")
+              } catch (saveError) {
+                console.log("📥 Could not save to database in background (table may not exist)")
+              }
+            }, 100) // Save in background after 100ms
           }
         } catch (error) {
-          console.error("❌ Failed to load preferences from database:", error)
-          // Still mark as loaded so future changes will attempt to save
+          console.error("❌ Unexpected error in loadFromDatabase:", error)
+          // Always mark as loaded so UI doesn't stay stuck
           set({ hasLoadedFromDB: true })
         } finally {
+          clearTimeout(loadingTimeout)
           set({ isLoading: false })
+          console.log("📥 UserPreferences loading completed and state cleared")
         }
       },
 

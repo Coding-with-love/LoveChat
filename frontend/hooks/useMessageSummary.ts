@@ -23,26 +23,27 @@ export const useMessageSummary = () => {
     options: { body: { threadId: string; messageId?: string; isTitle?: boolean } },
   ) => {
     if (!user) {
-      toast.error("Authentication required")
+      console.log("⚠️ No user authenticated for completion")
       return
     }
 
     const googleKey = getKey("google")
-    if (!googleKey) {
-      toast.error("Google API key is required for title generation")
-      return
-    }
-
+    
     console.log("🔑 Starting completion with:", {
       promptLength: prompt.length,
       threadId: options.body.threadId,
       isTitle: options.body.isTitle,
-      hasGoogleKey: !!googleKey,
+      hasUserKey: !!googleKey,
     })
 
     setIsLoading(true)
     try {
       console.log("🔑 Making completion request...")
+
+      const headers: Record<string, string> = {}
+      if (googleKey) {
+        headers["X-Google-API-Key"] = googleKey
+      }
 
       const response = await apiClient.post(
         "/api/completion",
@@ -51,9 +52,7 @@ export const useMessageSummary = () => {
           ...options.body,
         },
         {
-          headers: {
-            "X-Google-API-Key": googleKey,
-          },
+          headers,
         },
       )
 
@@ -73,18 +72,19 @@ export const useMessageSummary = () => {
         console.error("❌ Error message:", error.message)
 
         if (error.message.includes("Authentication") || error.message.includes("401")) {
+          // Only show auth errors, not other completion failures
           toast.error("Authentication failed. Please sign in again.")
-        } else if (error.message.includes("API key")) {
-          toast.error("Invalid or missing Google API key")
-        } else if (error.message.includes("quota")) {
-          toast.error("API quota exceeded. Please try again later.")
+        } else if (error.message.includes("Thread not found")) {
+          // Don't show thread errors to user - they're often transient
+          console.log("⚠️ Thread not found for completion - this may be temporary")
         } else {
-          toast.error(`Failed to generate summary: ${error.message}`)
+          // For other errors, just log them without showing user toast
+          console.log("⚠️ Completion failed (non-blocking):", error.message)
         }
       } else {
-        toast.error("Failed to generate summary")
+        console.log("⚠️ Completion failed with unknown error (non-blocking)")
       }
-      throw error
+      // Don't throw error for non-critical completion operations
     } finally {
       setIsLoading(false)
     }

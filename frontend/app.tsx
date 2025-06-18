@@ -23,7 +23,7 @@ function AuthenticatedApp() {
   // Ensure API keys are properly loaded and persist across tab switches
   useAPIKeyHydration()
   
-  // Add tab visibility management
+  // Add minimal tab visibility management - no automatic store refreshing
   useTabVisibility({
     onVisible: () => {
       console.log("🔄 App became visible")

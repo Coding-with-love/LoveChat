@@ -5,6 +5,7 @@ import Message from "./Message"
 import type { UIMessage } from "ai"
 import type { UseChatHelpers } from "@ai-sdk/react"
 import MessageLoading from "./ui/MessageLoading"
+import MessageReasoning from "./MessageReasoning"
 import Error from "./Error"
 import ChatLandingPage from "./ChatLandingPage"
 import { useAuth } from "@/frontend/components/AuthProvider"
@@ -57,7 +58,7 @@ function PureMessages({
       return acc
     }, {}),
   )
-  const { profile } = useAuth()
+  const { profile, user } = useAuth()
 
   // Text selection and AI actions
   const { selection, clearSelection } = useTextSelection()
@@ -666,13 +667,29 @@ function PureMessages({
   }
 
   // Check if the current model supports thinking
-  const isThinkingModel = (modelName: string) => {
-    try {
-      const config = getModelConfig(modelName as any)
-      return config.supportsThinking || false
-    } catch {
-      return modelName?.includes("o1") || modelName?.includes("thinking") || false
+  const isThinkingModel = (modelName: string, message?: ExtendedUIMessage) => {
+    // If we have a model name, check its configuration
+    if (modelName) {
+      try {
+        const config = getModelConfig(modelName as any)
+        return config.supportsThinking || false
+      } catch {
+        return modelName?.includes("o1") || modelName?.includes("thinking") || false
+      }
     }
+    
+    // If no model name (e.g., after page reload), check if message has reasoning content
+    if (message) {
+      // Check if message has reasoning field or reasoning parts
+      if (message.reasoning) return true
+      if (message.parts?.some(part => part.type === "reasoning")) return true
+      
+      // Check if content contains thinking tags (for legacy support)
+      const content = message.content || ""
+      if (content.includes("<think>") || content.includes("<Thinking>")) return true
+    }
+    
+    return false
   }
 
   // Show landing page when there are no messages and not loading
@@ -680,7 +697,7 @@ function PureMessages({
     return (
       <ChatLandingPage
         onPromptClick={onPromptClick || (() => {})}
-        userName={profile?.full_name || profile?.username || ""}
+        userName={profile?.full_name || profile?.username || user?.email?.split("@")[0] || ""}
       />
     )
   }
@@ -702,13 +719,23 @@ function PureMessages({
               resumedMessageId={resumedMessageId}
               showThinking={showThinking[message.id] || false}
               toggleThinking={() => toggleThinking(message.id)}
-              isThinkingModel={isThinkingModel(message.model || "")}
+              isThinkingModel={isThinkingModel(message.model || "", message)}
               // Pass rephrased text info
               onRevertToOriginal={(originalText: string) => handleRevertToOriginalText(message.id, originalText)}
             />
           </div>
         ))}
-        {status === "submitted" && <MessageLoading />}
+        {status === "submitted" && !isThinkingModel(messages[messages.length - 1]?.model || "", messages[messages.length - 1]) && <MessageLoading />}
+        {status === "submitted" && isThinkingModel(messages[messages.length - 1]?.model || "", messages[messages.length - 1]) && (
+          <div className="flex flex-col gap-2 w-full">
+            <MessageReasoning 
+              reasoning="Thinking..." 
+              id="thinking-placeholder" 
+              isStreaming={true}
+              autoExpand={true}
+            />
+          </div>
+        )}
         {error && <Error message={error.message} />}
       </section>
 

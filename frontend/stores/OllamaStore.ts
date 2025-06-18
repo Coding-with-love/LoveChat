@@ -11,6 +11,8 @@ interface OllamaState {
   availableModels: string[]
   setAvailableModels: (models: string[]) => void
   testConnection: () => Promise<boolean>
+  useDirectConnection: boolean
+  setUseDirectConnection: (direct: boolean) => void
 }
 
 export const useOllamaStore = create<OllamaState>()(
@@ -19,6 +21,8 @@ export const useOllamaStore = create<OllamaState>()(
       baseUrl: "http://localhost:11434",
       setBaseUrl: (url: string) => set({ baseUrl: url }),
       isConnected: false,
+      useDirectConnection: false, // Direct connection blocked by CORS in production
+      setUseDirectConnection: (direct: boolean) => set({ useDirectConnection: direct }),
       setIsConnected: (connected: boolean) => {
         const currentState = get()
         const wasConnected = currentState.isConnected
@@ -49,16 +53,46 @@ export const useOllamaStore = create<OllamaState>()(
       setAvailableModels: (models: string[]) => set({ availableModels: models }),
       testConnection: async () => {
         try {
-          const baseUrl = get().baseUrl
-          console.log("Testing Ollama connection to:", baseUrl)
+          const { baseUrl, useDirectConnection } = get()
+          console.log("Testing Ollama connection to:", baseUrl, "Direct:", useDirectConnection)
 
-          const response = await fetch(`/api/ollama/models`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ baseUrl }),
-          })
+          let response
+
+          if (useDirectConnection) {
+            // Direct browser request to localhost (works in production!)
+            console.log("🔗 Making direct browser request to Ollama")
+            try {
+              response = await fetch(`${baseUrl}/api/tags`, {
+                method: "GET",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                // Important: don't send credentials to avoid CORS issues
+                credentials: 'omit',
+                mode: 'cors'
+              })
+            } catch (fetchError) {
+              console.log("🔄 Direct connection failed, trying through proxy...")
+              // Fallback to proxy method
+              response = await fetch(`/api/ollama/models`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ baseUrl }),
+              })
+            }
+          } else {
+            // Use server proxy (original method)
+            console.log("🔄 Using server proxy for Ollama connection")
+            response = await fetch(`/api/ollama/models`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ baseUrl }),
+            })
+          }
 
           if (!response.ok) {
             console.error("Failed to connect to Ollama:", response.statusText)
@@ -67,11 +101,14 @@ export const useOllamaStore = create<OllamaState>()(
           }
 
           const data = await response.json()
-          console.log("Ollama models:", data.models)
+          console.log("Ollama models:", data.models || data)
 
+          // Handle both direct API response and proxied response formats
+          const models = data.models || (data.length ? data : [])
+          
           set({
             isConnected: true,
-            availableModels: data.models.map((model: any) => model.name),
+            availableModels: models.map((model: any) => typeof model === 'string' ? model : model.name),
           })
           return true
         } catch (error) {

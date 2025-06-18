@@ -258,7 +258,18 @@ export default function SharedConversation() {
                     className={`flex flex-col ${message.role === "user" ? "items-end" : "items-start"}`}
                   >
                     {/* Web Search Banner for Assistant Messages */}
-                    {message.role === "assistant" && usedWebSearch && <WebSearchBanner />}
+                    {message.role === "assistant" && usedWebSearch && (
+          <WebSearchBanner 
+            query={sources[0]?.query || "Web search"}
+            resultCount={sources.length || 7}
+            searchResults={sources.map((source: any) => ({
+              title: source.title || source.name || "Search Result",
+              snippet: source.snippet || source.description || source.text || "",
+              url: source.url || source.link || "#",
+              source: source.source || source.domain
+            }))}
+          />
+        )}
 
                     {displayParts.map((part, index) => {
                       if (part.type === "text") {
@@ -278,7 +289,7 @@ export default function SharedConversation() {
                             <div
                               className={`transition-all duration-300 ${
                                 usedWebSearch &&
-                                "border-l-4 border-blue-500 pl-4 bg-blue-50/50 dark:bg-blue-950/20 rounded-lg shadow-sm"
+                                "border-l-4 border-border pl-4 bg-muted/20 rounded-lg shadow-sm"
                               }`}
                             >
                               <MarkdownRenderer content={textContent} id={message.id} />

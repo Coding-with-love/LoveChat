@@ -79,10 +79,10 @@ export default function FileUpload({
         size="icon"
         onClick={handleButtonClick}
         disabled={disabled || uploading}
-        className="h-9 w-9 transition-all duration-200 rounded-lg hover:bg-muted border border-border/50"
+        className="h-7 w-7 transition-all duration-200 rounded-lg hover:bg-muted/30 text-muted-foreground hover:text-foreground hover:scale-105"
         aria-label="Attach file"
       >
-        {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
+        {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Paperclip className="h-3.5 w-3.5" />}
       </Button>
     </>
   )

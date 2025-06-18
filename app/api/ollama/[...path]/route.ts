@@ -17,9 +17,16 @@ export async function DELETE(request: NextRequest, { params }: { params: { path:
 }
 
 async function handleOllamaRequest(request: NextRequest, pathSegments: string[]) {
-  const ollamaUrl = process.env.OLLAMA_URL || 'http://localhost:11434'
+  // Get the Ollama base URL from headers (sent by frontend) or fallback to environment/default
+  const ollamaBaseUrl = request.headers.get('x-ollama-base-url') || 
+                        request.headers.get('X-Ollama-Base-URL') || 
+                        process.env.OLLAMA_URL || 
+                        'http://localhost:11434'
+  
   const path = pathSegments.join('/')
-  const url = `${ollamaUrl}/api/${path}`
+  const url = `${ollamaBaseUrl}/api/${path}`
+  
+  console.log(`🦙 Ollama proxy: ${request.method} ${url}`)
   
   try {
     // Get the request body if it exists
@@ -33,13 +40,21 @@ async function handleOllamaRequest(request: NextRequest, pathSegments: string[])
       method: request.method,
       headers: {
         'Content-Type': 'application/json',
-        // Forward relevant headers
+        // Forward relevant headers but exclude our custom header
         ...(request.headers.get('authorization') && {
           'Authorization': request.headers.get('authorization')!
         })
       },
       body: body || undefined,
     })
+
+    if (!response.ok) {
+      console.error(`🦙 Ollama proxy error: ${response.status} ${response.statusText}`)
+      return NextResponse.json(
+        { error: `Ollama server error: ${response.status} ${response.statusText}` },
+        { status: response.status }
+      )
+    }
 
     // Handle streaming responses for chat completions
     if (response.headers.get('content-type')?.includes('text/plain')) {
@@ -49,6 +64,10 @@ async function handleOllamaRequest(request: NextRequest, pathSegments: string[])
           'Content-Type': 'text/plain',
           'Cache-Control': 'no-cache',
           'Connection': 'keep-alive',
+          // Add CORS headers
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Ollama-Base-URL',
         },
       })
     }
@@ -59,14 +78,42 @@ async function handleOllamaRequest(request: NextRequest, pathSegments: string[])
       status: response.status,
       headers: {
         'Content-Type': response.headers.get('content-type') || 'application/json',
+        // Add CORS headers
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Ollama-Base-URL',
       },
     })
 
   } catch (error) {
-    console.error('Ollama proxy error:', error)
+    console.error('🦙 Ollama proxy error:', error)
     return NextResponse.json(
-      { error: 'Failed to connect to Ollama server' },
-      { status: 500 }
+      { 
+        error: 'Failed to connect to Ollama server',
+        details: error instanceof Error ? error.message : 'Unknown error',
+        ollamaUrl: ollamaBaseUrl
+      },
+      { 
+        status: 500,
+        headers: {
+          // Add CORS headers even for errors
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Ollama-Base-URL',
+        }
+      }
     )
   }
+}
+
+// Handle preflight OPTIONS requests
+export async function OPTIONS(request: NextRequest) {
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Ollama-Base-URL',
+    },
+  })
 } 

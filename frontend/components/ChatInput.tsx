@@ -5,13 +5,7 @@ import { memo, useCallback, useMemo, useState, useEffect } from "react"
 import { Textarea } from "@/frontend/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import { Button } from "@/frontend/components/ui/button"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-} from "@/frontend/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/frontend/components/ui/dropdown-menu"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/frontend/components/ui/tooltip"
 import useAutoResizeTextarea from "@/hooks/useAutoResizeTextArea"
 import type { UseChatHelpers } from "@ai-sdk/react"
@@ -21,7 +15,7 @@ import { createMessage, createThread } from "@/lib/supabase/queries"
 import { useAPIKeyStore } from "@/frontend/stores/APIKeyStore"
 import { useModelStore } from "@/frontend/stores/ModelStore"
 import { useWebSearchStore } from "@/frontend/stores/WebSearchStore"
-import { AI_MODELS, type AIModel, getModelConfig } from "@/lib/models"
+import { type AIModel, getModelConfig } from "@/lib/models"
 import KeyPrompt from "@/frontend/components/KeyPrompt"
 import type { UIMessage } from "ai"
 import { v4 as uuidv4 } from "uuid"
@@ -31,7 +25,25 @@ import { useMessageSummary } from "../hooks/useMessageSummary"
 import { useAuth } from "@/frontend/components/AuthProvider"
 import FileUpload, { FilePreviewList } from "./FileUpload"
 import type { FileUploadResult } from "@/lib/supabase/file-upload"
-import { ChevronDown, Check, ArrowUpIcon, Search, Info, Bot, Settings, Sparkles, Zap, Brain, Globe, Archive, X, Code, FileText, Copy, Plus, Loader2 } from 'lucide-react'
+import {
+  ChevronDown,
+  ArrowUpIcon,
+  Search,
+  Info,
+  Settings,
+  Sparkles,
+  Archive,
+  X,
+  Code,
+  FileText,
+  Copy,
+  Plus,
+  Loader2,
+  Zap,
+  Wrench,
+  User,
+  Upload,
+} from "lucide-react"
 import { useKeyboardShortcuts } from "@/frontend/hooks/useKeyboardShortcuts"
 import PersonaTemplateSelector from "./PersonaTemplateSelector"
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover"
@@ -59,6 +71,10 @@ import type { Artifact } from "@/frontend/stores/ArtifactStore"
 import { useArtifactStore } from "@/frontend/stores/ArtifactStore"
 import { Badge } from "@/frontend/components/ui/badge"
 import { CrossChatArtifactIndicator } from "./CrossChatArtifactIndicator"
+import { ProviderLogo } from "@/frontend/components/ProviderLogo"
+import { useSidebar } from "@/frontend/components/ui/sidebar"
+import { WorkflowBuilder } from "./WorkflowBuilder"
+import { ReasoningEffortSelector } from "./ReasoningEffortSelector"
 
 interface ChatMessagePart {
   type: "text" | "file_attachments" | "artifact_references"
@@ -86,6 +102,7 @@ interface ChatInputProps {
   setInput: UseChatHelpers["setInput"]
   append: UseChatHelpers["append"]
   stop: UseChatHelpers["stop"]
+  onRefreshMessages?: () => void
 }
 
 interface StopButtonProps {
@@ -111,7 +128,7 @@ const createUserMessage = (id: string, text: string): UIMessage => ({
   createdAt: new Date(),
 })
 
-function PureChatInput({ threadId, input, status, setInput, append, stop }: ChatInputProps) {
+function PureChatInput({ threadId, input, status, setInput, append, stop, onRefreshMessages }: ChatInputProps) {
   const { user } = useAuth()
   const getKey = useAPIKeyStore((state) => state.getKey)
   const { selectedModel, setModel, getEnabledModels, ensureValidSelectedModel } = useModelStore()
@@ -124,6 +141,14 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
   const [editTemplateOpen, setEditTemplateOpen] = useState(false)
   const [editingPersona, setEditingPersona] = useState<Persona | null>(null)
   const [editingTemplate, setEditingTemplate] = useState<PromptTemplate | null>(null)
+  const [workflowBuilderOpen, setWorkflowBuilderOpen] = useState(false)
+  const [reasoningEffort, setReasoningEffort] = useState<"low" | "medium" | "high">("medium")
+  const [toolsDropdownOpen, setToolsDropdownOpen] = useState(false)
+  const [artifactPickerOpen, setArtifactPickerOpen] = useState(false)
+
+  // Get sidebar state for responsive positioning
+  const { state: sidebarState, isMobile } = useSidebar()
+  const sidebarCollapsed = sidebarState === "collapsed"
 
   // Artifact references state
   const [artifactReferences, setArtifactReferences] = useState<ArtifactReference[]>([])
@@ -187,14 +212,10 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
     fetchArtifacts()
   }, [fetchArtifacts])
 
-  // Check if we have an API key for the currently selected model
+  // Chat is always available with server fallback keys
   const canChat = useMemo(() => {
-    const modelConfig = getModelConfig(selectedModel)
-    const apiKey = getKey(modelConfig.provider)
-    const hasKey = modelConfig.provider === "ollama" ? true : !!apiKey
-
-    return hasKey
-  }, [selectedModel, getKey])
+    return true // Server has fallback API keys, so chat is always available
+  }, [])
 
   const { textareaRef, adjustHeight } = useAutoResizeTextarea({
     minHeight: 72,
@@ -222,6 +243,20 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
     const modelConfig = getModelConfig(selectedModel)
     return modelConfig.supportsSearch || false
   }, [selectedModel])
+
+  // Check if current model is an OpenAI reasoning model
+  const isOpenAIReasoningModel = useMemo(() => {
+    const modelConfig = getModelConfig(selectedModel)
+    return modelConfig.provider === "openai" && modelConfig.supportsThinking
+  }, [selectedModel])
+
+  // Auto-disable web search when switching to a model that doesn't support it
+  useEffect(() => {
+    if (!currentModelSupportsSearch && webSearchEnabled) {
+      toggleWebSearch()
+      toast.info("Web search disabled - current model doesn't support web search")
+    }
+  }, [currentModelSupportsSearch, webSearchEnabled, toggleWebSearch])
 
   const handleFileUpload = (files: FileUploadResult[]) => {
     setUploadedFiles(files)
@@ -487,11 +522,11 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
 
       // Create API message with technical tags for the AI - this will include file attachments for UI display
       const apiMessage = createUserMessage(messageId + "_api", apiMessageContent)
-      
+
       // Add file attachments to the API message for immediate UI display
       if (hasFiles) {
         console.log("📎 Adding file attachments to message:", uploadedFiles.length)
-        
+
         if (!apiMessage.parts) {
           apiMessage.parts = []
         }
@@ -536,17 +571,18 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
 
       console.log("🖼️ Image attachments for AI vision:", {
         imageCount: experimentalAttachments.length,
-        images: experimentalAttachments.map(img => ({
+        images: experimentalAttachments.map((img) => ({
           name: img.name,
           contentType: img.contentType,
-          hasUrl: !!img.url
-        }))
+          hasUrl: !!img.url,
+        })),
       })
 
       const result = await append(apiMessage, {
         experimental_attachments: experimentalAttachments.length > 0 ? experimentalAttachments : undefined,
         data: {
           userPreferences: userPrefsToSend,
+          ...(isOpenAIReasoningModel && { reasoningEffort }),
         },
       })
 
@@ -582,6 +618,8 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
     adjustHeight,
     currentPersona,
     userPreferences,
+    isOpenAIReasoningModel,
+    reasoningEffort,
   ])
 
   const handleClearInput = useCallback(() => {
@@ -598,14 +636,90 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
     onStopGenerating: status === "streaming" || status === "submitted" ? stop : undefined,
   })
 
+  // Simplified compact tools dropdown
+  const ToolsDropdown = () => (
+    <DropdownMenuContent className="w-64 p-0" align="center">
+      <div className="p-3 border-b border-border/30">
+        <h3 className="font-medium text-sm text-foreground">Advanced Tools</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">Artifacts, workflows, and automation</p>
+      </div>
+      
+      <div className="p-2 space-y-1">
+        {/* Artifact Picker */}
+        <Button
+          variant="ghost"
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted/30 transition-all duration-200 cursor-pointer w-full group h-auto justify-start"
+          onClick={(e) => {
+            e.stopPropagation() // Prevent dropdown from closing
+            setArtifactPickerOpen(true)
+            setToolsDropdownOpen(false)
+          }}
+        >
+          <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-purple-500/10 text-purple-600 group-hover:bg-purple-500/20 transition-colors">
+            <Archive className="h-3.5 w-3.5" />
+          </div>
+          <div className="flex-1 text-left">
+            <div className="font-medium text-sm text-foreground">Artifacts</div>
+            <div className="text-xs text-muted-foreground">Insert code & documents</div>
+          </div>
+        </Button>
+
+        {/* Workflow Builder */}
+        <div 
+          className="group flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted/30 transition-all duration-200 cursor-pointer"
+          onClick={() => {
+            setWorkflowBuilderOpen(true)
+            setToolsDropdownOpen(false)
+          }}
+        >
+          <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-amber-500/10 text-amber-600 group-hover:bg-amber-500/20 transition-colors">
+            <Zap className="h-3.5 w-3.5" />
+          </div>
+          <div className="flex-1">
+            <div className="font-medium text-sm text-foreground">Workflows</div>
+            <div className="text-xs text-muted-foreground">Automate AI tasks</div>
+          </div>
+        </div>
+
+        {/* Cross-Chat Reference */}
+        <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted/30 transition-all duration-200">
+          <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-green-500/10 text-green-600">
+            <Archive className="h-3.5 w-3.5" />
+          </div>
+          <div className="flex-1">
+            <div className="font-medium text-sm text-foreground flex items-center gap-2">
+              Cross-Chat
+              <CrossChatArtifactIndicator currentThreadId={threadId} />
+            </div>
+            <div className="text-xs text-muted-foreground">Reference other conversations</div>
+          </div>
+        </div>
+      </div>
+    </DropdownMenuContent>
+  )
+
   if (!canChat) {
     return <KeyPrompt />
   }
 
   if (!user || !isAuthenticated) {
     return (
-      <div className="fixed bottom-0 w-full max-w-3xl">
-        <div className="bg-secondary rounded-t-[20px] p-4 w-full text-center">
+      <div
+        className={cn(
+          "fixed bottom-0 w-full max-w-3xl",
+          // Smooth animations with easing
+          "transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]",
+          // Mobile: always centered with padding
+          "px-4 md:px-0",
+          // Desktop: adjust position based on sidebar state
+          isMobile
+            ? "left-1/2 transform -translate-x-1/2"
+            : sidebarCollapsed
+              ? "left-1/2 transform -translate-x-1/2"
+              : "left-[calc(var(--sidebar-width)+1rem)] right-4 transform-none max-w-none w-[calc(100vw-var(--sidebar-width)-2rem)]",
+        )}
+      >
+        <div className="bg-secondary rounded-t-[20px] p-4 w-full max-w-3xl mx-auto text-center transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]">
           <p className="text-muted-foreground">Please sign in to start chatting</p>
         </div>
       </div>
@@ -668,13 +782,33 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
 
   const searchStatusMessage = getSearchStatusMessage()
 
+  // Helper function for mobile layout
+  const getModelIcon = useCallback((model: AIModel) => {
+    const modelConfig = getModelConfig(model)
+    return <ProviderLogo provider={modelConfig.provider} size="sm" />
+  }, [])
+
   return (
-    <div className="fixed bottom-0 w-full max-w-3xl">
-      <div className="bg-background/95 backdrop-blur-sm border border-border rounded-t-2xl shadow-2xl pb-0 w-full">
+    <div
+      className={cn(
+        "fixed bottom-0 w-full max-w-4xl",
+        // Smooth animations with easing
+        "transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]",
+        // Mobile: always centered with padding
+        "px-3 md:px-4",
+        // Desktop: adjust position based on sidebar state
+        isMobile
+          ? "left-1/2 transform -translate-x-1/2"
+          : sidebarCollapsed
+            ? "left-1/2 transform -translate-x-1/2"
+            : "left-[calc(var(--sidebar-width)+1rem)] right-4 transform-none max-w-none w-[calc(100vw-var(--sidebar-width)-2rem)]",
+      )}
+    >
+      <div className="bg-white/98 dark:bg-background/95 backdrop-blur-xl border-t border-l border-r border-border rounded-t-3xl shadow-[0_-20px_25px_-5px_rgba(0,0,0,0.1),0_-10px_10px_-5px_rgba(0,0,0,0.04)] dark:shadow-[0_-20px_25px_-5px_rgba(0,0,0,0.25),0_-10px_10px_-5px_rgba(0,0,0,0.1)] pb-2 w-full max-w-4xl mx-auto transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] relative">
         {/* Active Persona Indicator - only show for non-default personas */}
         {currentPersona && !currentPersona.is_default && (
-          <div className="px-4 pt-3">
-            <div className="bg-primary/10 border border-primary/20 rounded-lg px-3 py-2 flex items-center gap-2">
+          <div className="px-6 pt-4">
+            <div className="bg-primary/10 border border-primary/20 rounded-xl px-4 py-3 flex items-center gap-3">
               <span className="text-sm">{currentPersona.avatar_emoji}</span>
               <span className="text-sm font-medium text-primary">{currentPersona.name} is active</span>
               <span className="text-xs text-muted-foreground ml-auto">System prompt enhanced</span>
@@ -689,7 +823,7 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
               <div className="flex items-center gap-2 mb-2">
                 <Archive className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm font-medium text-muted-foreground">Referenced Artifacts</span>
-                {artifactReferences.some(ref => ref.artifact.thread_id !== threadId) && (
+                {artifactReferences.some((ref) => ref.artifact.thread_id !== threadId) && (
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -709,19 +843,17 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
                 {artifactReferences.map((ref) => {
                   const isCrossChat = ref.artifact.thread_id !== threadId
                   return (
-                    <Badge 
-                      key={ref.id} 
-                      variant="secondary" 
-                                             className={cn(
-                         "flex items-center gap-2 pr-1 pl-2 py-1 text-xs",
-                         isCrossChat && "border-accent bg-accent/20 dark:border-accent dark:bg-accent/10"
-                       )}
+                    <Badge
+                      key={ref.id}
+                      variant="secondary"
+                      className={cn(
+                        "flex items-center gap-2 pr-1 pl-2 py-1 text-xs",
+                        isCrossChat && "border-accent bg-accent/20 dark:border-accent dark:bg-accent/10",
+                      )}
                     >
                       {getArtifactIcon(ref.artifact.content_type)}
                       <span className="max-w-[120px] truncate">{ref.artifact.title}</span>
-                                             {isCrossChat && (
-                         <Archive className="h-2 w-2 text-primary" />
-                       )}
+                      {isCrossChat && <Archive className="h-2 w-2 text-primary" />}
                       {ref.type === "insert" ? (
                         <Copy className="h-3 w-3 text-blue-500" />
                       ) : (
@@ -745,14 +877,14 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
 
         {/* File preview area - appears above the input */}
         {hasFiles && (
-          <div className="pt-4 px-4">
-            <div className="bg-muted/50 rounded-xl p-3 border border-border/50">
+          <div className="pt-4 px-6">
+            <div className="bg-muted/50 rounded-xl p-4 border border-border/50">
               <FilePreviewList files={uploadedFiles} onRemoveFile={handleRemoveFile} />
             </div>
           </div>
         )}
 
-        <div className="relative p-4">
+        <div className="relative p-6 pb-4">
           <div className="flex flex-col">
             <div className="bg-background border border-border rounded-xl overflow-hidden shadow-sm">
               <Textarea
@@ -772,12 +904,12 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
                             : "What can I do for you?"
                 }
                 className={cn(
-                  "w-full px-4 py-4 border-none shadow-none bg-transparent",
+                  "w-full px-4 py-3 border-none shadow-none bg-transparent",
                   "placeholder:text-muted-foreground/70 resize-none",
                   "focus-visible:ring-0 focus-visible:ring-offset-0",
                   "scrollbar-thin scrollbar-track-transparent scrollbar-thumb-muted-foreground/30",
                   "scrollbar-thumb-rounded-full text-base",
-                  "min-h-[80px]",
+                  "min-h-[60px]",
                 )}
                 ref={textareaRef}
                 onKeyDown={handleKeyDown}
@@ -790,186 +922,392 @@ function PureChatInput({ threadId, input, status, setInput, append, stop }: Chat
               </span>
             </div>
 
-            <div className="h-16 flex items-center px-2 pt-3">
-              <div className="flex items-center justify-between w-full">
-                <div className="flex items-center gap-3">
-                  <div className="bg-muted/50 rounded-lg p-1 border border-border/50">
-                    <ChatModelDropdown />
-                  </div>
-
-                  {/* Persona & Template Selector */}
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" size="sm" className="flex items-center gap-2">
-                        {currentPersona && !currentPersona.is_default ? (
-                          <>
-                            <span>{currentPersona.avatar_emoji}</span>
-                            <span className="hidden sm:inline">{currentPersona.name}</span>
-                          </>
-                        ) : (
-                          <>
-                            <Settings className="h-4 w-4" />
-                          </>
-                        )}
-                        <ChevronDown className="h-3 w-3 opacity-50" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-[400px] p-0" align="start">
-                      <PersonaTemplateSelector
-                        threadId={threadId}
-                        onPersonaSelect={(persona) => {
-                          // Persona selection is handled internally by the component
-                          // This callback is just for any additional logic if needed
-                        }}
-                        onTemplateSelect={handleTemplateSelect}
-                        onCreatePersona={() => setCreatePersonaOpen(true)}
-                        onCreateTemplate={() => setCreateTemplateOpen(true)}
-                        onEditPersona={handleEditPersona}
-                        onEditTemplate={handleEditTemplate}
-                        onDeletePersona={handleDeletePersona}
-                        onDeleteTemplate={handleDeleteTemplate}
-                      />
-                    </PopoverContent>
-                  </Popover>
-
-                  <div className="flex items-center gap-2">
-                    <FileUpload
-                      threadId={threadId}
-                      onFileUpload={handleFileUpload}
-                      uploadedFiles={uploadedFiles}
-                      onRemoveFile={handleRemoveFile}
-                      onUploadingChange={setIsUploading}
-                      disabled={status === "streaming" || status === "submitted"}
-                    />
-
-                    {/* Enhanced Artifact Picker */}
-                    <div className="flex items-center gap-1">
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
+            {/* Integrated Toolbar */}
+            {/* Desktop/Tablet Layout */}
+            <div className="hidden sm:flex items-center justify-between px-6 py-2 border-t border-border/30">
+              {/* Left Group - Model Selector */}
+              <div className="flex items-center">
+                <div className="bg-muted/60 dark:bg-muted/40 rounded-xl px-3 py-2 border border-border/50 max-w-full overflow-hidden">
+                  <ChatModelDropdown />
+                  {isOpenAIReasoningModel && (
+                    <>
+                      <div className="w-px h-4 bg-border/50 mx-2" />
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 rounded-md hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-all duration-200"
+                            disabled={status === "streaming" || status === "submitted"}
+                          >
+                            <Settings className="h-3.5 w-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent className="w-48 p-2" align="start">
+                          <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-b border-border/50 mb-2">
+                            Model Settings
+                          </div>
+                          <div className="space-y-3">
                             <div>
-                              <ArtifactPicker
-                                threadId={threadId}
-                                onSelectArtifact={handleArtifactSelect}
-                                trigger={
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-9 w-9 transition-all duration-200 rounded-lg hover:bg-muted border border-border/50"
-                                    aria-label="Insert artifacts from your library"
-                                    disabled={status === "streaming" || status === "submitted"}
-                                  >
-                                    <Archive className="h-4 w-4" />
-                                  </Button>
-                                }
+                              <label className="text-xs font-medium text-muted-foreground mb-2 block">
+                                Reasoning Effort
+                              </label>
+                              <ReasoningEffortSelector
+                                value={reasoningEffort}
+                                onChange={setReasoningEffort}
+                                disabled={status === "streaming" || status === "submitted"}
                               />
                             </div>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p>Insert artifacts from your library</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                      
-                      {/* Cross-Chat Artifact Indicator */}
-                      <CrossChatArtifactIndicator currentThreadId={threadId} />
-                    </div>
+                          </div>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </>
+                  )}
+                </div>
+              </div>
 
-                    {/* Web Search Toggle */}
+              {/* Right Group - All Tools and Actions */}
+              <div className="flex items-center">
+                    {/* File Upload */}
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <Button
-                            type="button"
-                            variant={webSearchEnabled ? "default" : "ghost"}
-                            size="icon"
-                            onClick={handleWebSearchToggle}
-                            className={cn(
-                              "h-9 w-9 transition-all duration-200 rounded-lg",
-                              webSearchEnabled &&
-                                currentModelSupportsSearch &&
-                                "bg-blue-500 hover:bg-blue-600 text-white shadow-md",
-                              webSearchEnabled &&
-                                !currentModelSupportsSearch &&
-                                "bg-orange-500 hover:bg-orange-600 text-white shadow-md",
-                              !webSearchEnabled && "hover:bg-muted border border-border/50",
-                            )}
-                            aria-label={webSearchEnabled ? "Disable web search" : "Enable web search"}
+                          <FileUpload
+                            threadId={threadId}
+                            onFileUpload={handleFileUpload}
+                            uploadedFiles={uploadedFiles}
+                            onRemoveFile={handleRemoveFile}
+                            onUploadingChange={setIsUploading}
                             disabled={status === "streaming" || status === "submitted"}
-                          >
-                            <Search className="h-4 w-4" />
-                          </Button>
+                          />
                         </TooltipTrigger>
                         <TooltipContent>
-                          <div className="text-center">
-                            <p className="font-medium">
-                              {webSearchEnabled ? "Web Search Enabled" : "Enable Web Search"}
-                            </p>
-                            {webSearchEnabled && (
-                              <p className="text-xs text-muted-foreground mt-1">
-                                {currentModelSupportsSearch
-                                  ? "Real-time search available"
-                                  : "Current model doesn't support search"}
-                              </p>
-                            )}
-                            {!webSearchEnabled && !currentModelSupportsSearch && (
-                              <p className="text-xs text-muted-foreground mt-1">Try Gemini models for native search</p>
-                            )}
-                          </div>
+                          <p>Upload files</p>
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
-                  </div>
-                </div>
 
-                <div className="flex items-center gap-2">
-                  {status === "submitted" || status === "streaming" ? (
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={stop}
-                      aria-label="Stop generating response"
-                      className="h-10 w-10 rounded-xl border-2 hover:bg-destructive/10 hover:border-destructive/50 transition-all duration-200"
-                    >
-                      <StopIcon size={20} />
-                    </Button>
-                  ) : (
-                    <Button
-                      onClick={handleSubmit}
-                      variant="default"
-                      size="icon"
-                      disabled={isDisabled}
-                      aria-label={isUploading ? "Uploading files..." : "Send message"}
-                      className={cn(
-                        "h-10 w-10 rounded-xl transition-all duration-200 shadow-md",
-                        !isDisabled && "hover:scale-105 hover:shadow-lg",
-                        isDisabled && "opacity-50 cursor-not-allowed",
-                      )}
-                    >
-                      {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUpIcon size={18} />}
-                    </Button>
-                  )}
+                    <div className="w-px h-4 bg-border/50 mx-2" />
+
+                    {/* Advanced Tools */}
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <DropdownMenu open={toolsDropdownOpen} onOpenChange={setToolsDropdownOpen}>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 rounded-lg hover:bg-muted/30 text-muted-foreground hover:text-foreground transition-all duration-200 hover:scale-105"
+                                disabled={status === "streaming" || status === "submitted"}
+                              >
+                                <Wrench className="h-3.5 w-3.5" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <ToolsDropdown />
+                          </DropdownMenu>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Advanced Tools</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+
+                    <div className="w-px h-4 bg-border/50 mx-2" />
+
+                    {/* Persona Selector */}
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className={cn(
+                                  "h-7 w-7 rounded-lg transition-all duration-200 hover:scale-105",
+                                  currentPersona && !currentPersona.is_default
+                                    ? "bg-primary/15 text-primary hover:bg-primary/25"
+                                    : "hover:bg-muted/30 text-muted-foreground hover:text-foreground",
+                                )}
+                              >
+                                {currentPersona && !currentPersona.is_default ? (
+                                  <span className="text-xs">{currentPersona.avatar_emoji}</span>
+                                ) : (
+                                  <User className="h-3.5 w-3.5" />
+                                )}
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[400px] p-0" align="end">
+                              <PersonaTemplateSelector
+                                threadId={threadId}
+                                onPersonaSelect={(persona) => {}}
+                                onTemplateSelect={handleTemplateSelect}
+                                onCreatePersona={() => setCreatePersonaOpen(true)}
+                                onCreateTemplate={() => setCreateTemplateOpen(true)}
+                                onEditPersona={handleEditPersona}
+                                onEditTemplate={handleEditTemplate}
+                                onDeletePersona={handleDeletePersona}
+                                onDeleteTemplate={handleDeleteTemplate}
+                              />
+                            </PopoverContent>
+                          </Popover>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>
+                            {currentPersona && !currentPersona.is_default
+                              ? `Persona: ${currentPersona.name}`
+                              : "Personas & Templates"}
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+
+                    {/* Web Search */}
+                    {currentModelSupportsSearch && (
+                      <>
+                        <div className="w-px h-4 bg-border/50 mx-2" />
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={handleWebSearchToggle}
+                                className={cn(
+                                  "h-7 w-7 rounded-lg transition-all duration-200 hover:scale-105",
+                                  webSearchEnabled
+                                    ? "bg-blue-500/15 text-blue-600 hover:bg-blue-500/25"
+                                    : "hover:bg-muted/30 text-muted-foreground hover:text-foreground",
+                                )}
+                                aria-label={webSearchEnabled ? "Disable web search" : "Enable web search"}
+                                disabled={status === "streaming" || status === "submitted"}
+                              >
+                                <Search className="h-3.5 w-3.5" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>{webSearchEnabled ? "Web Search Active" : "Enable Web Search"}</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </>
+                    )}
+
+                    <div className="w-px h-4 bg-border/50 mx-2" />
+
+                    {/* Send Button */}
+                    {status === "submitted" || status === "streaming" ? (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              onClick={stop}
+                              className="h-8 w-8 rounded-lg border hover:bg-destructive/10 hover:border-destructive/50 transition-all duration-200 hover:scale-105"
+                            >
+                              <StopIcon size={16} />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Stop generating</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    ) : (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              onClick={handleSubmit}
+                              variant="default"
+                              size="icon"
+                              disabled={isDisabled}
+                              className={cn(
+                                "h-8 w-8 rounded-lg transition-all duration-200 shadow-md",
+                                !isDisabled && "hover:scale-110 hover:shadow-lg",
+                                isDisabled && "opacity-50 cursor-not-allowed",
+                              )}
+                            >
+                              {isUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowUpIcon size={16} />}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>{isUploading ? "Uploading..." : "Send message"}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    )}
+              </div>
+            </div>
+
+            {/* Mobile Layout - Compact Single Row */}
+            <div className="sm:hidden flex items-center justify-between px-3 py-2 border-t border-border/30">
+              {/* Left - Model Selector (Compact) */}
+              <div className="flex items-center">
+                <div className="bg-muted/60 dark:bg-muted/40 rounded-lg px-2 py-1 border border-border/50">
+                  <ChatModelDropdown />
                 </div>
+              </div>
+
+              {/* Right - Essential Actions Only */}
+              <div className="flex items-center gap-1">
+                {/* File Upload */}
+                <FileUpload
+                  threadId={threadId}
+                  onFileUpload={handleFileUpload}
+                  uploadedFiles={uploadedFiles}
+                  onRemoveFile={handleRemoveFile}
+                  onUploadingChange={setIsUploading}
+                  disabled={status === "streaming" || status === "submitted"}
+                />
+
+                {/* Settings Menu - Persona, Web Search, Artifacts */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 rounded-lg hover:bg-muted/30 text-muted-foreground hover:text-foreground"
+                      disabled={status === "streaming" || status === "submitted"}
+                    >
+                      <Settings className="h-3 w-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="w-48 p-2 max-h-[50vh] overflow-y-auto" align="end" side="top" sideOffset={8}>
+                    <div className="space-y-1">
+                      {/* Persona */}
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button variant="ghost" className="w-full justify-start gap-2 h-8">
+                            {currentPersona && !currentPersona.is_default ? (
+                              <span>{currentPersona.avatar_emoji}</span>
+                            ) : (
+                              <User className="h-3 w-3" />
+                            )}
+                            <span className="text-sm">Persona</span>
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[min(400px,calc(100vw-2rem))] p-0" align="end">
+                          <PersonaTemplateSelector
+                            threadId={threadId}
+                            onPersonaSelect={(persona) => {}}
+                            onTemplateSelect={handleTemplateSelect}
+                            onCreatePersona={() => setCreatePersonaOpen(true)}
+                            onCreateTemplate={() => setCreateTemplateOpen(true)}
+                            onEditPersona={handleEditPersona}
+                            onEditTemplate={handleEditTemplate}
+                            onDeletePersona={handleDeletePersona}
+                            onDeleteTemplate={handleDeleteTemplate}
+                          />
+                        </PopoverContent>
+                      </Popover>
+
+                      {/* Web Search */}
+                      {currentModelSupportsSearch && (
+                        <Button 
+                          variant="ghost" 
+                          className="w-full justify-start gap-2 h-8"
+                          onClick={handleWebSearchToggle}
+                        >
+                          <Search className={cn("h-3 w-3", webSearchEnabled ? "text-blue-600" : "text-muted-foreground")} />
+                          <span className="text-sm">Web Search {webSearchEnabled ? "On" : "Off"}</span>
+                        </Button>
+                      )}
+
+                      {/* Artifacts */}
+                      <Button 
+                        variant="ghost" 
+                        className="w-full justify-start gap-2 h-8"
+                        onClick={() => setArtifactPickerOpen(true)}
+                      >
+                        <Archive className="h-3 w-3" />
+                        <span className="text-sm">Artifacts</span>
+                      </Button>
+                    </div>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                {/* Advanced Tools - Separate Button */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 rounded-lg hover:bg-muted/30 text-muted-foreground hover:text-foreground"
+                      disabled={status === "streaming" || status === "submitted"}
+                    >
+                      <Wrench className="h-3 w-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="w-64 p-2 max-h-[50vh] overflow-y-auto" align="end" side="top" sideOffset={8}>
+                    <ToolsDropdown />
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                {/* Send Button */}
+                {status === "submitted" || status === "streaming" ? (
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={stop}
+                    className="h-6 w-6 rounded-lg border hover:bg-destructive/10 hover:border-destructive/50"
+                  >
+                    <StopIcon size={12} />
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={handleSubmit}
+                    variant="default"
+                    size="icon"
+                    disabled={isDisabled}
+                    className={cn(
+                      "h-6 w-6 rounded-lg shadow-md",
+                      !isDisabled && "hover:scale-110 hover:shadow-lg",
+                      isDisabled && "opacity-50 cursor-not-allowed",
+                    )}
+                  >
+                    {isUploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ArrowUpIcon size={12} />}
+                  </Button>
+                )}
               </div>
             </div>
           </div>
         </div>
       </div>
 
+      {/* Workflow Builder */}
+      <WorkflowBuilder
+        open={workflowBuilderOpen}
+        onOpenChange={setWorkflowBuilderOpen}
+        threadId={threadId}
+        onRefreshMessages={onRefreshMessages}
+      />
+
+      {/* Artifact Picker Dialog */}
+      <ArtifactPicker
+        threadId={threadId}
+        onSelectArtifact={handleArtifactSelect}
+        open={artifactPickerOpen}
+        onOpenChange={setArtifactPickerOpen}
+        trigger={<div style={{ display: 'none' }} />} // Hidden trigger since we control it manually
+      />
+
       {/* Enhanced Web Search Status Indicator */}
       {searchStatusMessage && (
-        <div className="absolute -top-16 left-4 right-4 flex items-center justify-center">
+        <div className="absolute -top-14 left-4 right-4 flex items-center justify-center">
           <div
             className={cn(
-              "text-white text-sm px-4 py-2 rounded-full flex items-center gap-2 shadow-lg border backdrop-blur-sm",
+              "text-white text-xs px-3 py-2 rounded-xl flex items-center gap-2 shadow-lg border backdrop-blur-lg",
               "animate-in slide-in-from-bottom-2 duration-300",
               currentModelSupportsSearch
-                ? "bg-blue-500/90 border-blue-400/50"
-                : "bg-orange-500/90 border-orange-400/50",
+                ? "bg-blue-500/85 border-blue-400/40"
+                : "bg-orange-500/85 border-orange-400/40",
             )}
           >
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <Search className="h-3 w-3" />
               <span className="font-medium">{searchStatusMessage}</span>
               {!currentModelSupportsSearch && <Info className="h-3 w-3" />}
@@ -1040,7 +1378,11 @@ const ChatInput = memo(PureChatInput, (prevProps, nextProps) => {
 
 const PureChatModelDropdown = () => {
   const getKey = useAPIKeyStore((state) => state.getKey)
-  const { selectedModel, setModel, getEnabledModels, ensureValidSelectedModel } = useModelStore()
+  const { selectedModel, setModel, getEnabledModels, ensureValidSelectedModel, favoriteModels, toggleFavoriteModel } =
+    useModelStore()
+  const navigate = useNavigate()
+  const [searchQuery, setSearchQuery] = useState("")
+  const [showFavorites, setShowFavorites] = useState(true)
 
   // Ensure valid model selection on mount
   useEffect(() => {
@@ -1058,20 +1400,7 @@ const PureChatModelDropdown = () => {
 
   const getModelIcon = useCallback((model: AIModel) => {
     const modelConfig = getModelConfig(model)
-
-    // Provider icons
-    switch (modelConfig.provider) {
-      case "openai":
-        return <Zap className="w-3 h-3 text-green-500" />
-      case "google":
-        return <Brain className="w-3 h-3 text-blue-500" />
-      case "openrouter":
-        return <Globe className="w-3 h-3 text-purple-500" />
-      case "ollama":
-        return <Bot className="w-3 h-3 text-orange-500" />
-      default:
-        return null
-    }
+    return <ProviderLogo provider={modelConfig.provider} size="sm" />
   }, [])
 
   const getModelBadges = useCallback((model: AIModel) => {
@@ -1079,11 +1408,19 @@ const PureChatModelDropdown = () => {
     const badges = []
 
     if (modelConfig.supportsSearch) {
-      badges.push(<Search key="search" className="w-3 h-3 text-blue-500" />)
+      badges.push(
+        <div key="search" className="w-6 h-6 rounded-full bg-blue-500/20 flex items-center justify-center">
+          <Search className="w-3 h-3 text-blue-400" />
+        </div>,
+      )
     }
 
     if (modelConfig.supportsThinking) {
-      badges.push(<Sparkles key="thinking" className="w-3 h-3 text-purple-500" />)
+      badges.push(
+        <div key="thinking" className="w-6 h-6 rounded-full bg-pink-500/20 flex items-center justify-center">
+          <Sparkles className="w-3 h-3 text-pink-400" />
+        </div>,
+      )
     }
 
     return badges
@@ -1105,20 +1442,28 @@ const PureChatModelDropdown = () => {
     }
   }, [])
 
-  // Group models by provider
-  const groupedModels = useMemo(() => {
-    const groups: Record<string, AIModel[]> = {}
+  // Filter models based on search
+  const filteredModels = useMemo(() => {
+    if (!searchQuery) return availableModels
+    return availableModels.filter(
+      (model) =>
+        model.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        getProviderName(model).toLowerCase().includes(searchQuery.toLowerCase()),
+    )
+  }, [availableModels, searchQuery, getProviderName])
 
-    availableModels.forEach((model) => {
-      const provider = getProviderName(model)
-      if (!groups[provider]) {
-        groups[provider] = []
-      }
-      groups[provider].push(model)
-    })
+  const filteredFavorites = useMemo(() => {
+    if (!searchQuery) return favoriteModels
+    return favoriteModels.filter(
+      (model) =>
+        model.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        getProviderName(model).toLowerCase().includes(searchQuery.toLowerCase()),
+    )
+  }, [favoriteModels, searchQuery, getProviderName])
 
-    return groups
-  }, [availableModels, getProviderName])
+  const otherModels = useMemo(() => {
+    return filteredModels.filter((model) => !favoriteModels.includes(model))
+  }, [filteredModels, favoriteModels])
 
   if (availableModels.length === 0) {
     return (
@@ -1140,57 +1485,129 @@ const PureChatModelDropdown = () => {
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
-            className="flex items-center gap-2 h-8 px-3 text-sm rounded-md text-foreground hover:bg-primary/10 focus-visible:ring-1 focus-visible:ring-offset-0 focus-visible:ring-primary transition-all duration-200"
+            className="flex items-center gap-1 sm:gap-2 h-6 sm:h-7 px-2 sm:px-2.5 text-sm rounded-lg text-foreground hover:bg-muted/30 focus-visible:ring-1 focus-visible:ring-offset-0 focus-visible:ring-primary transition-all duration-200"
             aria-label={`Selected model: ${selectedModel}`}
           >
-            <div className="flex items-center gap-2">
-              {getModelIcon(selectedModel)}
-              <span className="font-medium max-w-[120px] truncate">{selectedModel.replace("ollama:", "")}</span>
-              <div className="flex items-center gap-1">{getModelBadges(selectedModel)}</div>
+            <div className="flex items-center gap-1 sm:gap-1.5">
+              <div className="scale-75">{getModelIcon(selectedModel)}</div>
+              <span className="font-medium max-w-[80px] sm:max-w-[100px] truncate text-xs">{selectedModel.replace("ollama:", "")}</span>
+              <div className="hidden sm:flex items-center gap-0.5 scale-75">{getModelBadges(selectedModel)}</div>
               <ChevronDown className="w-3 h-3 opacity-50" />
             </div>
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent className="min-w-[280px] max-h-[400px] overflow-y-auto">
-          {Object.entries(groupedModels).map(([provider, models], groupIndex) => (
-            <div key={provider}>
-              {groupIndex > 0 && <DropdownMenuSeparator />}
-              <div className="px-2 py-1.5">
-                <div className="text-xs font-medium text-muted-foreground flex items-center gap-2">
-                  {provider === "OpenAI" && <Zap className="w-3 h-3 text-green-500" />}
-                  {provider === "Google" && <Brain className="w-3 h-3 text-blue-500" />}
-                  {provider === "OpenRouter" && <Globe className="w-3 h-3 text-purple-500" />}
-                  {provider === "Ollama" && <Bot className="w-3 h-3 text-orange-500" />}
-                  {provider}
-                </div>
+        <DropdownMenuContent className="w-[min(480px,calc(100vw-1rem))] max-h-[70vh] p-0" align="start">
+          <div className="bg-background border-0">
+            {/* Search Header */}
+            <div className="p-4 border-b border-border/50">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <input
+                  type="text"
+                  placeholder="Search models..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 bg-muted/50 border border-border/50 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50"
+                />
               </div>
-              {models.map((model) => (
-                <DropdownMenuItem
-                  key={model}
-                  onSelect={() => setModel(model)}
-                  className="flex items-center justify-between gap-2 cursor-pointer px-3 py-2"
-                >
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <span className="truncate">{model.replace("ollama:", "")}</span>
-                    <div className="flex items-center gap-1">{getModelBadges(model)}</div>
-                  </div>
-                  {selectedModel === model && <Check className="w-4 h-4 text-primary flex-shrink-0" />}
-                </DropdownMenuItem>
-              ))}
             </div>
-          ))}
 
-          {availableModels.length < AI_MODELS.length && (
-            <>
-              <DropdownMenuSeparator />
-              <div className="px-3 py-2 text-xs text-muted-foreground">
-                <div className="flex items-center gap-2">
-                  <Settings className="w-3 h-3" />
-                  <span>Manage models in Settings</span>
+            <div className="max-h-[calc(70vh-80px)] overflow-y-auto">
+              {/* Favorites Section */}
+              {filteredFavorites.length > 0 && (
+                <div className="p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Sparkles className="w-4 h-4 text-primary" />
+                    <span className="text-sm font-medium text-primary">Favorites</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    {filteredFavorites.map((model) => (
+                      <div
+                        key={model}
+                        onClick={() => setModel(model)}
+                        className={cn(
+                          "p-3 rounded-lg border cursor-pointer transition-all duration-200 hover:bg-muted/50",
+                          selectedModel === model
+                            ? "border-primary bg-primary/5 ring-1 ring-primary/20"
+                            : "border-border/50 hover:border-border",
+                        )}
+                      >
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            {getModelIcon(model)}
+                            {selectedModel === model && <div className="w-2 h-2 rounded-full bg-primary" />}
+                          </div>
+                          <div className="flex items-center gap-1">{getModelBadges(model)}</div>
+                        </div>
+                        <div className="text-sm font-medium text-foreground mb-1">
+                          {model.replace("ollama:", "").split(" ").slice(0, 2).join(" ")}
+                        </div>
+                        <div className="text-xs text-muted-foreground">{getProviderName(model)}</div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
+              )}
+
+              {/* Provider Sections */}
+              {(["openai", "google", "openrouter", "ollama"] as const).map((provider) => {
+                const providerModels = otherModels.filter(
+                  (model) => getModelConfig(model).provider === provider
+                )
+                if (providerModels.length === 0) return null
+
+                return (
+                  <div key={provider} className="p-4 border-t border-border/50">
+                    <div className="flex items-center gap-2 mb-3">
+                      <ProviderLogo provider={provider} size="sm" />
+                      <span className="text-sm font-medium">{getProviderName(providerModels[0])}</span>
+                    </div>
+                    <div className="space-y-1">
+                      {providerModels.map((model) => (
+                        <div
+                          key={model}
+                          onClick={() => setModel(model)}
+                          className={cn(
+                            "flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all duration-200 hover:bg-muted/50",
+                            selectedModel === model ? "bg-primary/5 border border-primary/20" : "hover:bg-muted/30",
+                          )}
+                        >
+                          <div className="flex items-center gap-3">
+                            {getModelIcon(model)}
+                            <div>
+                              <div className="text-sm font-medium text-foreground">{model.replace("ollama:", "")}</div>
+                            </div>
+                            {selectedModel === model && <div className="w-2 h-2 rounded-full bg-primary ml-2" />}
+                          </div>
+                          <div className="flex items-center gap-1">{getModelBadges(model)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+
+              {/* No Results */}
+              {filteredModels.length === 0 && (
+                <div className="p-8 text-center">
+                  <Search className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">No models found</p>
+                  <p className="text-xs text-muted-foreground mt-1">Try adjusting your search</p>
+                </div>
+              )}
+
+              {/* Settings Link */}
+              <div className="p-4 border-t border-border/50">
+                <button
+                  onClick={() => navigate("/settings")}
+                  className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors w-full"
+                >
+                  <Settings className="w-4 h-4" />
+                  <span>Manage models in Settings</span>
+                </button>
               </div>
-            </>
-          )}
+            </div>
+          </div>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

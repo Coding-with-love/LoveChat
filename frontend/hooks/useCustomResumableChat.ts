@@ -76,6 +76,16 @@ export function useCustomResumableChat({
           console.log("✅ Ollama assistant message saved to DB (onFinish)")
         } catch (e) {
           console.error("❌ Failed to save Ollama assistant message to DB (onFinish):", e)
+          // Log more details about the error
+          if (e && typeof e === 'object') {
+            console.error("❌ Error details:", {
+              message: (e as any).message,
+              code: (e as any).code,
+              details: (e as any).details,
+              hint: (e as any).hint,
+              stack: (e as any).stack
+            })
+          }
         }
       }
       onFinish?.(message)
@@ -97,11 +107,9 @@ export function useCustomResumableChat({
           timestamp: new Date().toISOString()
         })
 
-        // Only require API key for providers that need it
-        if (modelConfig.provider !== "ollama" && !apiKey) {
-          const errorMsg = `${modelConfig.provider} API key is required but not found. Please check your API key settings.`
-          console.error("🔑 [FETCH] API key error:", errorMsg)
-          throw new Error(errorMsg)
+        // API key is optional - server will fallback to default keys
+        if (!apiKey) {
+          console.log("🔑 [FETCH] No user API key, server will use defaults for provider:", modelConfig.provider)
         }
 
         // Parse and update the body to include webSearchEnabled and API key
@@ -177,6 +185,32 @@ export function useCustomResumableChat({
             setHeaderSafely("x-openrouter-api-key", apiKey)
             setHeaderSafely("openrouter-api-key", apiKey)
             setHeaderSafely("x-api-key", apiKey)
+          }
+        }
+
+        // Helper function to set headers safely (make it available outside the apiKey check)
+        const setHeaderSafely = (name: string, value: string) => {
+          try {
+            headers.set(name, value)
+          } catch (error) {
+            console.warn(`⚠️ Failed to set header ${name}:`, error)
+          }
+        }
+
+        // For Ollama, add the base URL header
+        if (modelConfig.provider === "ollama") {
+          // Get the Ollama store state directly
+          try {
+            // Use dynamic import to get the store
+            const ollamaStoreModule = await import("@/frontend/stores/OllamaStore")
+            const ollamaStore = ollamaStoreModule.useOllamaStore.getState()
+            const ollamaBaseUrl = ollamaStore.baseUrl || "http://localhost:11434"
+            setHeaderSafely("x-ollama-base-url", ollamaBaseUrl)
+            console.log("🦙 [FETCH] Set Ollama base URL header:", ollamaBaseUrl)
+          } catch (error) {
+            console.warn("⚠️ Failed to access Ollama store:", error)
+            // Fallback to localhost
+            setHeaderSafely("x-ollama-base-url", "http://localhost:11434")
           }
         }
 
@@ -279,21 +313,22 @@ export function useCustomResumableChat({
     }
 
     try {
-      console.log("🔄 Starting manual resume...")
-      setIsResuming(true)
-      setResumeProgress(10)
-      setResumeComplete(false)
+      console.log("🔄 Checking for streams to resume...")
 
-      // Get active streams
+      // Get active streams FIRST before setting any resuming state
       const activeStreams = await getActiveStreamsForThread(threadId)
       console.log("📋 Active streams:", activeStreams)
 
       if (activeStreams.length === 0) {
         console.log("❌ No active streams found")
-        setIsResuming(false)
-        setResumeProgress(0)
         return
       }
+
+      // Only set resuming state if we actually have streams to resume
+      console.log("🔄 Starting manual resume...")
+      setIsResuming(true)
+      setResumeProgress(10)
+      setResumeComplete(false)
 
       setResumeProgress(30)
 

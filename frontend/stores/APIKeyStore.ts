@@ -6,11 +6,14 @@ interface APIKeyStore {
   keys: Record<string, string>
   isLoading: boolean
   error: string | null
+  hasInitialized: boolean
   getKey: (provider: string) => string | undefined
   setKey: (provider: string, key: string) => Promise<void>
   removeKey: (provider: string) => Promise<void>
   hasKey: (provider: string) => boolean
   hasRequiredKeys: (provider?: string) => boolean
+  hasDefaultKeys: (provider: string) => Promise<boolean>
+  isUsingDefaultKey: (provider: string) => Promise<boolean>
   getAllKeys: () => Record<string, string>
   loadKeys: () => Promise<void>
   debug: () => void
@@ -22,13 +25,15 @@ export const useAPIKeyStore = create<APIKeyStore>()(
       keys: {},
       isLoading: false,
       error: null,
+      hasInitialized: false,
       getKey: (provider: string) => {
         const state = get()
         const normalizedProvider = provider.toLowerCase()
-        console.log("🔑 Getting API key for provider:", provider, "→", normalizedProvider)
-        console.log("🔑 Available keys:", Object.keys(state.keys))
         const key = state.keys[normalizedProvider]
-        console.log("🔑 Found key:", !!key, "Length:", key?.length || 0)
+        // Only log when debugging is needed, not on every call
+        // console.log("🔑 Getting API key for provider:", provider, "→", normalizedProvider)
+        // console.log("🔑 Available keys:", Object.keys(state.keys))
+        // console.log("🔑 Found key:", !!key, "Length:", key?.length || 0)
         return key
       },
       setKey: async (provider: string, key: string) => {
@@ -47,14 +52,19 @@ export const useAPIKeyStore = create<APIKeyStore>()(
           // Get current user
           const { data: { user } } = await supabase.auth.getUser()
           if (!user) throw new Error("User not authenticated")
+          console.log("👤 User authenticated for setKey:", user.id)
 
           // Check if key already exists
-          const { data: existingKey } = await supabase
+          const { data: existingKey, error: selectError } = await supabase
             .from("api_keys")
             .select("id")
             .eq("user_id", user.id)
             .eq("provider", normalizedProvider)
             .single()
+          
+          if (selectError && selectError.code !== 'PGRST116') {
+            console.error("❌ Error checking existing key:", selectError)
+          }
 
           if (existingKey) {
             // Update existing key
@@ -129,6 +139,11 @@ export const useAPIKeyStore = create<APIKeyStore>()(
           })
 
           console.log("✅ API key removed from database")
+          
+          // Trigger cleanup of favorites for models that no longer have API keys
+          // Import the ModelStore dynamically to avoid circular imports
+          const { useModelStore } = await import("./ModelStore")
+          useModelStore.getState().cleanupFavoritesForRemovedProviders()
         } catch (error) {
           console.error("❌ Error removing API key:", error)
           set({ error: error instanceof Error ? error.message : "Failed to remove API key" })
@@ -150,9 +165,58 @@ export const useAPIKeyStore = create<APIKeyStore>()(
           return true
         }
         const normalizedProvider = provider.toLowerCase()
-        const hasKey = !!state.keys[normalizedProvider]
-        console.log("🔍 Checking if required API key exists for provider:", provider, "Has key:", hasKey)
-        return hasKey
+        const hasUserKey = !!state.keys[normalizedProvider]
+        console.log("🔍 Checking if required API key exists for provider:", provider, "Has user key:", hasUserKey)
+        
+        // Provider-specific requirements
+        if (normalizedProvider === "openai" || normalizedProvider === "openrouter") {
+          // OpenAI and OpenRouter require user-provided API keys
+          return hasUserKey
+        } else if (normalizedProvider === "google") {
+          // Google is optional - server has fallback
+          return true
+        } else {
+          // For other providers, require user key
+          return hasUserKey
+        }
+      },
+      hasDefaultKeys: async (provider: string) => {
+        const normalizedProvider = provider.toLowerCase()
+        
+        try {
+          // Check if server has default keys by making a test request
+          const response = await fetch("/api/check-default-keys", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ provider: normalizedProvider }),
+          })
+          
+          if (!response.ok) {
+            return false
+          }
+          
+          const data = await response.json()
+          console.log("🔍 Default API key check for provider:", provider, "Has default key:", data.hasDefaultKey)
+          return data.hasDefaultKey
+        } catch (error) {
+          console.error("❌ Error checking default API keys:", error)
+          return false
+        }
+      },
+      isUsingDefaultKey: async (provider: string) => {
+        const state = get()
+        const normalizedProvider = provider.toLowerCase()
+        const hasUserKey = !!state.keys[normalizedProvider]
+        
+        // If user has their own key, they're not using default
+        if (hasUserKey) {
+          return false
+        }
+        
+        // Check if default key is available
+        return await get().hasDefaultKeys(provider)
       },
       getAllKeys: () => {
         const state = get()
@@ -161,61 +225,106 @@ export const useAPIKeyStore = create<APIKeyStore>()(
         return state.keys
       },
       loadKeys: async () => {
-        // Prevent concurrent loadKeys calls
+        // Prevent concurrent loadKeys calls and check if already initialized
         const state = get()
         if (state.isLoading) {
           console.log("🔄 loadKeys already in progress, skipping...")
           return
         }
+        
+        if (state.hasInitialized) {
+          console.log("🔄 loadKeys already completed, skipping...")
+          return
+        }
+
+        // Set a shorter timeout to clear loading state if it takes too long
+        const loadingTimeout = setTimeout(() => {
+          const currentState = get()
+          if (currentState.isLoading) {
+            console.warn("⚠️ loadKeys timeout - clearing loading state")
+            set({ isLoading: false, hasInitialized: true, error: "Loading timeout" })
+          }
+        }, 5000) // Reduced from 10 to 5 seconds
 
         try {
           set({ isLoading: true, error: null })
+          console.log("🔄 loadKeys: Starting database query...")
           
-          // Get current user
-          const { data: { user } } = await supabase.auth.getUser()
-          if (!user) throw new Error("User not authenticated")
+          // Get current user with a timeout
+          const userPromise = supabase.auth.getUser()
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error("User authentication timeout")), 3000)
+          )
+          
+          const { data: { user } } = await Promise.race([userPromise, timeoutPromise]) as any
+          
+          if (!user) {
+            console.log("👤 No user found, skipping loadKeys")
+            set({ isLoading: false, keys: {}, hasInitialized: true }) // Mark as initialized even with no user
+            return
+          }
+          console.log("👤 User authenticated for loadKeys:", user.id)
 
-          // Fetch all API keys for user
-          const { data: apiKeys, error } = await supabase
+          // Fetch all API keys for user with timeout
+          const keysPromise = supabase
             .from("api_keys")
             .select("provider, api_key")
             .eq("user_id", user.id)
+          
+          const keysTimeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error("Database query timeout")), 3000)
+          )
+          
+          const { data: apiKeys, error } = await Promise.race([keysPromise, keysTimeoutPromise]) as any
+          
+          console.log("🔍 Raw database response:", { 
+            apiKeys, 
+            error,
+            apiKeysCount: apiKeys?.length || 0,
+            apiKeysProviders: apiKeys?.map((k: any) => k.provider) || []
+          })
 
           if (error) throw error
 
           // Convert to Record<string, string>
-          const keys = (apiKeys || []).reduce((acc, { provider, api_key }) => {
+          const keys = (apiKeys || []).reduce((acc: Record<string, string>, { provider, api_key }: { provider: string; api_key: string }) => {
             acc[provider.toLowerCase()] = api_key
             return acc
           }, {} as Record<string, string>)
 
-          set({ keys })
-          console.log("✅ API keys loaded from database")
+          console.log("🔍 Processed keys:", {
+            keyCount: Object.keys(keys).length,
+            providers: Object.keys(keys)
+          })
+
+          set({ keys, hasInitialized: true })
+          
+          if (Object.keys(keys).length === 0) {
+            console.log("✅ No API keys found in database (this is normal for new users)")
+          } else {
+            console.log("✅ API keys loaded from database:", Object.keys(keys))
+          }
         } catch (error) {
           console.error("❌ Error loading API keys:", error)
-          set({ error: error instanceof Error ? error.message : "Failed to load API keys" })
-          
-          // Don't throw error to prevent infinite loading states
-          // The UI can handle the error state gracefully
+          set({ error: error instanceof Error ? error.message : "Failed to load API keys", hasInitialized: true })
         } finally {
-          // Always ensure loading state is cleared
+          clearTimeout(loadingTimeout)
           set({ isLoading: false })
-          console.log("🔄 loadKeys loading state cleared")
+          console.log("🔄 loadKeys: Loading state cleared")
         }
       },
       debug: () => {
         const state = get()
-        console.log("🔍 API Key Store Debug:")
+        console.log("🔍 APIKeyStore Debug:")
         console.log("Keys:", Object.keys(state.keys))
-        console.log("Has OpenAI key:", !!state.keys["openai"])
-        console.log("Has Google key:", !!state.keys["google"])
-        console.log("Has OpenRouter key:", !!state.keys["openrouter"])
+        console.log("Loading:", state.isLoading)
+        console.log("Error:", state.error)
       }
     }),
     {
-      name: "api-key-storage", // name of the item in localStorage
+      name: "api-key-store",
       version: 1,
-      // Enable proper hydration to restore state on tab switches
+      skipHydration: true, // Skip automatic hydration since we handle it manually
     }
   )
 )

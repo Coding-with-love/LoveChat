@@ -102,13 +102,10 @@ export function useConversationSummary() {
           Authorization: `Bearer ${session.access_token}`,
         }
 
-        // Add the appropriate API key header
-        if (modelConfig.provider !== "ollama") {
-          if (!apiKey) {
-            throw new Error(`API key required for ${modelConfig.provider}`)
-          }
+        // Add the appropriate API key header (optional - server will use defaults)
+        if (modelConfig.provider !== "ollama" && apiKey) {
           headers[modelConfig.headerKey.toLowerCase()] = apiKey
-        } else {
+        } else if (modelConfig.provider === "ollama") {
           // For Ollama, add base URL if available
           const ollamaBaseUrl = getKey("ollama") || "http://localhost:11434"
           headers["x-ollama-base-url"] = ollamaBaseUrl

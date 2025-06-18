@@ -20,58 +20,78 @@ export async function POST(req: NextRequest) {
 
     console.log("🔍 Searching for:", query)
 
-    // Use DuckDuckGo Instant Answer API (free, no API key required)
-    const searchUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`
+    // Check for Serper API key
+    const serperApiKey = process.env.SERPER_API_KEY
+    if (!serperApiKey) {
+      console.error("❌ SERPER_API_KEY not found in environment variables")
+      return NextResponse.json({ error: "Search service not configured" }, { status: 500 })
+    }
+
+    // Use Serper API for Google search results
+    const searchUrl = "https://google.serper.dev/search"
 
     const response = await fetch(searchUrl, {
+      method: "POST",
       headers: {
-        "User-Agent": "LoveChat/1.0",
+        "Content-Type": "application/json",
+        "X-API-KEY": serperApiKey,
       },
+      body: JSON.stringify({
+        q: query,
+        num: maxResults,
+      }),
     })
 
     if (!response.ok) {
-      throw new Error(`Search API error: ${response.status}`)
+      throw new Error(`Serper API error: ${response.status}`)
     }
 
     const data = await response.json()
+    console.log("🔍 Serper API response:", JSON.stringify(data, null, 2))
 
-    // Also search for web results using a different approach
-    const webSearchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`
-
-    // For now, we'll use the instant answer API and format the results
     const results = []
 
-    // Add instant answer if available
-    if (data.Abstract) {
-      results.push({
-        title: data.Heading || "Instant Answer",
-        snippet: data.Abstract,
-        url: data.AbstractURL || "#",
-        source: data.AbstractSource || "DuckDuckGo",
+    // Add organic search results
+    if (data.organic && data.organic.length > 0) {
+      data.organic.slice(0, maxResults).forEach((result: any) => {
+        results.push({
+          title: result.title || "Search Result",
+          snippet: result.snippet || result.description || "",
+          url: result.link || "#",
+          source: result.domain || new URL(result.link || "https://example.com").hostname,
+        })
       })
     }
 
-    // Add related topics
-    if (data.RelatedTopics && data.RelatedTopics.length > 0) {
-      data.RelatedTopics.slice(0, maxResults - results.length).forEach((topic: any) => {
-        if (topic.Text && topic.FirstURL) {
-          results.push({
-            title: topic.Text.split(" - ")[0] || "Related Topic",
-            snippet: topic.Text,
-            url: topic.FirstURL,
-            source: "DuckDuckGo",
-          })
-        }
+    // Add knowledge graph if available
+    if (data.knowledgeGraph && results.length < maxResults) {
+      const kg = data.knowledgeGraph
+      results.unshift({
+        title: kg.title || "Knowledge Graph",
+        snippet: kg.description || kg.descriptionSource || "",
+        url: kg.descriptionLink || kg.website || "#",
+        source: "Google Knowledge Graph",
       })
     }
 
-    // If no results from instant answer, create a fallback result
+    // Add answer box if available
+    if (data.answerBox && results.length < maxResults) {
+      const answer = data.answerBox
+      results.unshift({
+        title: answer.title || "Answer",
+        snippet: answer.answer || answer.snippet || "",
+        url: answer.link || "#",
+        source: answer.source || "Google Answer Box",
+      })
+    }
+
+    // If no results found, create a fallback
     if (results.length === 0) {
       results.push({
         title: `Search results for "${query}"`,
-        snippet: `I searched for "${query}" but couldn't find specific instant answers. You may want to search directly on the web for more detailed results.`,
-        url: `https://duckduckgo.com/?q=${encodeURIComponent(query)}`,
-        source: "DuckDuckGo",
+        snippet: `No specific results found for "${query}". Try refining your search query.`,
+        url: `https://www.google.com/search?q=${encodeURIComponent(query)}`,
+        source: "Google",
       })
     }
 

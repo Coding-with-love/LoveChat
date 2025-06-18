@@ -12,6 +12,7 @@ import { createProject, updateProject } from "@/lib/supabase/queries"
 import { Check, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import type { Database } from "@/lib/supabase/types"
+import { cn } from "@/lib/utils"
 
 // Define the Project type based on the Database type
 type Project = Database["public"]["Tables"]["projects"]["Row"]
@@ -121,63 +122,110 @@ export function CreateProjectDialog({ open, onOpenChange, existingProject, onSuc
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="name">Name</Label>
-              <Input
-                id="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Project name"
-                autoComplete="off"
-                required
-              />
+          <div className="grid gap-6 py-4">
+            {/* Details Section */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 pb-2 border-b border-border/50">
+                <span className="text-lg">📝</span>
+                <h4 className="text-sm font-semibold text-foreground">Details</h4>
+              </div>
+              <div className="grid gap-3">
+                <div className="grid gap-2">
+                  <Label htmlFor="name" className="text-sm font-medium">
+                    Name
+                  </Label>
+                  <Input
+                    id="name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Enter project name"
+                    autoComplete="off"
+                    required
+                    className="transition-all duration-200 focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="description" className="text-sm font-medium">
+                    Description (optional)
+                  </Label>
+                  <Textarea
+                    id="description"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="Add a description for your project"
+                    rows={3}
+                    className="transition-all duration-200 focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+              </div>
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="description">Description (optional)</Label>
-              <Textarea
-                id="description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Add a description for your project"
-                rows={3}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label>Color</Label>
-              <div className="flex flex-wrap gap-2">
-                {PROJECT_COLORS.map((projectColor) => (
-                  <button
-                    key={projectColor.value}
-                    type="button"
-                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-all border-2 ${
-                      color === projectColor.value ? "border-primary scale-110" : "border-transparent"
-                    }`}
-                    style={{ backgroundColor: projectColor.value }}
-                    onClick={() => setColor(projectColor.value)}
-                    title={projectColor.name}
-                    aria-label={`Select ${projectColor.name} color`}
-                  >
-                    {color === projectColor.value && <Check className="h-4 w-4 text-white" />}
-                  </button>
-                ))}
+
+            {/* Color Label Section */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 pb-2 border-b border-border/50">
+                <span className="text-lg">🎨</span>
+                <h4 className="text-sm font-semibold text-foreground">Color Label</h4>
+              </div>
+              <div className="grid gap-3">
+                <Label className="text-sm font-medium">Choose a color for your project</Label>
+                <div className="flex flex-wrap gap-3">
+                  {PROJECT_COLORS.map((projectColor) => (
+                    <div key={projectColor.value} className="relative group">
+                      <button
+                        type="button"
+                        className={cn(
+                          "w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 border-2 hover:scale-110 focus:scale-110 focus:outline-none focus:ring-2 focus:ring-primary/50",
+                          color === projectColor.value
+                            ? "border-primary scale-110 shadow-lg"
+                            : "border-transparent hover:border-border",
+                        )}
+                        style={{ backgroundColor: projectColor.value }}
+                        onClick={() => setColor(projectColor.value)}
+                        title={`${projectColor.name} (${projectColor.value})`}
+                        aria-label={`Select ${projectColor.name} color`}
+                      >
+                        {color === projectColor.value && (
+                          <Check className="h-4 w-4 text-white drop-shadow-sm animate-in zoom-in-50 duration-200" />
+                        )}
+                      </button>
+                      {/* Tooltip */}
+                      <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
+                        <div className="bg-popover text-popover-foreground text-xs px-2 py-1 rounded-md shadow-md border whitespace-nowrap">
+                          {projectColor.name}
+                          <div className="text-xs text-muted-foreground">{projectColor.value}</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => handleOpenChange(false)} disabled={isSubmitting}>
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => handleOpenChange(false)}
+              disabled={isSubmitting}
+              className="hover:bg-secondary transition-colors"
+            >
               Cancel
             </Button>
-            <Button type="submit" disabled={isSubmitting}>
+            <Button
+              type="submit"
+              disabled={isSubmitting}
+              className="relative overflow-hidden group hover:shadow-lg transition-all duration-200 active:scale-95"
+            >
               {isSubmitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   {existingProject ? "Updating..." : "Creating..."}
                 </>
-              ) : existingProject ? (
-                "Update Project"
               ) : (
-                "Create Project"
+                <>
+                  <span className="relative z-10">{existingProject ? "Update Project" : "Create Project"}</span>
+                  <div className="absolute inset-0 bg-gradient-to-r from-primary/0 via-primary/10 to-primary/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-500" />
+                </>
               )}
             </Button>
           </DialogFooter>

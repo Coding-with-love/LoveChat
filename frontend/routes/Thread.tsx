@@ -71,23 +71,30 @@ export default function Thread() {
         isLoading: loading
       })
       
-      // Only refresh if we don't have messages loaded yet OR if it's been a while
+      // Clear any stuck loading state first
+      if (loading) {
+        console.log("🔄 Clearing stuck loading state")
+        setLoading(false)
+      }
+      
+      // Only refresh if we don't have messages loaded yet OR if it's been a very long time
       // This prevents overriding local state changes (like rephrased text) on quick tab switches
-      // but still allows refreshing if data might be stale
+      // but still allows refreshing if data might be genuinely stale
       const now = Date.now()
       const lastLoad = localStorage.getItem(`thread_${id}_last_load`)
       const lastLoadTime = lastLoad ? parseInt(lastLoad) : 0
       const timeSinceLastLoad = now - lastLoadTime
-      const STALE_THRESHOLD = 5 * 60 * 1000 // 5 minutes
+      const STALE_THRESHOLD = 30 * 60 * 1000 // 30 minutes (increased from 5 minutes)
       
+      // Only refresh if no messages OR data is very stale
       if (user && id && (messages.length === 0 || timeSinceLastLoad > STALE_THRESHOLD)) {
-        console.log("🔄 Refreshing thread messages - no messages loaded or data is stale")
+        console.log(`🔄 Refreshing thread messages - ${messages.length === 0 ? 'no messages loaded' : `data stale (${Math.round(timeSinceLastLoad/60000)} minutes old)`}`)
         initializeThread(true) // Pass true to indicate this is a refresh
       } else {
-        console.log("🔄 Skipping refresh - messages already loaded and fresh")
+        console.log(`🔄 Skipping refresh - messages loaded and fresh (${Math.round(timeSinceLastLoad/60000)} minutes old, threshold: 30 minutes)`)
       }
     },
-    refreshStoresOnVisible: true
+    refreshStoresOnVisible: false // Don't refresh stores - let API key hydration handle it
   })
 
   useEffect(() => {
@@ -177,5 +184,5 @@ export default function Thread() {
     )
   }
 
-  return <Chat threadId={id!} initialMessages={convertToUIMessages(messages)} registerRef={registerRef} />
+  return <Chat threadId={id!} initialMessages={convertToUIMessages(messages)} registerRef={registerRef} onRefreshMessages={() => initializeThread(true)} />
 }

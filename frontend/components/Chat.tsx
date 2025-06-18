@@ -7,6 +7,7 @@ import { useAPIKeyStore } from "@/frontend/stores/APIKeyStore"
 import { useModelStore } from "@/frontend/stores/ModelStore"
 import { useSidebar } from "./ui/sidebar"
 import { Button } from "./ui/button"
+import { cn } from "@/lib/utils"
 import { ChevronDown } from 'lucide-react'
 import { useCustomResumableChat } from "@/frontend/hooks/useCustomResumableChat"
 import { getModelConfig } from "@/lib/models"
@@ -22,7 +23,13 @@ import type { Message, CreateMessage } from "ai"
 import { getMessageParts } from "@ai-sdk/ui-utils"
 import { useTabVisibility } from "@/frontend/hooks/useTabVisibility"
 import RealtimeThinking from "./RealTimeThinking"
+import StreamingReasoning from "./StreamingReasoning"
 import { useUserPreferencesStore } from "@/frontend/stores/UserPreferencesStore"
+import { RegenerationProvider } from "@/frontend/contexts/RegenerationContext"
+import { useMessageAttempts } from "@/frontend/hooks/useMessageAttempts"
+import { useRegenerationTracker } from "@/frontend/hooks/useRegenerationTracker"
+import { useMessageInterceptor } from "@/frontend/hooks/useMessageInterceptor"
+import { useReasoningStream } from "@/frontend/hooks/useReasoningStream"
 
 // Extend UIMessage to include reasoning field
 interface ExtendedUIMessage extends UIMessage {
@@ -34,9 +41,10 @@ interface ChatProps {
   threadId: string
   initialMessages: UIMessage[]
   registerRef?: (id: string, ref: HTMLDivElement | null) => void
+  onRefreshMessages?: () => void
 }
 
-export default function Chat({ threadId, initialMessages, registerRef }: ChatProps) {
+export default function Chat({ threadId, initialMessages, registerRef, onRefreshMessages }: ChatProps) {
   const { getKey } = useAPIKeyStore()
   const selectedModel = useModelStore((state) => state.selectedModel)
   const modelConfig = useMemo(() => getModelConfig(selectedModel), [selectedModel])
@@ -45,18 +53,33 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
   const [showPinnedMessages, setShowPinnedMessages] = useState(false)
   const [isThinking, setIsThinking] = useState(false)
   const isAutoScrolling = useRef(false)
+  const lastUserScrollTime = useRef(0)
+  const autoScrollEnabled = useRef(true)
 
   // Add these state variables inside the Chat component function
   const [realtimeThinking, setRealtimeThinking] = useState("")
   const [showRealtimeThinking, setShowRealtimeThinking] = useState(false)
   const currentMessageIdRef = useRef<string | null>(null)
+  
+  // Google thinking model streaming state
+  const [streamingReasoning, setStreamingReasoning] = useState("")
+  const [isStreamingReasoning, setIsStreamingReasoning] = useState(false)
+  const [reasoningDuration, setReasoningDuration] = useState<number | undefined>(undefined)
+  const [streamingReasoningMessageId, setStreamingReasoningMessageId] = useState<string | null>(null)
 
   const navigate = useNavigate()
-  const { toggleSidebar } = useSidebar()
+  const { toggleSidebar, state: sidebarState, isMobile } = useSidebar()
+  const sidebarCollapsed = sidebarState === "collapsed"
   const { id } = useParams()
 
   // Get user preferences for chat
   const userPreferences = useUserPreferencesStore()
+  
+  // Message attempts hook
+  const { addMessageAttempt } = useMessageAttempts()
+  
+  // Regeneration tracker hook
+  const { startRegeneration, captureNewAttempt, finishRegeneration } = useRegenerationTracker()
 
   // Monitor API key state for debugging
   const currentApiKey = getKey(modelConfig.provider)
@@ -115,16 +138,16 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
         }
       }
 
-      const uiMessage: ExtendedUIMessage = {
-        id: message.id || crypto.randomUUID(),
-        role: message.role,
-        content: message.content || "",
-        createdAt: message.createdAt || new Date(),
-        parts: parts as UIMessage["parts"],
-        model: selectedModel,
-        reasoning: reasoning,
+      // Log reasoning extraction for debugging
+      if (reasoning) {
+        console.log("🧠 Extracted reasoning from stream:", reasoning.substring(0, 100) + "...")
       }
-      return uiMessage
+
+      // Reset streaming reasoning state when chat finishes
+      setIsStreamingReasoning(false)
+      setStreamingReasoning("")
+      setStreamingReasoningMessageId(null)
+      setReasoningDuration(undefined)
     },
     autoResume: true,
   })
@@ -142,6 +165,288 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
     },
     refreshStoresOnVisible: false, // Don't refresh stores here, Thread handles it
   })
+
+  // Set up reasoning stream interceptor for reasoning models
+  useReasoningStream({
+    onReasoningStart: () => {
+      console.log("🧠 Reasoning stream started")
+      console.log("🧠 Current messages length:", messages.length)
+      console.log("🧠 Current streaming reasoning state:", isStreamingReasoning)
+      setIsStreamingReasoning(true)
+      setStreamingReasoning("")
+      setReasoningDuration(undefined)
+      // Don't try to find the message yet - it might not exist
+      // We'll attach reasoning when we detect the assistant message
+      setStreamingReasoningMessageId(null)
+      
+      // For thinking models, immediately prepare to add reasoning to the next assistant message
+      if (supportsThinking) {
+        console.log("🧠 Preparing to add reasoning to next assistant message")
+      }
+    },
+    onReasoningDelta: (content: string) => {
+      console.log("🧠 Reasoning delta received:", content.substring(0, 100))
+      console.log("🧠 Current reasoning buffer length:", streamingReasoning.length)
+      console.log("🧠 Current message ID being tracked:", streamingReasoningMessageId)
+      const newReasoning = streamingReasoning + content
+      setStreamingReasoning(newReasoning)
+      
+      // Update the message with the current reasoning content
+      if (streamingReasoningMessageId) {
+        console.log("🧠 Updating message with reasoning content:", {
+          messageId: streamingReasoningMessageId,
+          contentLength: content.length,
+          totalReasoningLength: newReasoning.length
+        })
+        setMessages(prevMessages => {
+          const updatedMessages = prevMessages.map(msg => 
+            msg.id === streamingReasoningMessageId 
+              ? {
+                  ...msg,
+                  parts: msg.parts?.map(part => 
+                    part.type === "reasoning" 
+                      ? { ...part, reasoning: newReasoning } as any
+                      : part
+                  ) || [{ type: "reasoning", reasoning: newReasoning } as any]
+                }
+              : msg
+          )
+          console.log("🧠 Messages updated with reasoning delta")
+          return updatedMessages
+        })
+      } else {
+        console.log("🧠 No message ID tracked yet, buffering reasoning content")
+      }
+    },
+    onReasoningEnd: (duration: number, totalReasoning: string) => {
+      console.log("🧠 Reasoning stream ended:", { duration, reasoningLength: totalReasoning.length })
+      console.log("🧠 Final reasoning content preview:", totalReasoning.substring(0, 200))
+      setIsStreamingReasoning(false)
+      setReasoningDuration(duration)
+      setStreamingReasoning(totalReasoning)
+      
+      // Update the message with the final reasoning content
+      if (streamingReasoningMessageId) {
+        console.log("🧠 Updating message with final reasoning content:", streamingReasoningMessageId)
+        setMessages(prevMessages => {
+          const updatedMessages = prevMessages.map(msg => 
+            msg.id === streamingReasoningMessageId 
+              ? {
+                  ...msg,
+                  reasoning: totalReasoning, // Also set the top-level reasoning field
+                  parts: msg.parts?.map(part => 
+                    part.type === "reasoning" 
+                      ? { ...part, reasoning: totalReasoning } as any
+                      : part
+                  ) || [{ type: "reasoning", reasoning: totalReasoning } as any]
+                }
+              : msg
+          )
+          console.log("🧠 Messages updated with final reasoning")
+          return updatedMessages
+        })
+      }
+      // Also handle case where we added a placeholder but didn't track the message ID
+      else if (messages.length > 0) {
+        const lastMessage = messages[messages.length - 1]
+        if (lastMessage.role === "assistant" && lastMessage.parts?.some(part => part.type === "reasoning")) {
+          console.log("🧠 Updating last message with final reasoning (fallback):", lastMessage.id)
+          setMessages(prevMessages => {
+            const updatedMessages = prevMessages.map(msg => 
+              msg.id === lastMessage.id 
+                ? {
+                    ...msg,
+                    reasoning: totalReasoning,
+                    parts: msg.parts?.map(part => 
+                      part.type === "reasoning" 
+                        ? { ...part, reasoning: totalReasoning } as any
+                        : part
+                    ) || [{ type: "reasoning", reasoning: totalReasoning } as any]
+                  }
+                : msg
+            )
+            console.log("🧠 Messages updated with final reasoning (fallback)")
+            return updatedMessages
+          })
+        }
+      }
+    },
+  })
+
+  // Watch for new assistant messages and attach reasoning IMMEDIATELY for thinking models
+  useEffect(() => {
+    console.log("🧠 Message tracking effect triggered:", {
+      messagesLength: messages.length,
+      isStreamingReasoning,
+      streamingReasoningMessageId,
+      supportsThinking,
+      status
+    })
+    
+    if (messages.length > 0) {
+      const lastMessage = messages[messages.length - 1]
+      console.log("🧠 Last message:", {
+        id: lastMessage.id,
+        role: lastMessage.role,
+        hasContent: !!lastMessage.content,
+        contentLength: lastMessage.content?.length || 0,
+        hasParts: !!lastMessage.parts,
+        partsCount: lastMessage.parts?.length || 0,
+        partsTypes: lastMessage.parts?.map(p => p.type) || []
+      })
+      
+      if (lastMessage.role === "assistant") {
+        // For reasoning models that send events, attach reasoning when streaming starts
+        if (isStreamingReasoning && !streamingReasoningMessageId) {
+          console.log("🧠 Found new assistant message, attaching reasoning:", lastMessage.id)
+          setStreamingReasoningMessageId(lastMessage.id)
+          
+          // Immediately add a reasoning part to the message so it shows up FIRST
+          console.log("🧠 Adding reasoning part to message immediately")
+          setMessages(prevMessages => {
+            const updatedMessages = prevMessages.map(msg => 
+              msg.id === lastMessage.id 
+                ? {
+                    ...msg,
+                    parts: [
+                      { type: "reasoning", reasoning: streamingReasoning || "Thinking..." } as any,
+                      ...(msg.parts || [])
+                    ]
+                  }
+                : msg
+            )
+            console.log("🧠 Message updated with reasoning part")
+            return updatedMessages
+          })
+        }
+        // For ALL thinking models, ensure reasoning component appears IMMEDIATELY when message is created
+        else if (supportsThinking && (status === "streaming" || status === "submitted") && !lastMessage.parts?.some(part => part.type === "reasoning")) {
+          console.log("🧠 Adding reasoning placeholder for thinking model IMMEDIATELY:", lastMessage.id)
+          setMessages(prevMessages => {
+            const updatedMessages = prevMessages.map(msg => 
+              msg.id === lastMessage.id 
+                ? {
+                    ...msg,
+                    parts: [
+                      { type: "reasoning", reasoning: "Thinking..." } as any,
+                      ...(msg.parts || [])
+                    ]
+                  }
+                : msg
+            )
+            console.log("🧠 Message updated with reasoning placeholder")
+            return updatedMessages
+          })
+        } else {
+          console.log("🧠 No reasoning attachment needed:", {
+            isStreamingReasoning,
+            hasStreamingReasoningMessageId: !!streamingReasoningMessageId,
+            supportsThinking,
+            status,
+            hasReasoningPart: lastMessage.parts?.some(part => part.type === "reasoning")
+          })
+        }
+      }
+    } else {
+      console.log("🧠 No messages yet")
+    }
+  }, [messages, isStreamingReasoning, streamingReasoningMessageId, streamingReasoning, supportsThinking, status])
+
+  // AGGRESSIVE: Watch for the very first assistant message creation for thinking models
+  useEffect(() => {
+    if (supportsThinking && (status === "streaming" || status === "submitted")) {
+      const lastMessage = messages[messages.length - 1]
+      
+      // If we just got a new assistant message that doesn't have reasoning yet
+      if (lastMessage?.role === "assistant" && !lastMessage.parts?.some(part => part.type === "reasoning")) {
+        console.log("🧠 AGGRESSIVE: New assistant message detected for thinking model, adding reasoning IMMEDIATELY:", lastMessage.id)
+        
+        // Add reasoning part immediately, even if the message is empty
+        setMessages(prevMessages => 
+          prevMessages.map(msg => 
+            msg.id === lastMessage.id 
+              ? {
+                  ...msg,
+                  parts: [
+                    { type: "reasoning", reasoning: "Thinking..." } as any,
+                    ...(msg.parts || [])
+                  ]
+                }
+              : msg
+          )
+        )
+      }
+    }
+  }, [messages.length, supportsThinking, status]) // Only depend on messages.length to catch new messages
+
+  // Clean up reasoning placeholders for thinking models when streaming completes
+  useEffect(() => {
+    if (supportsThinking && status !== "streaming" && status !== "submitted" && messages.length > 0) {
+      const lastMessage = messages[messages.length - 1]
+      if (lastMessage.role === "assistant") {
+        // Check if we have a reasoning placeholder that was never updated with real content
+        const hasReasoningPlaceholder = lastMessage.parts?.some(part => 
+          part.type === "reasoning" && (part as any).reasoning === "Thinking..."
+        )
+        
+        if (hasReasoningPlaceholder && !lastMessage.reasoning) {
+          console.log("🧠 Cleaning up reasoning placeholder for completed message:", lastMessage.id)
+          // Remove the placeholder reasoning part if no actual reasoning was provided
+          setMessages(prevMessages => 
+            prevMessages.map(msg => 
+              msg.id === lastMessage.id 
+                ? {
+                    ...msg,
+                    parts: msg.parts?.filter(part => 
+                      !(part.type === "reasoning" && (part as any).reasoning === "Thinking...")
+                    ) || []
+                  }
+                : msg
+            )
+          )
+        }
+      }
+    }
+  }, [status, messages, supportsThinking])
+
+  // Listen for workflow execution events
+  useEffect(() => {
+    const handleWorkflowMessage = async (event: Event) => {
+      const customEvent = event as CustomEvent
+      console.log("🔧 Received workflow message event:", customEvent.detail)
+      
+      if (customEvent.detail?.message && customEvent.detail?.executionData) {
+        try {
+          // Create a proper UIMessage for the workflow execution
+          const workflowUserMessage: UIMessage = {
+            id: uuidv4(),
+            role: "user",
+            content: customEvent.detail.message,
+            createdAt: new Date(),
+            parts: [{ type: "text", text: customEvent.detail.message }]
+          }
+          
+          console.log("💾 Saving workflow user message to database:", workflowUserMessage.id)
+          
+          // Save the user message to the database first
+          await createMessage(threadId, workflowUserMessage)
+          console.log("✅ Workflow user message saved to database")
+          
+          // Then send through the normal chat flow
+          await append(workflowUserMessage)
+          console.log("✅ Workflow message sent to chat API")
+        } catch (error) {
+          console.error("❌ Failed to handle workflow message:", error)
+        }
+      }
+    }
+
+    window.addEventListener('sendWorkflowMessage', handleWorkflowMessage)
+    
+    return () => {
+      window.removeEventListener('sendWorkflowMessage', handleWorkflowMessage)
+    }
+  }, [append, threadId])
 
   // Debug logging
   useEffect(() => {
@@ -272,24 +577,52 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
 
   const scrollToBottom = () => {
     isAutoScrolling.current = true
+    
+    // Hide the button immediately when clicked
+    setShowScrollToBottom(false)
+    
     window.scrollTo({
       top: document.documentElement.scrollHeight,
       behavior: "smooth",
     })
+    
     setTimeout(() => {
       isAutoScrolling.current = false
+      // Double-check if we're at bottom after scroll completes
+      const scrollTop = window.pageYOffset || document.documentElement.scrollTop
+      const windowHeight = window.innerHeight
+      const documentHeight = document.documentElement.scrollHeight
+      const isNearBottom = documentHeight - (scrollTop + windowHeight) < 100
+      setShowScrollToBottom(!isNearBottom)
     }, 1000)
   }
 
   const handleScroll = () => {
     if (isAutoScrolling.current) return
 
+    // Track when user manually scrolls
+    lastUserScrollTime.current = Date.now()
+    
     const scrollTop = window.pageYOffset || document.documentElement.scrollTop
     const windowHeight = window.innerHeight
     const documentHeight = document.documentElement.scrollHeight
 
-    const isNearBottom = documentHeight - (scrollTop + windowHeight) < 200
+    const isNearBottom = documentHeight - (scrollTop + windowHeight) < 100
     setShowScrollToBottom(!isNearBottom)
+    
+    // More responsive auto-scroll control during streaming
+    if (status === "streaming") {
+      // If user scrolls significantly away from bottom, disable auto-scroll
+      const distanceFromBottom = documentHeight - (scrollTop + windowHeight)
+      if (distanceFromBottom > 500) {
+        autoScrollEnabled.current = false
+      } else if (distanceFromBottom < 100) {
+        // Re-enable if user scrolls close to bottom
+        autoScrollEnabled.current = true
+      }
+    } else if (isNearBottom) {
+      autoScrollEnabled.current = true
+    }
   }
 
   useEffect(() => {
@@ -306,11 +639,40 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
       const documentHeight = document.documentElement.scrollHeight
       const isNearBottom = documentHeight - (scrollTop + windowHeight) < 300
 
-      if (isNearBottom) {
+      // Only auto-scroll if user hasn't manually scrolled recently and auto-scroll is enabled
+      const timeSinceUserScroll = Date.now() - lastUserScrollTime.current
+      const shouldAutoScroll = autoScrollEnabled.current && (timeSinceUserScroll > 1000 || isNearBottom)
+
+      if (shouldAutoScroll) {
         setTimeout(() => scrollToBottom(), 100)
       }
     }
   }, [messages.length, status, isResuming])
+
+  // Enhanced auto-scroll for streaming content updates
+  useEffect(() => {
+    if (status === "streaming" && messages.length > 0) {
+      const lastMessage = messages[messages.length - 1]
+      
+      // Only auto-scroll if it's an assistant message being streamed and auto-scroll is enabled
+      if (lastMessage?.role === "assistant" && autoScrollEnabled.current) {
+        // Use requestAnimationFrame for smoother scrolling during rapid updates
+        requestAnimationFrame(() => {
+          window.scrollTo({
+            top: document.documentElement.scrollHeight,
+            behavior: "smooth",
+          })
+        })
+      }
+    }
+  }, [messages, status])
+
+  // Reset auto-scroll when streaming starts
+  useEffect(() => {
+    if (status === "streaming") {
+      autoScrollEnabled.current = true
+    }
+  }, [status])
 
   // Handle keyboard shortcuts
   const handleClearInput = () => {
@@ -351,6 +713,7 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
 
   const handlePromptClick = useCallback(
     async (prompt: string) => {
+      console.log("🎯 handlePromptClick called with prompt:", prompt)
       try {
         // Set the prompt as the input and append it as a user message
         setInput("")
@@ -363,6 +726,8 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
           parts: [{ type: "text" as const, text: prompt }],
         }
 
+        console.log("💬 Created message:", message)
+
         // Create thread if needed
         if (!id) {
           console.log("📝 Creating new thread...")
@@ -372,16 +737,20 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
         }
 
         // Save to database first
+        console.log("💾 Saving message to database...")
         await createMessage(threadId, message)
+        console.log("✅ Message saved to database")
 
         // Then append to chat
+        console.log("📤 Appending message to chat...")
         await append(message)
+        console.log("✅ Message appended to chat")
       } catch (error) {
-        console.error("Error sending prompt:", error)
+        console.error("❌ Error sending prompt:", error)
         toast.error("Failed to send message")
       }
     },
-    [append, setInput, threadId, id, navigate],
+    [append, setInput, threadId, id, navigate, createMessage, createThread],
   )
 
   // Define keyboard shortcuts
@@ -579,27 +948,14 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
       {/* Global Resuming Indicator */}
       <GlobalResumingIndicator isResuming={isResuming} resumeProgress={resumeProgress} threadTitle="Current Chat" />
 
-      {showRealtimeThinking && supportsThinking && (
-        <div className="fixed top-20 right-4 z-50 w-80 max-h-[70vh] overflow-auto bg-white dark:bg-gray-900 border-2 border-purple-500 rounded-lg shadow-lg">
-          <div className="p-2 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 text-xs font-bold">
-            REALTIME THINKING VISIBLE
-          </div>
-          <RealtimeThinking
-            isVisible={showRealtimeThinking}
-            thinkingContent={realtimeThinking}
-            messageId={currentMessageIdRef.current || "thinking"}
-          />
-        </div>
-      )}
-
       {/* Pinned Messages Panel */}
       {showPinnedMessages && (
-        <div className="fixed top-16 right-4 z-40 w-80 max-h-96 bg-background border rounded-lg shadow-lg">
+        <div className="fixed top-16 right-4 z-40 w-80 max-w-[calc(100vw-2rem)] max-h-96 bg-background border rounded-lg shadow-lg">
           <PinnedMessages threadId={threadId} onClose={() => setShowPinnedMessages(false)} />
         </div>
       )}
 
-      <main className="flex flex-col w-full max-w-3xl pt-10 pb-56 mx-auto transition-all duration-300 ease-in-out">
+      <main className="flex flex-col w-full max-w-3xl pt-10 pb-48 mx-auto transition-all duration-300 ease-in-out px-4 sm:px-6 lg:px-8">
         {/* Global Thinking Indicator - shown when streaming starts with thinking models */}
         {isThinking && status === "streaming" && supportsThinking && (
           <div className="mb-6 flex justify-center">
@@ -607,32 +963,69 @@ export default function Chat({ threadId, initialMessages, registerRef }: ChatPro
           </div>
         )}
 
-        <Messages
-          threadId={threadId}
-          messages={messages}
-          status={status}
-          setMessages={setMessages}
-          reload={reload}
-          error={error}
-          registerRef={registerRef || (() => {})}
-          stop={stop}
-          resumeComplete={resumeComplete}
-          resumedMessageId={resumedMessageId}
-          onPromptClick={handlePromptClick}
-        />
-        <ChatInput threadId={threadId} input={input} status={status} append={append} setInput={setInput} stop={stop} />
+        {/* Google Thinking Model Streaming Reasoning */}
+        {isStreamingReasoning && streamingReasoningMessageId && (
+          <div className="mb-6">
+            <StreamingReasoning
+              reasoning={streamingReasoning}
+              isStreaming={isStreamingReasoning}
+              duration={reasoningDuration}
+              messageId={streamingReasoningMessageId}
+            />
+          </div>
+        )}
+
+        <RegenerationProvider
+          onMessageUpdate={(updatedMessage) => {
+            console.log("🔄 Updating message with new attempts:", updatedMessage.id, "Total attempts:", updatedMessage.attempts?.length)
+            setMessages((prevMessages) => {
+              return prevMessages.map(msg => 
+                msg.id === updatedMessage.id ? updatedMessage as UIMessage : msg
+              )
+            })
+          }}
+        >
+          <Messages
+            threadId={threadId}
+            messages={messages}
+            status={status}
+            setMessages={setMessages as any}
+            reload={reload}
+            error={error}
+            registerRef={registerRef || (() => {})}
+            stop={stop}
+            resumeComplete={resumeComplete}
+            resumedMessageId={resumedMessageId}
+            onPromptClick={handlePromptClick}
+          />
+        </RegenerationProvider>
+        <ChatInput threadId={threadId} input={input} status={status} append={append} setInput={setInput} stop={stop} onRefreshMessages={onRefreshMessages} />
       </main>
 
       {showScrollToBottom && (
-        <Button
-          onClick={scrollToBottom}
-          variant="outline"
-          size="icon"
-          className="fixed right-4 bottom-32 z-20 shadow-lg bg-background/95 backdrop-blur-sm hover:bg-background border-2"
-          aria-label="Scroll to bottom"
-        >
-          <ChevronDown className="h-4 w-4" />
-        </Button>
+        <div className={cn(
+          "fixed w-full max-w-4xl bottom-[220px] z-50",
+          "transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]",
+          "px-3 md:px-4 pointer-events-none",
+          isMobile
+            ? "left-1/2 transform -translate-x-1/2"
+            : sidebarCollapsed
+              ? "left-1/2 transform -translate-x-1/2"
+              : "left-[calc(var(--sidebar-width)+1rem)] right-4 transform-none max-w-none w-[calc(100vw-var(--sidebar-width)-2rem)]",
+        )}>
+          <div className="flex justify-center">
+            <Button
+              onClick={scrollToBottom}
+              variant="secondary"
+              size="sm"
+              className="gap-2 shadow-sm bg-muted/80 text-muted-foreground hover:bg-muted border border-border/50 pointer-events-auto"
+              aria-label="Scroll to bottom"
+            >
+              <ChevronDown className="h-3 w-3" />
+              Go to bottom
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   )

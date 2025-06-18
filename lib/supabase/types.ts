@@ -20,10 +20,14 @@ export interface Message {
   user_id: string
   content: string
   role: "user" | "assistant" | "system"
-  parts: any[] | null
+  parts: any[] | null // parts can include workflow_result type for workflow execution results
   reasoning: string | null
   created_at: string
   updated_at: string
+  // New fields for message attempts
+  parent_message_id?: string | null
+  attempt_number?: number
+  is_active_attempt?: boolean
 }
 
 // Add PinnedMessage interface
@@ -394,7 +398,7 @@ export interface Database {
           user_id: string
           original_code: string
           converted_code: string
-          source_language: string
+          original_language: string
           target_language: string
           created_at: string
         }
@@ -405,7 +409,7 @@ export interface Database {
           user_id: string
           original_code: string
           converted_code: string
-          source_language: string
+          original_language: string
           target_language: string
           created_at?: string
         }
@@ -416,7 +420,7 @@ export interface Database {
           message_id?: string
           original_code?: string
           converted_code?: string
-          source_language?: string
+          original_language?: string
           target_language?: string
           created_at?: string
         }
@@ -446,6 +450,120 @@ export interface Database {
           thread_id?: string
           message_id?: string
           note?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      workflows: {
+        Row: {
+          id: string
+          user_id: string
+          name: string
+          description: string | null
+          steps: any[]
+          is_public: boolean
+          tags: string[]
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          name: string
+          description?: string | null
+          steps: any[]
+          is_public?: boolean
+          tags?: string[]
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          name?: string
+          description?: string | null
+          steps?: any[]
+          is_public?: boolean
+          tags?: string[]
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      workflow_executions: {
+        Row: {
+          id: string
+          workflow_id: string
+          user_id: string
+          thread_id: string | null
+          status: "pending" | "running" | "completed" | "failed" | "cancelled"
+          input_data: any | null
+          output_data: any | null
+          step_results: any[]
+          current_step: number
+          error_message: string | null
+          started_at: string | null
+          completed_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          workflow_id: string
+          user_id: string
+          thread_id?: string | null
+          status?: "pending" | "running" | "completed" | "failed" | "cancelled"
+          input_data?: any | null
+          output_data?: any | null
+          step_results?: any[]
+          current_step?: number
+          error_message?: string | null
+          started_at?: string | null
+          completed_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          workflow_id?: string
+          user_id?: string
+          thread_id?: string | null
+          status?: "pending" | "running" | "completed" | "failed" | "cancelled"
+          input_data?: any | null
+          output_data?: any | null
+          step_results?: any[]
+          current_step?: number
+          error_message?: string | null
+          started_at?: string | null
+          completed_at?: string | null
+          created_at?: string
+        }
+      }
+      workflow_templates: {
+        Row: {
+          id: string
+          name: string
+          description: string | null
+          category: string | null
+          steps: any[]
+          tags: string[]
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          description?: string | null
+          category?: string | null
+          steps: any[]
+          tags?: string[]
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          description?: string | null
+          category?: string | null
+          steps?: any[]
+          tags?: string[]
           created_at?: string
           updated_at?: string
         }

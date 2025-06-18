@@ -23,24 +23,53 @@ export function useCodeConversions() {
 
   const findConversions = useCallback(
     async (threadId: string, messageId: string) => {
+      console.log("🔍 useCodeConversions: findConversions called", { threadId, messageId })
       setIsLoading(true)
       setError(null)
 
       try {
-        const { data, error } = await supabase
-          .from("code_conversions")
-          .select("*")
-          .eq("thread_id", threadId)
-          .eq("message_id", messageId)
-          .order("created_at", { ascending: false })
+        console.log("🔍 useCodeConversions: Making API request...")
+        
+        // Get auth headers
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) {
+          console.error("❌ useCodeConversions: No active session")
+          throw new Error("No active session")
+        }
 
-        if (error) {
-          throw error
+        console.log("🔍 useCodeConversions: Session found, making request to:", `/api/code-conversions?threadId=${threadId}&messageId=${messageId}`)
+
+        const response = await fetch(`/api/code-conversions?threadId=${threadId}&messageId=${messageId}`, {
+          method: "GET",
+          headers: {
+            "Authorization": `Bearer ${session.access_token}`,
+            "Content-Type": "application/json",
+          },
+        })
+
+        console.log("🔍 useCodeConversions: Response status:", response.status, response.statusText)
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          console.error("❌ useCodeConversions: API error:", errorText)
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        }
+
+        const data = await response.json()
+        console.log("✅ useCodeConversions: Found", data?.length || 0, "conversions")
+        if (data && data.length > 0) {
+          console.log("📊 useCodeConversions: Sample conversions:", data.slice(0, 2).map((c: any) => ({
+            id: c.id,
+            originalLanguage: c.original_language,
+            targetLanguage: c.target_language,
+            originalCodeLength: c.original_code.length,
+            convertedCodeLength: c.converted_code.length
+          })))
         }
 
         setConversions(data || [])
       } catch (err) {
-        console.error("Error fetching code conversions:", err)
+        console.error("❌ useCodeConversions: Error fetching code conversions:", err)
         setError(err instanceof Error ? err : new Error("Failed to fetch code conversions"))
       } finally {
         setIsLoading(false)

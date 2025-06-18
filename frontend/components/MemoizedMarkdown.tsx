@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { memo, useState, useCallback, useContext, useMemo } from "react"
+import { memo, useState, useCallback, useContext, useMemo, useEffect } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import remarkMath from "remark-math"
@@ -18,6 +18,7 @@ import type { ExtraProps, Components } from "react-markdown"
 import { Code2, Sparkles, Download, Pin, PinOff, Package, Star, Check, Copy } from 'lucide-react'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import { useArtifactStore } from "@/frontend/stores/ArtifactStore"
+import { useCodeConversions } from "@/frontend/hooks/useCodeConversions"
 import {
   Tooltip,
   TooltipContent,
@@ -55,11 +56,7 @@ interface MarkdownProps {
 const components: Components = {
   code: CodeBlock as Components["code"],
   pre: ({ children }) => <>{children}</>,
-  table: ({ children, ...props }) => (
-    <div className="table-wrapper overflow-x-auto my-6">
-      <table {...props}>{children}</table>
-    </div>
-  ),
+  table: TableWithArtifactIndicator as Components["table"],
   thead: ({ children, ...props }) => <thead {...props}>{children}</thead>,
   tbody: ({ children, ...props }) => <tbody {...props}>{children}</tbody>,
   tr: ({ children, ...props }) => <tr {...props}>{children}</tr>,
@@ -81,15 +78,135 @@ type ExtendedComponents = Components & {
   inlineMath: React.ComponentType<MathComponentProps>
 }
 
+// Custom Table component with artifact indicator
+function TableWithArtifactIndicator({ children, ...props }: ComponentProps<"table">) {
+  const { threadId, messageId, isArtifactMessage } = useContext(MarkdownContext)
+  const { getArtifactByContent, artifacts } = useArtifactStore()
+  const [isHovered, setIsHovered] = useState(false)
+
+  // Extract table content for artifact matching
+  const tableContent = useMemo(() => {
+    // This is a simplified way to get table content - in a real implementation
+    // you might want to extract the actual markdown table syntax
+    return String(children)
+  }, [children])
+
+  // Check if this table has an associated artifact
+  const associatedArtifact = useMemo(() => {
+    if (!tableContent || !isArtifactMessage) return null
+    return getArtifactByContent(tableContent, messageId)
+  }, [tableContent, messageId, getArtifactByContent, artifacts, isArtifactMessage])
+
+  const hasArtifact = Boolean(associatedArtifact)
+
+  return (
+    <div 
+      className="table-wrapper overflow-x-auto my-6 max-w-full relative"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {hasArtifact && isHovered && associatedArtifact && (
+        <div className="absolute top-2 right-2 z-10">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex items-center p-1 bg-primary/10 border border-primary/30 rounded-full shadow-sm hover:shadow-md transition-all duration-200 cursor-help">
+                  <Package className="w-3 h-3 text-primary hover:text-primary/80 transition-colors" />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                <div className="text-center">
+                  <p className="font-medium">Saved as Artifact</p>
+                  <p className="text-xs font-medium text-foreground">"{associatedArtifact.title}"</p>
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
+      )}
+      <table {...props} className="min-w-full border-collapse">
+        {children}
+      </table>
+    </div>
+  )
+}
+
+// Custom Math component with artifact indicator
+function DisplayMathWithArtifactIndicator({ value }: MathComponentProps) {
+  const { threadId, messageId, isArtifactMessage } = useContext(MarkdownContext)
+  const { getArtifactByContent, artifacts } = useArtifactStore()
+  const [isHovered, setIsHovered] = useState(false)
+
+  // Check if this math expression has an associated artifact
+  const associatedArtifact = useMemo(() => {
+    if (!value || !isArtifactMessage) return null
+    const mathContent = `$$${value}$$`
+    return getArtifactByContent(mathContent, messageId)
+  }, [value, messageId, getArtifactByContent, artifacts, isArtifactMessage])
+
+  const hasArtifact = Boolean(associatedArtifact)
+
+  const renderMath = (tex: string, displayMode: boolean) => {
+    try {
+      return katex.renderToString(tex, {
+        displayMode,
+        throwOnError: false,
+        output: "html",
+        strict: false,
+        trust: true,
+      })
+    } catch (error) {
+      console.error("KaTeX error:", error)
+      return tex
+    }
+  }
+
+  return (
+    <div 
+      className="math-wrapper relative my-4"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {hasArtifact && isHovered && associatedArtifact && (
+        <div className="absolute top-2 right-2 z-10">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex items-center p-1 bg-primary/10 border border-primary/30 rounded-full shadow-sm hover:shadow-md transition-all duration-200 cursor-help">
+                  <Package className="w-3 h-3 text-primary hover:text-primary/80 transition-colors" />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                <div className="text-center">
+                  <p className="font-medium">Saved as Artifact</p>
+                  <p className="text-xs font-medium text-foreground">"{associatedArtifact.title}"</p>
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
+      )}
+      <div
+        className="katex-display"
+        dangerouslySetInnerHTML={{
+          __html: renderMath(value, true),
+        }}
+      />
+    </div>
+  )
+}
+
 function CodeBlock({ children, className, ...props }: CodeComponentProps) {
   const { size, onCodeConvert, threadId, messageId, isArtifactMessage } = useContext(MarkdownContext)
   const { getArtifactByContent, artifacts } = useArtifactStore()
+  const { conversions, findConversions, addConversion } = useCodeConversions()
   const [copied, setCopied] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
   const [convertedCode, setConvertedCode] = useState<{ code: string; language: string } | null>(null)
   const [showConverted, setShowConverted] = useState(false)
   const [isConverting, setIsConverting] = useState(false)
   const [isPinned, setIsPinned] = useState(false)
+  const [renderError, setRenderError] = useState<string | null>(null)
 
   // Memoize the regex match to prevent it from changing on every render
   const languageMatch = useMemo(() => {
@@ -124,6 +241,91 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
   const hasArtifact = Boolean(associatedArtifact)
   const showArtifactStyling = hasArtifact || isArtifactCandidate
 
+  // Load existing conversions when component mounts
+  useEffect(() => {
+    if (threadId && messageId && language) {
+      console.log("🔍 Loading conversions for code block:", {
+        threadId,
+        messageId,
+        language,
+        codeLength: codeString.length
+      })
+      findConversions(threadId, messageId)
+    }
+  }, [threadId, messageId, language, findConversions, codeString.length])
+
+  // Check for existing conversion for this specific code block
+  useEffect(() => {
+    console.log("🔍 Checking for existing conversions:", {
+      conversionsCount: conversions.length,
+      hasCodeString: !!codeString,
+      language,
+      hasConvertedCode: !!convertedCode
+    })
+
+    if (conversions.length > 0 && codeString && language) {
+      // Normalize code for comparison (remove extra whitespace)
+      const normalizedCode = codeString.replace(/\s+/g, " ").trim()
+      
+      console.log("🔍 Looking for matching conversion in", conversions.length, "conversions")
+      
+      // Find a conversion that matches this code block
+      const matchingConversion = conversions.find(conv => {
+        const normalizedOriginal = conv.original_code.replace(/\s+/g, " ").trim()
+        const isCodeMatch = normalizedOriginal === normalizedCode ||
+          normalizedOriginal.replace(/\s+/g, "") === normalizedCode.replace(/\s+/g, "") ||
+          (normalizedOriginal.length > 20 && normalizedCode.includes(normalizedOriginal.substring(0, 20)))
+        
+        const isLanguageMatch = conv.original_language === language
+        
+        console.log("🔍 Checking conversion:", {
+          conversionId: conv.id,
+          sourceLanguage: conv.original_language,
+          targetLanguage: conv.target_language,
+          isCodeMatch,
+          isLanguageMatch,
+          originalCodeLength: conv.original_code.length,
+          currentCodeLength: codeString.length
+        })
+        
+        return isCodeMatch && isLanguageMatch
+      })
+
+      if (matchingConversion && !convertedCode) {
+        console.log("✅ Found existing conversion for code block:", {
+          sourceLanguage: matchingConversion.original_language,
+          targetLanguage: matchingConversion.target_language,
+          codeLength: matchingConversion.converted_code.length
+        })
+        
+        setConvertedCode({
+          code: matchingConversion.converted_code,
+          language: matchingConversion.target_language.toLowerCase()
+        })
+        // Don't auto-show converted code, let user toggle
+      } else if (!matchingConversion) {
+        console.log("❌ No matching conversion found for this code block")
+      }
+    }
+  }, [conversions, codeString, language, convertedCode])
+
+  // Debug logging to track convert button visibility (only when needed)
+  useEffect(() => {
+    if (language && isHovered) { // Only log when hovering over actual code blocks
+      console.log("🔍 CodeBlock debug info:", {
+        hasOnCodeConvert: !!onCodeConvert,
+        isHovered,
+        isConverting,
+        threadId,
+        messageId,
+        language,
+        codeLength: codeString.length,
+        shouldShowConvert: onCodeConvert && isHovered && !isConverting,
+        hasExistingConversion: !!convertedCode
+      })
+    }
+  }, [onCodeConvert, isHovered, isConverting, threadId, messageId, language, codeString.length, convertedCode])
+
   const copyToClipboard = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text)
@@ -146,6 +348,21 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
         setConvertedCode(newConvertedCode)
         setShowConverted(true)
 
+        // Add to conversions list for history
+        if (threadId && messageId) {
+          const newConversion = {
+            id: Date.now().toString(), // Temporary ID, will be replaced by server
+            thread_id: threadId,
+            message_id: messageId,
+            original_code: codeString,
+            original_language: language || "unknown",
+            converted_code: converted,
+            target_language: target,
+            created_at: new Date().toISOString(),
+          }
+          addConversion(newConversion)
+        }
+
         // Call parent callback if provided
         if (onCodeConvert) {
           onCodeConvert(codeString, converted, target)
@@ -156,7 +373,7 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
         setIsConverting(false)
       }
     },
-    [codeString, onCodeConvert],
+    [codeString, onCodeConvert, threadId, messageId, language, addConversion],
   )
 
   const toggleView = useCallback(() => {
@@ -180,21 +397,72 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
     URL.revokeObjectURL(url)
   }, [codeString, language])
 
+  // Error boundary for ShikiHighlighter
+  const renderCodeWithErrorHandling = useCallback(() => {
+    try {
+      const displayLang = convertedCode && showConverted ? convertedCode.language : language
+      const displayCode = convertedCode && showConverted ? convertedCode.code : codeString
+      
+      // Use the language mapping to get a valid Shiki language
+      const shikiLanguage = getShikiLanguage(displayLang || 'text')
+      
+      return (
+        <div className="relative w-full overflow-hidden">
+          <ShikiHighlighter
+            language={shikiLanguage}
+            theme={"material-theme-darker"}
+            className="text-sm font-mono w-full !max-w-none"
+            showLanguage={false}
+          >
+            {displayCode}
+          </ShikiHighlighter>
+        </div>
+      )
+    } catch (error) {
+      console.error("Error rendering Shiki syntax highlighting:", error)
+      setRenderError(error instanceof Error ? error.message : "Unknown rendering error")
+      
+      // Fallback to basic <pre><code> rendering
+      const displayCode = convertedCode && showConverted ? convertedCode.code : codeString
+      return (
+        <pre className="bg-gray-900 text-gray-100 p-4 rounded text-sm font-mono overflow-x-auto whitespace-pre-wrap break-words">
+          <code>{displayCode}</code>
+        </pre>
+      )
+    }
+  }, [convertedCode, showConverted, language, codeString])
+
   if (languageMatch && language) {
     const displayLang = convertedCode && showConverted ? convertedCode.language : language
-    const displayCode = convertedCode && showConverted ? convertedCode.code : codeString
-
-    // Use the language mapping to get a valid Shiki language
-    const shikiLanguage = getShikiLanguage(displayLang)
 
     return (
       <div
         className={cn(
-          "rounded-md relative mb-4 overflow-visible shadow-sm transition-all duration-200",
-          "border border-border"
+          "rounded-md relative mb-4 shadow-sm transition-all duration-200 w-full max-w-full",
+          "border border-border overflow-hidden"
         )}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
+        onMouseEnter={(e) => {
+          console.log("🔍 CodeBlock mouse enter:", { 
+            language, 
+            hasOnCodeConvert: !!onCodeConvert,
+            threadId,
+            messageId,
+            codeLength: codeString.length,
+            target: e.target,
+            currentTarget: e.currentTarget
+          })
+          setIsHovered(true)
+        }}
+        onMouseLeave={(e) => {
+          console.log("🔍 CodeBlock mouse leave:", { 
+            language,
+            threadId,
+            messageId,
+            target: e.target,
+            currentTarget: e.currentTarget
+          })
+          setIsHovered(false)
+        }}
         data-code-block="true"
         data-artifact={showArtifactStyling}
         data-has-artifact={hasArtifact}
@@ -205,15 +473,20 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
           )}
           data-code-block-header="true"
         >
-          <div className="flex items-center space-x-2">
-            <span className="text-sm font-mono">
+          <div className="flex items-center space-x-2 min-w-0">
+            <span className="text-sm font-mono truncate">
               {displayLang}
             </span>
+            {renderError && (
+              <span className="text-xs text-red-500 bg-red-100 dark:bg-red-900/20 px-2 py-1 rounded">
+                Rendering Error
+              </span>
+            )}
             {convertedCode && (
               <button
                 onClick={toggleView}
                 className={cn(
-                  "text-xs px-2 py-0.5 rounded transition-colors flex items-center space-x-1",
+                  "text-xs px-2 py-0.5 rounded transition-colors flex items-center space-x-1 flex-shrink-0",
                   showConverted
                     ? "bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:hover:bg-blue-800/50"
                     : "bg-muted hover:bg-muted/80",
@@ -233,7 +506,7 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
               </button>
             )}
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 flex-shrink-0">
             {hasArtifact && associatedArtifact && (
               <TooltipProvider>
                 <Tooltip>
@@ -271,17 +544,28 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
                 </button>
               </>
             )}
-            {onCodeConvert && isHovered && !isConverting && (
-              <div className="relative z-50">
-                <CodeConverter
-                  code={codeString}
-                  currentLanguage={language}
-                  onConvert={handleConvert}
-                  threadId={threadId}
-                  messageId={messageId}
-                />
-              </div>
-            )}
+            {onCodeConvert && isHovered && !isConverting && (() => {
+              console.log("🔍 Rendering CodeConverter:", {
+                hasOnCodeConvert: !!onCodeConvert,
+                isHovered,
+                isConverting,
+                threadId,
+                messageId,
+                language,
+                codeLength: codeString.length
+              })
+              return (
+                <div className="relative z-50">
+                  <CodeConverter
+                    code={codeString}
+                    currentLanguage={language}
+                    onConvert={handleConvert}
+                    threadId={threadId}
+                    messageId={messageId}
+                  />
+                </div>
+              )
+            })()}
             {isConverting && (
               <div className="flex items-center text-xs text-muted-foreground">
                 <Loader2 className="w-3 h-3 mr-1 animate-spin" />
@@ -289,7 +573,7 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
               </div>
             )}
             <button
-              onClick={() => copyToClipboard(displayCode)}
+              onClick={() => copyToClipboard(convertedCode && showConverted ? convertedCode.code : codeString)}
               className="text-sm cursor-pointer hover:text-primary transition-colors p-1 rounded-md hover:bg-primary/10"
               aria-label="Copy code"
               title="Copy code"
@@ -300,21 +584,13 @@ function CodeBlock({ children, className, ...props }: CodeComponentProps) {
         </div>
         <div
           className={cn(
-            "transition-all duration-300",
+            "transition-all duration-300 w-full max-w-full",
+            "overflow-x-auto",
             showConverted ? "bg-blue-50/20 dark:bg-blue-950/20 border-t border-blue-200 dark:border-blue-800" : ""
           )}
           data-code-block-content="true"
         >
-          <div className="relative">
-            <ShikiHighlighter
-              language={shikiLanguage}
-              theme={"material-theme-darker"}
-              className="text-sm font-mono"
-              showLanguage={false}
-            >
-              {displayCode}
-            </ShikiHighlighter>
-          </div>
+          {renderCodeWithErrorHandling()}
         </div>
       </div>
     )
@@ -394,16 +670,7 @@ function PureMarkdownRendererBlock({ content }: { content: string }) {
 
             if (isDisplayMath) {
               const mathContent = String(children).slice(2, -2).trim()
-              return (
-                <div className="math-wrapper">
-                  <div
-                    className="katex-display"
-                    dangerouslySetInnerHTML={{
-                      __html: renderMath(mathContent, true),
-                    }}
-                  />
-                </div>
-              )
+              return <DisplayMathWithArtifactIndicator value={mathContent} />
             }
 
             return (

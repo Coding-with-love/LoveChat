@@ -75,6 +75,9 @@ interface ArtifactStore {
   
   // Check if specific code content has an associated artifact
   getArtifactByContent: (content: string, messageId?: string) => Artifact | undefined
+
+  // Utility method to fix artifact titles and content types
+  fixArtifactMetadata: (id: string, newTitle?: string, newContentType?: string) => Promise<void>
 }
 
 export interface ArtifactFilters {
@@ -130,9 +133,25 @@ export const useArtifactStore = create<ArtifactStore>()(
       error: null,
 
       fetchArtifacts: async (filters = {}) => {
-        set({ isLoading: true, error: null })
+        // Prevent concurrent fetches and add timeout protection
+        const currentState = get()
+        if (currentState.isLoading) {
+          console.log("🎯 fetchArtifacts already in progress, skipping...")
+          return
+        }
+
+        // Set loading timeout to prevent stuck states
+        const loadingTimeout = setTimeout(() => {
+          const state = get()
+          if (state.isLoading) {
+            console.warn("⚠️ ArtifactStore fetchArtifacts timeout - clearing loading state")
+            set({ isLoading: false, error: "Loading timeout" })
+          }
+        }, 10000) // 10 second timeout for artifacts
 
         try {
+          set({ isLoading: true, error: null })
+
           const params = new URLSearchParams()
           if (filters.threadId) params.append("threadId", filters.threadId)
           if (filters.messageId) params.append("messageId", filters.messageId)
@@ -142,10 +161,16 @@ export const useArtifactStore = create<ArtifactStore>()(
           if (filters.pinned !== undefined) params.append("pinned", filters.pinned.toString())
           if (filters.archived !== undefined) params.append("archived", filters.archived.toString())
 
+          // Add timeout to the fetch request itself
           const headers = await getAuthHeaders()
-          const response = await fetch(`${API_BASE}?${params}`, {
+          const fetchPromise = fetch(`${API_BASE}?${params}`, {
             headers,
           })
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error("Network request timeout")), 8000)
+          )
+
+          const response = await Promise.race([fetchPromise, timeoutPromise]) as Response
 
           if (!response.ok) {
             throw new Error("Failed to fetch artifacts")
@@ -156,6 +181,8 @@ export const useArtifactStore = create<ArtifactStore>()(
         } catch (error) {
           console.error("Error fetching artifacts:", error)
           set({ error: (error as Error).message, isLoading: false })
+        } finally {
+          clearTimeout(loadingTimeout)
         }
       },
 
@@ -529,6 +556,34 @@ export const useArtifactStore = create<ArtifactStore>()(
           selectedArtifact:
             state.selectedArtifact?.id === id ? { ...state.selectedArtifact, ...updates } : state.selectedArtifact,
         }))
+      },
+
+      // Utility method to fix artifact titles and content types
+      fixArtifactMetadata: async (id, newTitle, newContentType) => {
+        set({ isLoading: true, error: null })
+
+        try {
+          const headers = await getAuthHeaders()
+          const response = await fetch(`${API_BASE}/${id}/fix-metadata`, {
+            method: "PUT",
+            headers,
+            body: JSON.stringify({ newTitle, newContentType }),
+          })
+
+          if (!response.ok) {
+            throw new Error("Failed to fix artifact metadata")
+          }
+
+          const { artifact } = await response.json()
+          set((state) => ({
+            artifacts: state.artifacts.map((a) => (a.id === id ? artifact : a)),
+            selectedArtifact: state.selectedArtifact?.id === id ? artifact : state.selectedArtifact,
+            isLoading: false,
+          }))
+        } catch (error) {
+          console.error("Error fixing artifact metadata:", error)
+          set({ error: (error as Error).message, isLoading: false })
+        }
       },
     }),
     {

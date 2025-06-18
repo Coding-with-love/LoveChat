@@ -8,6 +8,7 @@ import {
   Roboto,
   Open_Sans,
   Fira_Code,
+  Fira_Mono,
   Source_Code_Pro,
 } from "next/font/google"
 import "./globals.css"
@@ -63,6 +64,13 @@ const firaCode = Fira_Code({
   display: "swap",
 })
 
+const firaMono = Fira_Mono({
+  variable: "--font-fira-mono",
+  subsets: ["latin"],
+  weight: ["400", "500", "700"],
+  display: "swap",
+})
+
 const sourceCodePro = Source_Code_Pro({
   variable: "--font-source-code-pro",
   subsets: ["latin"],
@@ -90,6 +98,7 @@ export default function RootLayout({
     roboto.variable,
     openSans.variable,
     firaCode.variable,
+    firaMono.variable,
     sourceCodePro.variable,
   ].join(" ")
 
@@ -111,6 +120,14 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&display=swap"
           as="style"
         />
+
+        {/* PWA and App Icon metadata */}
+        <link rel="manifest" href="/manifest.json" />
+        <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+        <meta name="theme-color" content="#ffffff" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="LoveChat" />
       </head>
       <body className={`${fontVariables} antialiased font-sans`}>
       <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
