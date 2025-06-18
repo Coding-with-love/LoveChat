@@ -8,6 +8,7 @@ import { AI_MODELS, getModelConfig, type AIModel } from "@/lib/models";
 import { ModelList } from "@/frontend/components/models/ModelList";
 import { ModelCard } from "@/frontend/components/models/ModelCard";
 import { FilterBar } from "@/frontend/components/models/FilterBar";
+import { ModelCard } from "@/frontend/components/models/ModelCard";
 import { ModelDetailsDialog } from "@/frontend/components/models/ModelDetailsDialog";
 import type {
   ModelInfo,
