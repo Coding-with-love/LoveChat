@@ -25,15 +25,18 @@ export function useReasoningStream(callbacks: ReasoningStreamCallbacks) {
     window.fetch = async function(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       
+      // [REASONING-STREAM-DEBUG] Intercepting fetch
+      console.log('[REASONING-STREAM-DEBUG] fetch called:', url, init);
+      
       // Only intercept chat API calls
       if (url.includes('/api/chat')) {
-        console.log('🔍 Intercepting chat API call for reasoning stream processing');
+        console.log('[REASONING-STREAM-DEBUG] Intercepting chat API call for reasoning stream processing');
         
         const response = await originalFetch.current!.call(this, input, init);
         
         // Only process streaming responses
         if (response.body && response.headers.get('content-type')?.includes('text/plain')) {
-          console.log('🔍 Processing streaming response for reasoning events');
+          console.log('[REASONING-STREAM-DEBUG] Processing streaming response for reasoning events');
           
           const reader = response.body.getReader();
           const decoder = new TextDecoder();
@@ -48,11 +51,13 @@ export function useReasoningStream(callbacks: ReasoningStreamCallbacks) {
                 while (true) {
                   const { done, value } = await reader.read();
                   if (done) {
+                    console.log('[REASONING-STREAM-DEBUG] Stream done');
                     controller.close();
                     break;
                   }
                   
                   const chunk = decoder.decode(value, { stream: true });
+                  console.log('[REASONING-STREAM-DEBUG] Received chunk:', chunk);
                   const lines = chunk.split('\n');
                   
                   for (const line of lines) {
@@ -60,19 +65,19 @@ export function useReasoningStream(callbacks: ReasoningStreamCallbacks) {
                       // This is a reasoning event
                       try {
                         const reasoningData = JSON.parse(line.substring(2));
-                        console.log('🧠 Processing reasoning event:', reasoningData.type, reasoningData.content?.substring(0, 50));
+                        console.log('[REASONING-STREAM-DEBUG] Reasoning event:', reasoningData.type, reasoningData.content?.substring(0, 50), reasoningData);
                         
                         if (reasoningData.type === 'reasoning-start') {
-                          console.log('🧠 Calling onReasoningStart callback');
+                          console.log('[REASONING-STREAM-DEBUG] Calling onReasoningStart callback');
                           callbacksRef.current.onReasoningStart?.();
                           isInReasoning = true;
                           reasoningBuffer = '';
                         } else if (reasoningData.type === 'reasoning-delta' && reasoningData.content) {
-                          console.log('🧠 Calling onReasoningDelta callback with content length:', reasoningData.content.length);
+                          console.log('[REASONING-STREAM-DEBUG] Calling onReasoningDelta callback with content length:', reasoningData.content.length);
                           callbacksRef.current.onReasoningDelta?.(reasoningData.content);
                           reasoningBuffer += reasoningData.content;
                         } else if (reasoningData.type === 'reasoning-end') {
-                          console.log('🧠 Calling onReasoningEnd callback');
+                          console.log('[REASONING-STREAM-DEBUG] Calling onReasoningEnd callback');
                           callbacksRef.current.onReasoningEnd?.(
                             reasoningData.duration || 0,
                             reasoningData.totalReasoning || reasoningBuffer
@@ -80,7 +85,7 @@ export function useReasoningStream(callbacks: ReasoningStreamCallbacks) {
                           isInReasoning = false;
                         }
                       } catch (error) {
-                        console.error('❌ Error parsing reasoning event:', error);
+                        console.error('[REASONING-STREAM-DEBUG] Error parsing reasoning event:', error);
                       }
                       // Don't pass reasoning events to the original stream
                       continue;
@@ -93,7 +98,7 @@ export function useReasoningStream(callbacks: ReasoningStreamCallbacks) {
                   }
                 }
               } catch (error) {
-                console.error('❌ Error in reasoning stream processing:', error);
+                console.error('[REASONING-STREAM-DEBUG] Error in reasoning stream processing:', error);
                 controller.error(error);
               }
             }
