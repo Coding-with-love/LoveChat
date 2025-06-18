@@ -80,17 +80,46 @@ export function ModelManager() {
     showOnlyFavorites: false,
   });
 
-  // State for collapsing/expanding provider groups
+  // State for collapsing/expanding provider groups.
+  // Stores the state of each provider: `true` for expanded, `false` for collapsed.
+  // Undefined means it hasn't been interacted with yet.
   const [expandedProviders, setExpandedProviders] = useState<
     Record<string, boolean>
   >({});
 
-  // Function to toggle provider group expansion
+  // Function to toggle provider group expansion.
+  // Handles initial state (undefined) and toggles between true/false.
   const toggleProviderExpansion = (provider: string) => {
-    setExpandedProviders((prev) => ({
-      ...prev,
-      [provider]: !prev[provider],
-    }));
+    setExpandedProviders((prev) => {
+      const currentStatus = prev[provider];
+      // If the current status is undefined or false, the next state should be true (to expand).
+      // If the current status is true, the next state should be false (to collapse).
+      const nextStatus = currentStatus === false ? true : false;
+      return {
+        ...prev,
+        [provider]: nextStatus,
+      };
+    });
+  };
+
+  // Function to handle selecting/deselecting all models for a specific provider
+  const handleToggleAllModelsForProvider = (
+    providerName: string,
+    modelsInGroup: ModelInfo[],
+  ) => {
+    // Determine if all models in this group are currently enabled.
+    const allEnabled = modelsInGroup.every((model) => model.isEnabled);
+
+    modelsInGroup.forEach((modelInfo) => {
+      // If all are enabled, we want to disable them.
+      // If any is not enabled, we want to enable them.
+      // So, if all are enabled, toggle to disable; otherwise, toggle to enable.
+      const shouldBeEnabled = !allEnabled;
+      // Only toggle if the current state is different from the desired state
+      if (modelInfo.isEnabled !== shouldBeEnabled) {
+        toggleModel(modelInfo.model);
+      }
+    });
   };
 
   // Available filter options
@@ -438,7 +467,7 @@ export function ModelManager() {
     filters.features.length > 0 ||
     filters.capabilities.length > 0 ||
     filters.showOnlyAvailable ||
-    filters.showFavorites;
+    filters.showOnlyFavorites;
 
   const sortedModels = hasActiveFilters
     ? filteredModels.sort((a, b) => {
@@ -699,19 +728,25 @@ export function ModelManager() {
     !hasActiveFilters && groupedModels ? (
       // Grouped by provider when no filters
       Object.entries(groupedModels).map(([provider, models]) => {
-        // Determine if the provider group is expanded. Default to true if not yet set.
-        const isProviderExpanded = expandedProviders[provider] ?? false;
+        // Determine if the provider group is expanded.
+        // If `expandedProviders[provider]` is undefined, default to `true` (open).
+        const isProviderExpanded = expandedProviders[provider] ?? true;
+        // Determine if 'Select All' or 'Deselect All' is the current action for this group
+        const allModelsAreEnabled = models.every((model) => model.isEnabled);
 
         return (
           <div key={provider} className="space-y-4">
             {/* Provider Header - Clickable to toggle expansion */}
             <div
               className={cn(
-                "flex items-center gap-3 p-4 rounded-lg transition-all duration-200 cursor-pointer",
+                "flex items-center gap-3 p-4 rounded-lg transition-all duration-200",
                 models.some((m) => m.isEnabled) &&
                   "bg-primary/5 border border-primary/20",
               )}
-              onClick={() => toggleProviderExpansion(provider)} // Toggle expansion on click
+              onClick={() => toggleProviderExpansion(provider)}
+              role="button"
+              aria-expanded={isProviderExpanded}
+              aria-controls={`provider-models-${provider}`}
             >
               <ProviderLogo
                 provider={
@@ -740,25 +775,54 @@ export function ModelManager() {
                   available • Last updated: January 2025
                 </p>
               </div>
-              {/* Icon indicating expansion state */}
-              <Button
-                variant="ghost"
-                size="sm"
-                className="opacity-60 hover:opacity-100 p-1"
-                aria-label={`Toggle ${provider} models`}
-              >
-                <ChevronDown
-                  className={cn(
-                    "h-4 w-4 transition-transform duration-200",
-                    isProviderExpanded && "rotate-180",
+
+              {/* Controls: Select All/Deselect All and Expand/Collapse */}
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation(); // Prevent the group header's onClick from firing
+                    handleToggleAllModelsForProvider(provider, models);
+                  }}
+                  className="gap-2"
+                  aria-label={
+                    allModelsAreEnabled
+                      ? "Deselect all models in this family"
+                      : "Select all models in this family"
+                  }
+                >
+                  {allModelsAreEnabled ? (
+                    <>
+                      <Square className="h-4 w-4" />
+                      Deselect All
+                    </>
+                  ) : (
+                    <>
+                      <CheckSquare className="h-4 w-4" />
+                      Select All
+                    </>
                   )}
-                />
-              </Button>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="opacity-60 hover:opacity-100 p-1"
+                  aria-label={`Toggle ${provider} models`}
+                >
+                  <ChevronDown
+                    className={cn(
+                      "h-4 w-4 transition-transform duration-200",
+                      !isProviderExpanded && "rotate-180",
+                    )}
+                  />
+                </Button>
+              </div>
             </div>
 
-            {/* Conditionally render the list of models */}
+            {/* Conditionally render the list of models if the group is expanded */}
             {isProviderExpanded && (
-              <div className="grid gap-4">
+              <div className="grid gap-4" id={`provider-models-${provider}`}>
                 {models.map((modelInfo) => (
                   <div
                     key={modelInfo.model}
