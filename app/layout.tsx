@@ -14,7 +14,7 @@ import {
 import "./globals.css"
 import "./themes.css"
 import "katex/dist/katex.min.css"
-import { Toaster } from "sonner"
+import { Toaster } from "@/frontend/components/sonner" 
 import { ThemeProvider } from "@/frontend/components/ui/ThemeProvider"
 import { AuthProvider } from "@/frontend/components/AuthProvider"
 import { Analytics } from "@vercel/analytics/react"
