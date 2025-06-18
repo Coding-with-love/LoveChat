@@ -1,35 +1,35 @@
-"use client"
-import { BrowserRouter, Route, Routes } from "react-router"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { useState } from "react"
-import { useAuth } from "@/frontend/components/AuthProvider"
-import AuthForm from "@/frontend/components/AuthForm"
-import ChatLayout from "./ChatLayout"
-import Home from "./routes/Home"
-import Index from "./routes/Index"
-import Thread from "./routes/Thread"
-import Settings from "./routes/Settings"
-import SharedConversation from "./routes/SharedConversation"
-import ArtifactsPage from "./routes/Artifacts"
-import Project from "./routes/Project"
-import { Toaster } from "./components/ui/sonner"
-import { GlobalResumingIndicator } from "./components/ResumingIndicator"
-import ThemeProvider from "./components/ThemeProvider"
-import GlobalLanguageDialog from "./components/GlobalLanguageDialog"
-import { useTabVisibility } from "./hooks/useTabVisibility"
-import { useAPIKeyHydration } from "./hooks/useAPIKeyHydration"
+"use client";
+import { BrowserRouter, Route, Routes } from "react-router";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useState } from "react";
+import { useAuth } from "@/frontend/components/AuthProvider";
+import AuthForm from "@/frontend/components/AuthForm";
+import ChatLayout from "./ChatLayout";
+import Home from "./routes/Home";
+import Index from "./routes/Index";
+import Thread from "./routes/Thread";
+import Settings from "./routes/Settings";
+import SharedConversation from "./routes/SharedConversation";
+import ArtifactsPage from "./routes/Artifacts";
+import Project from "./routes/Project";
+import { Toaster } from "@/frontend/components/ui/sonner";
+import { GlobalResumingIndicator } from "./components/ResumingIndicator";
+import ThemeProvider from "./components/ThemeProvider";
+import GlobalLanguageDialog from "./components/GlobalLanguageDialog";
+import { useTabVisibility } from "./hooks/useTabVisibility";
+import { useAPIKeyHydration } from "./hooks/useAPIKeyHydration";
 
 function AuthenticatedApp() {
   // Ensure API keys are properly loaded and persist across tab switches
-  useAPIKeyHydration()
-  
+  useAPIKeyHydration();
+
   // Add minimal tab visibility management - no automatic store refreshing
   useTabVisibility({
     onVisible: () => {
-      console.log("🔄 App became visible")
+      console.log("🔄 App became visible");
     },
-    refreshStoresOnVisible: false // Let individual components handle their own store refreshing
-  })
+    refreshStoresOnVisible: false, // Let individual components handle their own store refreshing
+  });
 
   return (
     <BrowserRouter>
@@ -46,7 +46,7 @@ function AuthenticatedApp() {
         <Route path="artifacts" element={<ArtifactsPage />} />
       </Routes>
     </BrowserRouter>
-  )
+  );
 }
 
 function LoadingSpinner() {
@@ -54,7 +54,7 @@ function LoadingSpinner() {
     <div className="flex items-center justify-center min-h-screen">
       <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-gray-900"></div>
     </div>
-  )
+  );
 }
 
 function AuthScreen() {
@@ -62,11 +62,11 @@ function AuthScreen() {
     <div className="flex items-center justify-center min-h-screen p-4">
       <AuthForm />
     </div>
-  )
+  );
 }
 
 export default function App() {
-  const { user, loading } = useAuth()
+  const { user, loading } = useAuth();
   const [queryClient] = useState(
     () =>
       new QueryClient({
@@ -78,7 +78,7 @@ export default function App() {
           },
         },
       }),
-  )
+  );
 
   // Wrap everything in ThemeProvider to ensure themes work regardless of auth state
   return (
@@ -91,13 +91,13 @@ export default function App() {
         <QueryClientProvider client={queryClient}>
           <AuthenticatedApp />
           <GlobalResumingIndicator />
-          <Toaster 
+          <Toaster
             position="top-right"
             richColors
             toastOptions={{
               duration: 4000,
               style: {
-                fontFamily: 'var(--font-sans)',
+                fontFamily: "var(--font-sans)",
               },
             }}
           />
@@ -106,5 +106,5 @@ export default function App() {
       {/* Add GlobalLanguageDialog outside of auth check so it's always available */}
       <GlobalLanguageDialog />
     </ThemeProvider>
-  )
+  );
 }
