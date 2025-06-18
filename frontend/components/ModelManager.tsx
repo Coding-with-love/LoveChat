@@ -635,8 +635,68 @@ export function ModelManager() {
             "Academic research",
             "Complex coding problems",
             "Mathematical proofs",
-            "Scientific analysis",
-          ];
+            "Scientific analysis"
+          ]
+        } else if (model.includes("o4")) {
+          detailedDescription = "OpenAI o4 represents the next generation of reasoning models, offering enhanced problem-solving capabilities and advanced logical analysis. Building on the success of o3, o4 provides improved efficiency and broader reasoning capabilities."
+          capabilities = [
+            "Enhanced mathematical reasoning",
+            "Advanced scientific analysis",
+            "Complex multi-step problem solving",
+            "Improved logical deduction",
+            "Academic research and synthesis"
+          ]
+          limitations = [
+            "Higher computational cost",
+            "Increased response latency",
+            "May be excessive for simple queries"
+          ]
+          bestUseCases = [
+            "Complex academic research",
+            "Advanced mathematical proofs",
+            "Scientific hypothesis development",
+            "Technical system design"
+          ]
+        } else if (model.includes("gpt-4.5")) {
+          detailedDescription = "GPT-4.5 is an enhanced version of GPT-4, featuring improved reasoning capabilities, better instruction following, and enhanced multimodal understanding. It offers superior performance across a wide range of tasks."
+          capabilities = [
+            "Enhanced natural language understanding",
+            "Improved multimodal processing",
+            "Better instruction following",
+            "Advanced code generation and debugging",
+            "Superior creative and analytical writing"
+          ]
+          limitations = [
+            "Higher token costs than GPT-4",
+            "May be slower for simple tasks",
+            "Training data limitations"
+          ]
+          bestUseCases = [
+            "Complex content creation",
+            "Advanced code development",
+            "Detailed analysis and research",
+            "Professional writing and editing"
+          ]
+        } else if (model.includes("gpt-4.1")) {
+          detailedDescription = "GPT-4.1 is an improved iteration of GPT-4, offering enhanced performance, better accuracy, and improved handling of nuanced instructions. It provides a balanced upgrade from the original GPT-4."
+          capabilities = [
+            "Improved natural language processing",
+            "Enhanced accuracy and precision",
+            "Better context understanding",
+            "Advanced reasoning capabilities",
+            "Improved code generation"
+          ]
+          limitations = [
+            "Moderate increase in cost",
+            "May have slightly higher latency",
+            "Training data cutoff limitations"
+          ]
+          bestUseCases = [
+            "Professional content creation",
+            "Code development and review",
+            "Academic writing and research",
+            "Business analysis and reporting"
+          ]
         } else if (model.includes("gpt-4o")) {
           detailedDescription =
             "GPT-4o is OpenAI's flagship model, offering the best balance of speed, intelligence, and capabilities. It excels at natural conversations, creative tasks, and analysis.";

@@ -14,7 +14,7 @@ import {
 import "./globals.css"
 import "./themes.css"
 import "katex/dist/katex.min.css"
-import { Toaster } from "sonner"
+import { Toaster } from "@/frontend/components/ui/sonner"
 import { ThemeProvider } from "@/frontend/components/ui/ThemeProvider"
 import { AuthProvider } from "@/frontend/components/AuthProvider"
 import { Analytics } from "@vercel/analytics/react"
@@ -146,9 +146,7 @@ export default function RootLayout({
                 toastOptions={{
                   duration: 4000,
                   style: {
-                    background: "hsl(var(--card))",
-                    color: "hsl(var(--card-foreground))",
-                    border: "1px solid hsl(var(--border))",
+                    fontFamily: "var(--font-sans)",
                   },
                 }}
               />
