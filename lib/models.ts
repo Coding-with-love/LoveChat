@@ -1,5 +1,5 @@
 export const AI_MODELS = [
-  "gpt-40-mini",
+  "gpt-4o-mini",
   "gpt-4o",
   "gpt-4.1",
   "gpt-4.1-nano",
@@ -93,7 +93,7 @@ export function getModelConfig(model: AIModel): ModelConfig {
 
   // Handle standard models
   switch (model) {
-    case "gpt-40-mini":
+    case "gpt-4o-mini":
       return {
         provider: "openai",
         modelId: "gpt-4o-mini",

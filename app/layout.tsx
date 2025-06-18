@@ -8,6 +8,7 @@ import {
   Roboto,
   Open_Sans,
   Fira_Code,
+  Fira_Mono,
   Source_Code_Pro,
 } from "next/font/google"
 import "./globals.css"
@@ -63,6 +64,13 @@ const firaCode = Fira_Code({
   display: "swap",
 })
 
+const firaMono = Fira_Mono({
+  variable: "--font-fira-mono",
+  subsets: ["latin"],
+  weight: ["400", "500", "700"],
+  display: "swap",
+})
+
 const sourceCodePro = Source_Code_Pro({
   variable: "--font-source-code-pro",
   subsets: ["latin"],
@@ -90,6 +98,7 @@ export default function RootLayout({
     roboto.variable,
     openSans.variable,
     firaCode.variable,
+    firaMono.variable,
     sourceCodePro.variable,
   ].join(" ")
 

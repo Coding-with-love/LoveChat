@@ -18,6 +18,7 @@ import { useTabVisibility } from "@/frontend/hooks/useTabVisibility"
 // Available fonts
 const UI_FONTS = [
   { name: "Inter", value: "Inter" },
+  { name: "Fira Code", value: "Fira Code" },
   { name: "System UI", value: "system-ui" },
   { name: "Roboto", value: "Roboto" },
   { name: "Open Sans", value: "Open Sans" },
@@ -25,6 +26,7 @@ const UI_FONTS = [
 ]
 
 const CODE_FONTS = [
+  { name: "Fira Mono", value: "Fira Mono" },
   { name: "JetBrains Mono", value: "JetBrains Mono" },
   { name: "Fira Code", value: "Fira Code" },
   { name: "Menlo", value: "Menlo" },

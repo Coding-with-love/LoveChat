@@ -30,6 +30,7 @@ import {
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog"
 
 interface ModelInfo {
   model: AIModel
@@ -63,6 +64,7 @@ export function ModelManager() {
   const { selectedModel, setModel, enabledModels, toggleModel, customModels, favoriteModels, toggleFavoriteModel } =
     useModelStore()
   const [searchQuery, setSearchQuery] = useState("")
+  const [selectedDetailModel, setSelectedDetailModel] = useState<AIModel | null>(null)
   const [filters, setFilters] = useState<FilterState>({
     providers: [],
     features: [],
@@ -441,6 +443,135 @@ export function ModelManager() {
     toast.success(isFavorite ? `${model} removed from favorites` : `${model} added to favorites`)
   }
 
+  const getDetailedModelInfo = (model: AIModel) => {
+    const config = getModelConfig(model)
+    const modelInfo = getModelInfo(model)
+    
+    let detailedDescription = ""
+    let capabilities: string[] = []
+    let limitations: string[] = []
+    let bestUseCases: string[] = []
+    
+    switch (config.provider) {
+      case "openai":
+        if (model.includes("o3")) {
+          detailedDescription = "OpenAI o3 represents the latest advancement in reasoning models. This model excels at complex problem-solving, mathematical reasoning, scientific analysis, and multi-step logical thinking."
+          capabilities = [
+            "Advanced mathematical reasoning",
+            "Scientific problem solving", 
+            "Complex logical analysis",
+            "Multi-step reasoning",
+            "Academic research assistance"
+          ]
+          limitations = [
+            "Higher latency due to reasoning process",
+            "More expensive per token",
+            "May be overkill for simple tasks"
+          ]
+          bestUseCases = [
+            "Academic research and analysis",
+            "Complex mathematical problems",
+            "Scientific hypothesis testing",
+            "Technical troubleshooting"
+          ]
+        } else if (model.includes("o1")) {
+          detailedDescription = "OpenAI o1 is designed for complex reasoning tasks that require careful thought and planning. It uses reinforcement learning to reason through problems step-by-step."
+          capabilities = [
+            "Step-by-step reasoning",
+            "Mathematical problem solving",
+            "Scientific analysis",
+            "Complex coding tasks"
+          ]
+          limitations = [
+            "Slower response times",
+            "Higher cost per token",
+            "Limited web search capabilities"
+          ]
+          bestUseCases = [
+            "Academic research",
+            "Complex coding problems", 
+            "Mathematical proofs",
+            "Scientific analysis"
+          ]
+        } else if (model.includes("gpt-4o")) {
+          detailedDescription = "GPT-4o is OpenAI's flagship model, offering the best balance of speed, intelligence, and capabilities. It excels at natural conversations, creative tasks, and analysis."
+          capabilities = [
+            "Natural language understanding",
+            "Image analysis and description",
+            "Web search integration",
+            "Code generation and debugging",
+            "Creative writing and ideation"
+          ]
+          limitations = [
+            "May hallucinate facts occasionally",
+            "Limited real-time information",
+            "Training data cutoff limitations"
+          ]
+          bestUseCases = [
+            "General conversation and assistance",
+            "Creative writing projects",
+            "Code development and review",
+            "Research and analysis"
+          ]
+        }
+        break
+        
+      case "google":
+        if (model.includes("2.5")) {
+          detailedDescription = "Gemini 2.5 represents Google's most advanced AI model, designed for complex tasks requiring deep understanding and analysis."
+          capabilities = [
+            "Advanced multimodal understanding",
+            "Complex reasoning and analysis",
+            "Web search integration",
+            "Long context understanding"
+          ]
+          limitations = [
+            "Higher computational requirements",
+            "May be slower for simple tasks",
+            "Regional availability may vary"
+          ]
+          bestUseCases = [
+            "Complex research and analysis",
+            "Advanced problem solving",
+            "Multi-step project planning",
+            "Professional content creation"
+          ]
+        } else if (model.includes("flash")) {
+          detailedDescription = "Gemini Flash models are optimized for speed and efficiency while maintaining high quality output. Perfect for real-time applications."
+          capabilities = [
+            "Ultra-fast response times",
+            "Web search integration",
+            "Multimodal understanding",
+            "Efficient processing"
+          ]
+          limitations = [
+            "May sacrifice some accuracy for speed",
+            "Limited context for very long conversations"
+          ]
+          bestUseCases = [
+            "Real-time chat applications",
+            "Quick content generation",
+            "Fast web search and summaries"
+          ]
+        }
+        break
+        
+      default:
+        detailedDescription = modelInfo.description
+        capabilities = ["General language understanding", "Text generation", "Basic analysis"]
+        limitations = ["Varies by specific model"]
+        bestUseCases = ["General purpose tasks"]
+    }
+    
+    return {
+      ...modelInfo,
+      detailedDescription,
+      capabilities,
+      limitations,
+      bestUseCases
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -770,7 +901,10 @@ export function ModelManager() {
                             </div>
                             <div className="ml-12 space-y-2">
                               <p className="text-sm text-muted-foreground leading-relaxed">{modelInfo.description}</p>
-                              <button className="text-xs text-primary hover:text-primary/80 transition-colors font-medium">
+                              <button 
+                                onClick={() => setSelectedDetailModel(modelInfo.model)}
+                                className="text-xs text-primary hover:text-primary/80 transition-colors font-medium"
+                              >
                                 Show more details →
                               </button>
                             </div>
@@ -928,7 +1062,10 @@ export function ModelManager() {
                         </div>
                         <div className="ml-12 space-y-2">
                           <p className="text-sm text-muted-foreground leading-relaxed">{modelInfo.description}</p>
-                          <button className="text-xs text-primary hover:text-primary/80 transition-colors font-medium">
+                          <button 
+                            onClick={() => setSelectedDetailModel(modelInfo.model)}
+                            className="text-xs text-primary hover:text-primary/80 transition-colors font-medium"
+                          >
                             Show more details →
                           </button>
                         </div>
@@ -1050,6 +1187,113 @@ export function ModelManager() {
           <p className="text-sm text-muted-foreground">Try adjusting your search or filters to find more models</p>
         </div>
       )}
+
+      {/* Model Details Dialog */}
+      <Dialog open={selectedDetailModel !== null} onOpenChange={() => setSelectedDetailModel(null)}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          {selectedDetailModel && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-3">
+                  <ProviderLogo
+                    provider={getDetailedModelInfo(selectedDetailModel).provider.toLowerCase() as "openai" | "google" | "openrouter" | "ollama"}
+                    size="md"
+                  />
+                  {getDetailedModelInfo(selectedDetailModel).name}
+                  <Badge variant="outline" className="text-xs">
+                    {getDetailedModelInfo(selectedDetailModel).provider}
+                  </Badge>
+                </DialogTitle>
+              </DialogHeader>
+              
+              <div className="space-y-6">
+                {/* Description */}
+                <div>
+                  <h4 className="font-semibold mb-2">About this model</h4>
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    {getDetailedModelInfo(selectedDetailModel).detailedDescription}
+                  </p>
+                </div>
+
+                {/* Features */}
+                <div>
+                  <h4 className="font-semibold mb-3">Features & Capabilities</h4>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {getDetailedModelInfo(selectedDetailModel).features.map((feature, index) => (
+                      <Badge
+                        key={index}
+                        variant="secondary"
+                        className={cn("text-xs gap-1 font-medium", feature.color)}
+                      >
+                        {feature.icon}
+                        {feature.label}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Capabilities */}
+                <div>
+                  <h4 className="font-semibold mb-3">Key Capabilities</h4>
+                  <ul className="space-y-1">
+                    {getDetailedModelInfo(selectedDetailModel).capabilities.map((capability, index) => (
+                      <li key={index} className="text-sm text-muted-foreground flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 bg-primary rounded-full flex-shrink-0" />
+                        {capability}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* Best Use Cases */}
+                <div>
+                  <h4 className="font-semibold mb-3">Best Use Cases</h4>
+                  <ul className="space-y-1">
+                    {getDetailedModelInfo(selectedDetailModel).bestUseCases.map((useCase, index) => (
+                      <li key={index} className="text-sm text-muted-foreground flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 bg-green-500 rounded-full flex-shrink-0" />
+                        {useCase}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* Limitations */}
+                <div>
+                  <h4 className="font-semibold mb-3">Limitations</h4>
+                  <ul className="space-y-1">
+                    {getDetailedModelInfo(selectedDetailModel).limitations.map((limitation, index) => (
+                      <li key={index} className="text-sm text-muted-foreground flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 bg-orange-500 rounded-full flex-shrink-0" />
+                        {limitation}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* Model Status */}
+                <div className="pt-4 border-t">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium">
+                        Status: {getDetailedModelInfo(selectedDetailModel).hasApiKey ? "Available" : "Requires API Key"}
+                      </p>
+                      {getDetailedModelInfo(selectedDetailModel).isUsingDefaultKey && (
+                        <p className="text-xs text-muted-foreground">Using default API key</p>
+                      )}
+                    </div>
+                    <Switch
+                      checked={getDetailedModelInfo(selectedDetailModel).isEnabled}
+                      onCheckedChange={() => handleToggleModel(selectedDetailModel)}
+                      disabled={!getDetailedModelInfo(selectedDetailModel).hasApiKey}
+                    />
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

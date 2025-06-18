@@ -44,8 +44,8 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   occupation: "",
   assistantTraits: ["helpful", "creative", "precise"],
   customInstructions: "",
-  uiFont: "Inter",
-  codeFont: "JetBrains Mono",
+  uiFont: "Fira Code",
+  codeFont: "Fira Mono",
   fontSize: "medium",
 }
 
