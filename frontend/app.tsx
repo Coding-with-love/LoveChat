@@ -12,7 +12,7 @@ import Settings from "./routes/Settings"
 import SharedConversation from "./routes/SharedConversation"
 import ArtifactsPage from "./routes/Artifacts"
 import Project from "./routes/Project"
-import { Toaster } from "sonner"
+import { Toaster } from "./components/ui/sonner"
 import { GlobalResumingIndicator } from "./components/ResumingIndicator"
 import ThemeProvider from "./components/ThemeProvider"
 import GlobalLanguageDialog from "./components/GlobalLanguageDialog"
@@ -91,7 +91,16 @@ export default function App() {
         <QueryClientProvider client={queryClient}>
           <AuthenticatedApp />
           <GlobalResumingIndicator />
-          <Toaster position="top-right" />
+          <Toaster 
+            position="top-right"
+            richColors
+            toastOptions={{
+              duration: 4000,
+              style: {
+                fontFamily: 'var(--font-sans)',
+              },
+            }}
+          />
         </QueryClientProvider>
       )}
       {/* Add GlobalLanguageDialog outside of auth check so it's always available */}

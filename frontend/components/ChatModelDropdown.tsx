@@ -43,8 +43,8 @@ const PureChatModelDropdown = () => {
 
     if (modelConfig.supportsSearch) {
       badges.push(
-        <div key="search" className="w-5 h-5 rounded-full bg-blue-500/20 flex items-center justify-center">
-          <Search className="w-2.5 h-2.5 text-blue-500" />
+        <div key="search" className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center">
+          <Search className="w-2.5 h-2.5 text-primary" />
         </div>,
       )
     }
@@ -232,7 +232,7 @@ const PureChatModelDropdown = () => {
               {/* Settings Link */}
               <div className="p-4 border-t border-border/50">
                 <button
-                  onClick={() => navigate("/settings")}
+                  onClick={() => navigate("/settings?tab=models")}
                   className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors w-full"
                 >
                   <Settings className="w-4 h-4" />
