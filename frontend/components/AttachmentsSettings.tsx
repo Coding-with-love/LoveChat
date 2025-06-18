@@ -308,13 +308,13 @@ export default function AttachmentsSettings() {
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle className="flex items-center gap-2">
-                    <Info className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                    <Info className="h-5 w-5 text-primary" />
                     Remove File?
                   </AlertDialogTitle>
                   <AlertDialogDescription className="space-y-2">
                     <p>This will permanently remove "{file.file_name}" from your storage.</p>
-                    <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
-                      <p className="text-sm text-amber-800 dark:text-amber-200">
+                    <div className="p-3 rounded-lg bg-muted/40 border border-border">
+                      <p className="text-sm text-muted-foreground">
                         <strong>Note:</strong> This will detach the file from chats but won't delete the chat itself. If
                         the chat references it, some content may appear incomplete.
                       </p>
@@ -345,8 +345,8 @@ export default function AttachmentsSettings() {
         <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="p-3 rounded-xl bg-gradient-to-br from-violet-500/10 to-indigo-500/10 border border-violet-500/20">
-                <Paperclip className="h-5 w-5 text-violet-600 dark:text-violet-400" />
+              <div className="p-3 rounded-xl bg-primary/10 border border-primary/20">
+                <Paperclip className="h-5 w-5 text-primary" />
               </div>
               <div>
                 <CardTitle className="text-xl flex items-center gap-2">File Attachments</CardTitle>
@@ -359,11 +359,11 @@ export default function AttachmentsSettings() {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="flex items-start gap-3 p-4 rounded-xl bg-gradient-to-r from-blue-50/50 to-indigo-50/50 dark:from-blue-950/20 dark:to-indigo-950/20 border border-blue-200/50 dark:border-blue-800/50">
-            <Info className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+          <div className="flex items-start gap-3 p-4 rounded-xl bg-muted/30 border border-border">
+            <Info className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
             <div className="flex-1">
-              <p className="text-sm font-medium text-blue-900 dark:text-blue-100">File Management</p>
-              <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+              <p className="text-sm font-medium text-foreground">File Management</p>
+              <p className="text-xs text-muted-foreground mt-1">
                 Removing a file detaches it from chats but won't delete the chat itself. If the chat references it, some
                 content may appear incomplete.
               </p>

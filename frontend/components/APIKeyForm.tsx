@@ -6,8 +6,9 @@ import { Input } from "@/frontend/components/ui/input"
 import { Label } from "@/frontend/components/ui/label"
 import { useAPIKeyStore } from "@/frontend/stores/APIKeyStore"
 import { toast } from "sonner"
-import { Eye, EyeOff, Check, X, RefreshCw } from "lucide-react"
+import { Eye, EyeOff, Check, X, RefreshCw, AlertTriangle } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { ProviderLogo } from "@/frontend/components/ProviderLogo"
 
 export default function APIKeyForm() {
   const {
@@ -244,36 +245,36 @@ export default function APIKeyForm() {
 
   return (
     <div className="space-y-6">
-      {/* Refined Information Box with Icons and Bullet Points */}
-      <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg p-5 mb-6">
+      {/* Information Box with Theme Colors */}
+      <div className="bg-muted/30 border border-border rounded-lg p-5 mb-6">
         <div className="flex items-start gap-3">
-          <div className="flex-shrink-0 w-6 h-6 bg-amber-500 rounded-full flex items-center justify-center mt-0.5">
-            <Check className="h-4 w-4 text-white" />
+          <div className="flex-shrink-0 w-6 h-6 bg-primary rounded-full flex items-center justify-center mt-0.5">
+            <Check className="h-4 w-4 text-primary-foreground" />
           </div>
           <div className="space-y-3">
-            <h4 className="text-sm font-semibold text-amber-900 dark:text-amber-100">API Key Requirements</h4>
+            <h4 className="text-sm font-semibold text-foreground">API Key Requirements</h4>
             <div className="space-y-2 text-sm">
-              <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200">
-                <span className="text-red-500">🔴</span>
+              <div className="flex items-center gap-2 text-foreground">
+                <div className="w-2 h-2 rounded-full bg-destructive"></div>
                 <span>
                   <strong>Required:</strong> OpenAI & OpenRouter for GPT / Claude
                 </span>
               </div>
-              <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200">
-                <span className="text-green-500">🟢</span>
+              <div className="flex items-center gap-2 text-foreground">
+                <div className="w-2 h-2 rounded-full bg-green-500"></div>
                 <span>
                   <strong>Optional:</strong> Google Gemini (fallback supported)
                 </span>
               </div>
-              <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200">
-                <span className="text-gray-400">⚪</span>
+              <div className="flex items-center gap-2 text-foreground">
+                <div className="w-2 h-2 rounded-full bg-muted-foreground"></div>
                 <span>
                   <strong>Not Needed:</strong> Ollama (runs locally)
                 </span>
               </div>
             </div>
-            <p className="text-sm text-amber-700 dark:text-amber-300 font-medium flex items-center gap-2">
-              <span>💡</span>
+            <p className="text-sm text-foreground font-medium flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-primary" />
               <span>Add your keys to unlock full features & avoid limits.</span>
             </p>
           </div>
@@ -281,17 +282,15 @@ export default function APIKeyForm() {
       </div>
 
       {/* OpenAI API Key Section Card */}
-      <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50/50 dark:bg-gray-900/50 space-y-3">
+      <div className="border border-border rounded-lg p-4 bg-muted/20 space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
-              <span className="text-green-600 dark:text-green-400 font-bold text-sm">AI</span>
-            </div>
+            <ProviderLogo provider="openai" size="md" />
             <Label htmlFor="openai-key" className="text-sm font-medium">
               OpenAI API Key
             </Label>
           </div>
-          <span className="text-xs text-red-600 dark:text-red-400 font-medium">Required</span>
+          <span className="text-xs text-destructive font-medium">Required</span>
         </div>
         <div className="relative">
           <Input
@@ -329,24 +328,22 @@ export default function APIKeyForm() {
         </div>
         <div className="flex items-center justify-between text-xs">
           <div className="flex items-center gap-2">
-            <span className={cn("flex h-2 w-2 rounded-full", openaiKey ? "bg-green-500" : "bg-red-500")} />
+            <span className={cn("flex h-2 w-2 rounded-full", openaiKey ? "bg-green-500" : "bg-destructive")} />
             <span className="text-muted-foreground">{openaiKey ? "Using your API key" : "API key required"}</span>
           </div>
         </div>
       </div>
 
       {/* Google API Key Section Card */}
-      <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50/50 dark:bg-gray-900/50 space-y-3">
+      <div className="border border-border rounded-lg p-4 bg-muted/20 space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
-              <span className="text-blue-600 dark:text-blue-400 font-bold text-sm">G</span>
-            </div>
+            <ProviderLogo provider="google" size="md" />
             <Label htmlFor="google-key" className="text-sm font-medium">
               Google API Key
             </Label>
           </div>
-          <span className="text-xs text-green-600 dark:text-green-400 font-medium">Optional</span>
+          <span className="text-xs text-green-500 font-medium">Optional</span>
         </div>
         <div className="relative">
           <Input
@@ -391,17 +388,15 @@ export default function APIKeyForm() {
       </div>
 
       {/* OpenRouter API Key Section Card */}
-      <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50/50 dark:bg-gray-900/50 space-y-3">
+      <div className="border border-border rounded-lg p-4 bg-muted/20 space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex items-center justify-center">
-              <span className="text-purple-600 dark:text-purple-400 font-bold text-sm">OR</span>
-            </div>
+            <ProviderLogo provider="openrouter" size="md" />
             <Label htmlFor="openrouter-key" className="text-sm font-medium">
               OpenRouter API Key
             </Label>
           </div>
-          <span className="text-xs text-red-600 dark:text-red-400 font-medium">Required</span>
+          <span className="text-xs text-destructive font-medium">Required</span>
         </div>
         <div className="relative">
           <Input
@@ -439,7 +434,7 @@ export default function APIKeyForm() {
         </div>
         <div className="flex items-center justify-between text-xs">
           <div className="flex items-center gap-2">
-            <span className={cn("flex h-2 w-2 rounded-full", openrouterKey ? "bg-green-500" : "bg-red-500")} />
+            <span className={cn("flex h-2 w-2 rounded-full", openrouterKey ? "bg-green-500" : "bg-destructive")} />
             <span className="text-muted-foreground">{openrouterKey ? "Using your API key" : "API key required"}</span>
           </div>
         </div>
@@ -448,12 +443,12 @@ export default function APIKeyForm() {
       <div className="space-y-3 pt-2">
         <Button
           onClick={handleSaveKeys}
-          className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-md hover:shadow-lg transition-all duration-200 rounded-lg"
+          className="w-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-md hover:shadow-lg transition-all duration-200 rounded-lg"
           disabled={isSaving}
         >
           {isSaving ? (
             <>
-              <span className="animate-spin mr-2">⟳</span>
+              <RefreshCw className="animate-spin mr-2 h-4 w-4" />
               Saving Keys...
             </>
           ) : (

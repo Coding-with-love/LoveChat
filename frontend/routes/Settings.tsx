@@ -29,6 +29,7 @@ import {
   Lock,
   Globe,
   Plus,
+  MessageCircle,
 } from "lucide-react"
 import { useAuth } from "@/frontend/components/AuthProvider"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/frontend/components/ui/card"
@@ -38,6 +39,7 @@ import { format } from "date-fns"
 import ShareDialog from "@/frontend/components/ShareDialog"
 import { useState, useEffect } from "react"
 import { toast } from "sonner"
+import { useSearchParams } from "react-router"
 import { Button } from "@/frontend/components/ui/button"
 import { Badge } from "@/frontend/components/ui/badge"
 import { Separator } from "@/frontend/components/ui/separator"
@@ -51,9 +53,21 @@ function Settings() {
   const [editingShare, setEditingShare] = useState<any>(null)
   const [showForceLoadShares, setShowForceLoadShares] = useState(false)
   const [globalLoading, setGlobalLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState("account")
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [activeTab, setActiveTab] = useState(() => {
+    // Get tab from URL parameter, default to "account"
+    const tabParam = searchParams.get('tab')
+    const validTabs = ['account', 'customization', 'history', 'attachments', 'artifacts', 'api-keys', 'models', 'sharing']
+    return validTabs.includes(tabParam || '') ? (tabParam as string) : 'account'
+  })
   const [createArtifactOpen, setCreateArtifactOpen] = useState(false)
   const { user, signOut } = useAuth()
+
+  // Update URL when tab changes
+  const handleTabChange = (newTab: string) => {
+    setActiveTab(newTab)
+    setSearchParams({ tab: newTab })
+  }
 
   // Add tab visibility management to refresh state when returning to settings
   useTabVisibility({
@@ -297,8 +311,8 @@ function Settings() {
       <Card className="shadow-sm border-0 bg-gradient-to-br from-background to-muted/20">
         <CardHeader className="pb-4">
           <div className="flex items-center gap-3">
-            <div className="p-3 rounded-xl bg-gradient-to-br from-amber-500/10 to-orange-500/10 border border-amber-500/20">
-              <Key className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+            <div className="p-3 rounded-xl bg-primary/10 border border-primary/20">
+              <Key className="h-5 w-5 text-primary" />
             </div>
             <div>
               <CardTitle className="text-xl">API Configuration</CardTitle>
@@ -369,8 +383,8 @@ function Settings() {
         <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="p-3 rounded-xl bg-gradient-to-br from-emerald-500/10 to-teal-500/10 border border-emerald-500/20">
-                <Archive className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+              <div className="p-3 rounded-xl bg-primary/10 border border-primary/20">
+                <Archive className="h-5 w-5 text-primary" />
               </div>
               <div>
                 <CardTitle className="text-xl">Artifact Management</CardTitle>
@@ -396,15 +410,15 @@ function Settings() {
       <Card className="shadow-sm border-0 bg-gradient-to-br from-background to-muted/20">
         <CardHeader className="pb-4">
           <div className="flex items-center gap-3">
-            <div className="p-3 rounded-xl bg-gradient-to-br from-cyan-500/10 to-blue-500/10 border border-cyan-500/20">
-              <Share2 className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
+            <div className="p-3 rounded-xl bg-primary/10 border border-primary/20">
+              <Share2 className="h-5 w-5 text-primary" />
             </div>
             <div className="flex-1">
               <div className="flex items-center gap-3">
                 <CardTitle className="text-xl">Shared Conversations</CardTitle>
                 <Badge
                   variant="secondary"
-                  className="text-sm bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-950/30 dark:text-cyan-300 dark:border-cyan-800"
+                  className="text-sm"
                 >
                   {sharedThreads.length} shared
                 </Badge>
@@ -426,11 +440,11 @@ function Settings() {
             </div>
           ) : sharedThreads.length === 0 ? (
             <div className="text-center py-16">
-              <div className="mx-auto w-20 h-20 bg-gradient-to-br from-cyan-100 to-blue-100 dark:from-cyan-900/20 dark:to-blue-900/20 rounded-3xl flex items-center justify-center mb-6 border border-cyan-200/50 dark:border-cyan-800/50">
+              <div className="mx-auto w-20 h-20 bg-muted/30 rounded-3xl flex items-center justify-center mb-6 border border-border">
                 <div className="relative">
-                  <Share2 className="h-10 w-10 text-cyan-600 dark:text-cyan-400" />
-                  <div className="absolute -top-1 -right-1 w-4 h-4 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center">
-                    <span className="text-white text-xs font-bold">💬</span>
+                  <Share2 className="h-10 w-10 text-muted-foreground" />
+                  <div className="absolute -top-1 -right-1 w-4 h-4 bg-primary rounded-full flex items-center justify-center">
+                    <MessageCircle className="h-2.5 w-2.5 text-primary-foreground" />
                   </div>
                 </div>
               </div>
@@ -439,9 +453,10 @@ function Settings() {
                 You haven't shared any conversations yet. Click the "Share" icon in a conversation to publish it and
                 make it accessible to others.
               </p>
-              <div className="bg-gradient-to-r from-cyan-50 to-blue-50 dark:from-cyan-900/10 dark:to-blue-900/10 border border-cyan-200/50 dark:border-cyan-800/50 rounded-xl p-4 max-w-sm mx-auto">
-                <p className="text-xs text-cyan-700 dark:text-cyan-300 font-medium">
-                  💡 Tip: Shared conversations can be password-protected and set to expire automatically
+              <div className="bg-muted/40 border border-border rounded-xl p-4 max-w-sm mx-auto">
+                <p className="text-xs text-foreground font-medium flex items-center gap-2">
+                  <Share2 className="h-3 w-3 text-primary" />
+                  <span>Tip: Shared conversations can be password-protected and set to expire automatically</span>
                 </p>
               </div>
             </div>
@@ -454,10 +469,10 @@ function Settings() {
                 >
                   <div className="flex items-start gap-4">
                     {/* Conversation Icon */}
-                    <div className="flex-shrink-0 w-12 h-12 bg-gradient-to-br from-cyan-100 to-blue-100 dark:from-cyan-900/30 dark:to-blue-900/30 rounded-xl flex items-center justify-center border border-cyan-200/50 dark:border-cyan-800/50 group-hover:scale-105 transition-transform duration-200">
+                    <div className="flex-shrink-0 w-12 h-12 bg-muted/40 rounded-xl flex items-center justify-center border border-border group-hover:scale-105 transition-transform duration-200">
                       <div className="relative">
-                        <span className="text-lg">💬</span>
-                        <div className="absolute -top-1 -right-1 w-3 h-3 bg-gradient-to-br from-green-500 to-emerald-500 rounded-full border border-white dark:border-gray-900"></div>
+                        <MessageCircle className="h-6 w-6 text-muted-foreground" />
+                        <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border border-background"></div>
                       </div>
                     </div>
 
@@ -476,26 +491,26 @@ function Settings() {
 
                       {/* Metadata */}
                       <div className="flex items-center gap-3 flex-wrap">
-                        <div className="flex items-center gap-2 text-xs bg-gradient-to-r from-muted/60 to-muted/40 rounded-full px-3 py-1.5 border border-border/50">
-                          <Eye className="h-3 w-3 text-blue-600" />
+                        <div className="flex items-center gap-2 text-xs bg-muted/60 rounded-full px-3 py-1.5 border border-border/50">
+                          <Eye className="h-3 w-3 text-primary" />
                           <span className="font-semibold text-foreground">{share.view_count}</span>
                           <span className="text-muted-foreground">views</span>
                         </div>
                         {share.expires_at && (
-                          <div className="flex items-center gap-2 text-xs bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-900/20 dark:to-amber-900/20 text-orange-700 dark:text-orange-300 rounded-full px-3 py-1.5 border border-orange-200/50 dark:border-orange-800/50">
-                            <Clock className="h-3 w-3" />
-                            <span>Expires {format(new Date(share.expires_at), "MMM d, yyyy")}</span>
+                          <div className="flex items-center gap-2 text-xs bg-muted/40 rounded-full px-3 py-1.5 border border-border">
+                            <Clock className="h-3 w-3 text-muted-foreground" />
+                            <span className="text-foreground">Expires {format(new Date(share.expires_at), "MMM d, yyyy")}</span>
                           </div>
                         )}
                         {share.password_hash && (
-                          <div className="flex items-center gap-2 text-xs bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-900/20 dark:to-indigo-900/20 text-purple-700 dark:text-purple-300 rounded-full px-3 py-1.5 border border-purple-200/50 dark:border-purple-800/50">
-                            <Lock className="h-3 w-3" />
-                            <span>Protected</span>
+                          <div className="flex items-center gap-2 text-xs bg-muted/40 rounded-full px-3 py-1.5 border border-border">
+                            <Lock className="h-3 w-3 text-muted-foreground" />
+                            <span className="text-foreground">Protected</span>
                           </div>
                         )}
-                        <div className="flex items-center gap-2 text-xs bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 text-green-700 dark:text-green-300 rounded-full px-3 py-1.5 border border-green-200/50 dark:border-green-800/50">
-                          {share.is_public ? <Globe className="h-3 w-3" /> : <Lock className="h-3 w-3" />}
-                          <span>{share.is_public ? "Public" : "Private"}</span>
+                        <div className="flex items-center gap-2 text-xs bg-muted/40 rounded-full px-3 py-1.5 border border-border">
+                          {share.is_public ? <Globe className="h-3 w-3 text-muted-foreground" /> : <Lock className="h-3 w-3 text-muted-foreground" />}
+                          <span className="text-foreground">{share.is_public ? "Public" : "Private"}</span>
                         </div>
                       </div>
                     </div>
@@ -507,7 +522,7 @@ function Settings() {
                           variant="ghost"
                           size="sm"
                           asChild
-                          className="h-8 w-8 p-0 hover:bg-blue-500/10 hover:text-blue-600 transition-colors"
+                          className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary transition-colors"
                           title="Copy Share Link"
                         >
                           <a href={`/share/${share.share_token}`} target="_blank" rel="noopener noreferrer">
@@ -518,7 +533,7 @@ function Settings() {
                           variant="ghost"
                           size="sm"
                           onClick={() => handleEditShare(share)}
-                          className="h-8 w-8 p-0 hover:bg-green-500/10 hover:text-green-600 transition-colors"
+                          className="h-8 w-8 p-0 hover:bg-secondary/50 hover:text-secondary-foreground transition-colors"
                           title="Edit Share Settings"
                         >
                           <Share2 className="h-4 w-4" />
@@ -527,7 +542,7 @@ function Settings() {
                           variant="ghost"
                           size="sm"
                           onClick={() => handleDeleteShare(share.id)}
-                          className="h-8 w-8 p-0 hover:bg-red-500/10 hover:text-red-600 transition-colors"
+                          className="h-8 w-8 p-0 hover:bg-destructive/10 hover:text-destructive transition-colors"
                           title="Delete Share"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -608,10 +623,10 @@ function Settings() {
       {/* Content */}
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-5xl mx-auto">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
+          <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-8">
             {/* Mobile Dropdown Selector */}
             <div className="lg:hidden">
-              <Select value={activeTab} onValueChange={setActiveTab}>
+                              <Select value={activeTab} onValueChange={handleTabChange}>
                 <SelectTrigger className="w-full h-12 bg-gradient-to-r from-muted/50 via-muted/30 to-muted/50 backdrop-blur-xl border border-border/50 shadow-lg">
                   <SelectValue>
                     <div className="flex items-center gap-3">
@@ -673,8 +688,8 @@ function Settings() {
                       )}
                       {activeTab === "sharing" && (
                         <>
-                          <div className="p-2 rounded-lg bg-gradient-to-br from-cyan-500/10 to-blue-500/10 border border-cyan-500/20">
-                            <Share2 className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
+                          <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">
+                            <Share2 className="h-4 w-4 text-primary" />
                           </div>
                           <span className="font-medium">Sharing</span>
                         </>

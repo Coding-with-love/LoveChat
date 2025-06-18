@@ -1078,7 +1078,7 @@ function PureChatInput({ threadId, input, status, setInput, append, stop, onRefr
                                 className={cn(
                                   "h-7 w-7 rounded-lg transition-all duration-200 hover:scale-105",
                                   webSearchEnabled
-                                    ? "bg-blue-500/15 text-blue-600 hover:bg-blue-500/25"
+                                    ? "bg-primary/15 text-primary hover:bg-primary/25"
                                     : "hover:bg-muted/30 text-muted-foreground hover:text-foreground",
                                 )}
                                 aria-label={webSearchEnabled ? "Disable web search" : "Enable web search"}
@@ -1212,7 +1212,7 @@ function PureChatInput({ threadId, input, status, setInput, append, stop, onRefr
                           className="w-full justify-start gap-2 h-8"
                           onClick={handleWebSearchToggle}
                         >
-                          <Search className={cn("h-3 w-3", webSearchEnabled ? "text-blue-600" : "text-muted-foreground")} />
+                          <Search className={cn("h-3 w-3", webSearchEnabled ? "text-primary" : "text-muted-foreground")} />
                           <span className="text-sm">Web Search {webSearchEnabled ? "On" : "Off"}</span>
                         </Button>
                       )}
@@ -1303,7 +1303,7 @@ function PureChatInput({ threadId, input, status, setInput, append, stop, onRefr
               "text-white text-xs px-3 py-2 rounded-xl flex items-center gap-2 shadow-lg border backdrop-blur-lg",
               "animate-in slide-in-from-bottom-2 duration-300",
               currentModelSupportsSearch
-                ? "bg-blue-500/85 border-blue-400/40"
+                ? "bg-primary/85 border-primary/40"
                 : "bg-orange-500/85 border-orange-400/40",
             )}
           >
@@ -1409,8 +1409,8 @@ const PureChatModelDropdown = () => {
 
     if (modelConfig.supportsSearch) {
       badges.push(
-        <div key="search" className="w-6 h-6 rounded-full bg-blue-500/20 flex items-center justify-center">
-          <Search className="w-3 h-3 text-blue-400" />
+        <div key="search" className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center">
+          <Search className="w-3 h-3 text-primary" />
         </div>,
       )
     }
@@ -1599,7 +1599,7 @@ const PureChatModelDropdown = () => {
               {/* Settings Link */}
               <div className="p-4 border-t border-border/50">
                 <button
-                  onClick={() => navigate("/settings")}
+                  onClick={() => navigate("/settings?tab=models")}
                   className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors w-full"
                 >
                   <Settings className="w-4 h-4" />

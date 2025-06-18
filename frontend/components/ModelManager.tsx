@@ -1,4 +1,3 @@
-// src/components/models/ModelManager.tsx
 "use client";
 
 import type React from "react";
@@ -6,20 +5,34 @@ import { useState, useMemo, useCallback } from "react";
 import { useModelStore } from "@/frontend/stores/ModelStore";
 import { useAPIKeyStore } from "@/frontend/stores/APIKeyStore";
 import { AI_MODELS, getModelConfig, type AIModel } from "@/lib/models";
-import { ModelList } from "./models/ModelList";
-import { FilterBar } from "./models/FilterBar";
-import { ModelDetailsDialog } from "./models/ModelDetailsDialog";
+import { ModelList } from "@/frontend/components/models/ModelList";
+import { FilterBar } from "@/frontend/components/models/FilterBar";
+import { ModelDetailsDialog } from "@/frontend/components/models/ModelDetailsDialog";
 import type {
   ModelInfo,
   FilterState,
   DetailedModelInfo,
   FilterOption,
-} from "./models/types";
+} from "@/frontend/components/models/types";
 import { toast } from "sonner"; // Assuming sonner is available
-import { Search, Sparkles, Eye, FileText, Lightbulb, Zap } from "lucide-react";
-import { ProviderLogo } from "@/frontend/components/ProviderLogo";
+import {
+  Search,
+  Sparkles,
+  Eye,
+  FileText,
+  Lightbulb,
+  Zap,
+  CheckSquare,
+  Square,
+  ChevronDown,
+} from "lucide-react";
+import { ProviderLogo } from "@/frontend/components/ProviderLogo"; // User's specified path
+import { cn } from "@/lib/utils";
+import { Button } from "@/frontend/components/ui/button";
+import { Badge } from "@/frontend/components/ui/badge";
 
-// Filter Options are shared between FilterBar and ModelManager for display
+// --- Filter Options Definition ---
+// Shared across FilterBar and ModelManager for rendering filter UI and logic.
 const FILTER_OPTIONS: {
   providers: FilterOption[];
   features: FilterOption[];
@@ -92,7 +105,7 @@ const FILTER_OPTIONS: {
   ],
 };
 
-// --- Helper functions ---
+// --- Top-Level Helper Functions ---
 
 // Helper to get basic model info (used by ModelCard and for initial filtering/sorting)
 const getBaseModelInfo = (
@@ -104,6 +117,7 @@ const getBaseModelInfo = (
   const config = getModelConfig(model);
   const features: ModelInfo["features"] = [];
 
+  // Add feature badges based on model capabilities
   if (config.supportsSearch)
     features.push({
       icon: <Search className="h-3 w-3" />,
@@ -161,6 +175,7 @@ const getBaseModelInfo = (
   let description: string;
   let searchUrl: string | undefined;
 
+  // Determine provider name and description
   switch (config.provider) {
     case "openai":
       providerName = "OpenAI";
@@ -196,7 +211,7 @@ const getBaseModelInfo = (
           description =
             "Google's flagship model, known for speed and accuracy (and also web search!).";
       } else description = "Advanced language model from Google.";
-      searchUrl = "https://gemini.google.com";
+      searchUrl = "https://gemini.google.com"; // Gemini search URL
       break;
     case "openrouter":
       providerName = "OpenRouter";
@@ -212,9 +227,11 @@ const getBaseModelInfo = (
       description = "AI language model.";
   }
 
+  // Display name for Ollama models
   const displayName = model.startsWith("ollama:")
     ? model.replace("ollama:", "")
     : model;
+  // Determine if API key is available or required
   const hasApiKey =
     config.provider === "ollama" || config.provider === "google" || !!apiKey;
   const isUsingDefaultKey = config.provider !== "ollama" && !apiKey;
@@ -245,6 +262,8 @@ const getDetailedModelInfo = (
   let limitations: string[] = [];
   let bestUseCases: string[] = [];
 
+  // Provide detailed descriptions, capabilities, limitations, and best use cases
+  // based on the model provider and specific model identifiers.
   switch (config.provider) {
     case "openai":
       if (model.includes("o3")) {
@@ -291,7 +310,6 @@ const getDetailedModelInfo = (
       } else if (model.includes("o4")) {
         detailedDescription =
           "OpenAI o4 represents the next generation of reasoning models, offering enhanced problem-solving capabilities and advanced logical analysis. Building on the success of o3, o4 provides improved efficiency and broader reasoning capabilities.";
-
         capabilities = [
           "Enhanced mathematical reasoning",
           "Advanced scientific analysis",
@@ -299,13 +317,11 @@ const getDetailedModelInfo = (
           "Improved logical deduction",
           "Academic research and synthesis",
         ];
-
         limitations = [
           "Higher computational cost",
           "Increased response latency",
           "May be excessive for simple queries",
         ];
-
         bestUseCases = [
           "Complex academic research",
           "Advanced mathematical proofs",
@@ -315,7 +331,6 @@ const getDetailedModelInfo = (
       } else if (model.includes("gpt-4.5")) {
         detailedDescription =
           "GPT-4.5 is an enhanced version of GPT-4, featuring improved reasoning capabilities, better instruction following, and enhanced multimodal understanding. It offers superior performance across a wide range of tasks.";
-
         capabilities = [
           "Enhanced natural language understanding",
           "Improved multimodal processing",
@@ -323,13 +338,11 @@ const getDetailedModelInfo = (
           "Advanced code generation and debugging",
           "Superior creative and analytical writing",
         ];
-
         limitations = [
           "Higher token costs than GPT-4",
           "May be slower for simple tasks",
           "Training data limitations",
         ];
-
         bestUseCases = [
           "Complex content creation",
           "Advanced code development",
@@ -339,7 +352,6 @@ const getDetailedModelInfo = (
       } else if (model.includes("gpt-4.1")) {
         detailedDescription =
           "GPT-4.1 is an improved iteration of GPT-4, offering enhanced performance, better accuracy, and improved handling of nuanced instructions. It provides a balanced upgrade from the original GPT-4.";
-
         capabilities = [
           "Improved natural language processing",
           "Enhanced accuracy and precision",
@@ -347,13 +359,11 @@ const getDetailedModelInfo = (
           "Advanced reasoning capabilities",
           "Improved code generation",
         ];
-
         limitations = [
           "Moderate increase in cost",
           "May have slightly higher latency",
           "Training data cutoff limitations",
         ];
-
         bestUseCases = [
           "Professional content creation",
           "Code development and review",
@@ -446,6 +456,7 @@ const getDetailedModelInfo = (
   };
 };
 
+// --- ModelManager Component ---
 export function ModelManager() {
   // Get state and actions from Zustand stores
   const {
@@ -472,7 +483,7 @@ export function ModelManager() {
   const [selectedDetailModelId, setSelectedDetailModelId] =
     useState<AIModel | null>(null);
 
-  // --- Filter Logic ---
+  // --- Filter Logic Callbacks ---
   // Memoize filter state check to prevent unnecessary re-renders
   const hasActiveFilters = useMemo(
     () =>
@@ -481,10 +492,10 @@ export function ModelManager() {
       filters.capabilities.length > 0 ||
       filters.showOnlyAvailable ||
       filters.showOnlyFavorites,
-    [],
+    [filters], // Depend on filters state
   );
 
-  // Memoize filter matching logic
+  // Memoize filter matching logic for performance
   const modelMatchesFilters = useCallback(
     (modelInfo: ModelInfo) => {
       // Provider filter
@@ -543,11 +554,11 @@ export function ModelManager() {
 
       return true;
     },
-    [filters, favoriteModels],
-  ); // Dependencies for filtering
+    [filters, favoriteModels], // Dependencies for filtering
+  );
 
   // --- Model Data Preparation ---
-  // Memoize the list of all models
+  // Memoize the list of all models (AI_MODELS + customModels)
   const allModels = useMemo(
     () => [...AI_MODELS, ...customModels],
     [customModels],
@@ -555,8 +566,8 @@ export function ModelManager() {
 
   // Memoize the processed list of models, including API key status and enabled status
   const processedModels: ModelInfo[] = useMemo(() => {
-    // Create a map of provider API keys for efficient lookup
     const apiKeyMap = new Map<string, string | null | undefined>();
+    // Pre-fetch API keys for all providers for efficiency
     FILTER_OPTIONS.providers.forEach((p) =>
       apiKeyMap.set(p.value, getKey(p.value)),
     );
@@ -564,11 +575,12 @@ export function ModelManager() {
     return allModels.map((model) => {
       const config = getModelConfig(model);
       const apiKey = apiKeyMap.get(config.provider);
+      // Use the top-level helper function
       return getBaseModelInfo(model, enabledModels, favoriteModels, apiKey);
     });
-  }, [allModels, enabledModels, favoriteModels, getKey]); // Re-calculate if any of these change
+  }, [allModels, enabledModels, favoriteModels, getKey]); // Re-calculate if store states change
 
-  // Memoize the list of models after applying search and filters
+  // Memoize the list of models after applying search query and filters
   const filteredAndSearchedModels = useMemo(() => {
     return processedModels.filter((modelInfo) => {
       const matchesSearch =
@@ -581,18 +593,18 @@ export function ModelManager() {
 
   // Memoize the sorted list of models
   const sortedModels = useMemo(() => {
-    const modelsToSort = [...filteredAndSearchedModels];
+    const modelsToSort = [...filteredAndSearchedModels]; // Create a copy to avoid mutating filtered list
     if (hasActiveFilters) {
       // Sort by enabled status first, then alphabetically when filters are active
       return modelsToSort.sort((a, b) => {
-        if (a.isEnabled !== b.isEnabled) return a.isEnabled ? -1 : 1; // Enabled models first
+        if (a.isEnabled !== b.isEnabled) return a.isEnabled ? -1 : 1; // Enabled models appear first
         return a.name.localeCompare(b.name);
       });
     } else {
       // Sort by provider, then model name when no filters are active
       return modelsToSort.sort((a, b) => {
         if (a.provider !== b.provider) {
-          // Define a specific order for providers
+          // Define a specific order for providers for consistent grouping
           const providerOrder = ["OpenAI", "Google", "OpenRouter", "Ollama"];
           return (
             providerOrder.indexOf(a.provider) -
@@ -602,26 +614,30 @@ export function ModelManager() {
         return a.name.localeCompare(b.name);
       });
     }
-  }, [filteredAndSearchedModels, hasActiveFilters, enabledModels]); // Re-calculate based on filtered list, filter state, and enabled status
+  }, [filteredAndSearchedModels, hasActiveFilters, enabledModels]); // Dependencies ensure sorting is up-to-date
 
   // --- Filter/Search Management Callbacks ---
+  // Update filter state
   const updateFilter = useCallback(
     (type: keyof FilterState, value: string | boolean) => {
       setFilters((prev) => {
         if (type === "showOnlyAvailable" || type === "showOnlyFavorites") {
+          // Toggle boolean filters
           return { ...prev, [type]: value as boolean };
         } else {
+          // Handle array filters (providers, features, capabilities)
           const currentValues = prev[type] as string[];
           const newValues = currentValues.includes(value as string)
-            ? currentValues.filter((v) => v !== value)
-            : [...currentValues, value as string];
+            ? currentValues.filter((v) => v !== value) // Remove if already present
+            : [...currentValues, value as string]; // Add if not present
           return { ...prev, [type]: newValues };
         }
       });
     },
-    [],
-  ); // No dependencies, state setter is stable
+    [], // State setter is stable, no dependencies needed
+  );
 
+  // Clear all active filters
   const clearAllFilters = useCallback(() => {
     setFilters({
       providers: [],
@@ -630,9 +646,9 @@ export function ModelManager() {
       showOnlyAvailable: false,
       showOnlyFavorites: false,
     });
-  }, []); // No dependencies
+  }, []);
 
-  // Callback to get the count of active filters
+  // Get the count of currently active filters for display
   const getActiveFilterCount = useCallback(() => {
     return (
       filters.providers.length +
@@ -641,49 +657,54 @@ export function ModelManager() {
       (filters.showOnlyAvailable ? 1 : 0) +
       (filters.showOnlyFavorites ? 1 : 0)
     );
-  }, [filters]); // Re-calculate if filters change
+  }, [filters]); // Re-calculate if filters state changes
 
-  // Callback to toggle all models for a specific provider group
+  // Callback to toggle all models for a specific provider group (select/deselect all)
   const handleToggleAllModelsForProvider = useCallback(
     (providerName: string, modelsInGroup: ModelInfo[]) => {
+      // Determine if all models in this group are currently enabled.
       const allEnabled = modelsInGroup.every((model) => model.isEnabled);
       modelsInGroup.forEach((modelInfo) => {
-        const shouldBeEnabled = !allEnabled; // If all are enabled, we want to disable; otherwise, enable.
+        // If all are enabled, we want to disable them. If any is not enabled, we want to enable them.
+        const shouldBeEnabled = !allEnabled;
+        // Only toggle if the current state is different from the desired state to avoid unnecessary updates.
         if (modelInfo.isEnabled !== shouldBeEnabled) {
-          // Only toggle if the state needs to change
           toggleModel(modelInfo.model);
         }
       });
     },
-    [toggleModel],
+    [toggleModel], // Dependency on toggleModel
   );
 
   // Callback to toggle the expansion/collapse state of a provider group
   const toggleProviderExpansion = useCallback((provider: string) => {
-    setExpandedProviders((prev) => ({ ...prev, [provider]: !prev[provider] }));
+    setExpandedProviders((prev) => ({
+      ...prev,
+      [provider]: !prev[provider], // Toggle the boolean state for the provider
+    }));
   }, []);
 
   // --- Model Action Callbacks ---
   // Callback to toggle the enabled state of a single model
   const handleToggleModel = useCallback(
     (model: AIModel) => {
-      toggleModel(model);
-      const isEnabled = enabledModels.includes(model);
+      toggleModel(model); // Toggle the model's enabled state
+      const isEnabled = enabledModels.includes(model); // Check the state *before* toggling for toast message
       toast.success(
         isEnabled
           ? `${model} removed from quick access`
           : `${model} added to quick access`,
       );
     },
-    [toggleModel, enabledModels],
-  ); // Dependencies needed for toast message
+    [toggleModel, enabledModels], // Dependencies on store actions/state
+  );
 
-  // Callback to select recommended models
+  // Callback to select recommended models (e.g., flagship, latest)
   const handleSelectRecommended = useCallback(() => {
-    // Filter for recommended models (flagship, latest, o1/claude)
+    // Identify recommended models (e.g., based on flags like gpt-4o, gemini-2, o1, claude)
     const recommendedModels = sortedModels.filter(
       (info) =>
-        info.hasApiKey &&
+        info.hasApiKey && // Ensure they have an API key
         (info.model.includes("gpt-4o") ||
           info.model.includes("gemini-2") ||
           info.model.includes("o1") ||
@@ -692,22 +713,23 @@ export function ModelManager() {
     let modelsToggled = 0;
     recommendedModels.forEach((info) => {
       if (!info.isEnabled) {
-        // Only toggle if not already enabled
+        // Only toggle if the model is not already enabled
         toggleModel(info.model);
         modelsToggled++;
       }
     });
+    // Provide feedback based on whether any models were actually toggled
     if (modelsToggled > 0) {
       toast.success(`Enabled ${modelsToggled} recommended models`);
     } else {
       toast.info("All recommended models are already enabled.");
     }
-  }, [sortedModels, toggleModel]);
+  }, [sortedModels, toggleModel]); // Dependencies on current sorted models and toggle action
 
   // Callback to deselect all currently enabled models
   const handleUnselectAll = useCallback(() => {
     enabledModels.forEach((model) => {
-      toggleModel(model); // This will toggle them off
+      toggleModel(model); // This action toggles them off
     });
     toast.success("Unselected all models");
   }, [enabledModels, toggleModel]);
@@ -715,36 +737,195 @@ export function ModelManager() {
   // Callback to toggle favorite status of a model
   const handleToggleFavorite = useCallback(
     (model: AIModel) => {
-      toggleFavoriteModel(model);
-      const isFavorite = favoriteModels.includes(model);
+      toggleFavoriteModel(model); // Toggle favorite status
+      const isFavorite = favoriteModels.includes(model); // Check current state for toast message
       toast.success(
         isFavorite
           ? `${model} removed from favorites`
           : `${model} added to favorites`,
       );
     },
-    [favoriteModels, toggleFavoriteModel],
+    [favoriteModels, toggleFavoriteModel], // Dependencies on store state/actions
   );
 
   // --- Dialog Logic ---
   // Memoize the detailed info for the currently selected model for the dialog
   const detailedModelInfoForDialog = useMemo(() => {
-    if (!selectedDetailModelId) return null;
+    if (!selectedDetailModelId) return null; // Return null if no model is selected
     // Find the base info from the processed models list
     const baseInfo = processedModels.find(
       (m) => m.model === selectedDetailModelId,
     );
-    if (!baseInfo) return null; // Should not happen if ID is valid
+    if (!baseInfo) return null; // Should not happen if ID is valid, but good practice
+    // Use the top-level helper function to get detailed info
     return getDetailedModelInfo(selectedDetailModelId, baseInfo);
-  }, [selectedDetailModelId, processedModels]);
+  }, [selectedDetailModelId, processedModels]); // Re-calculate if selected model or processed models change
 
-  // Handlers for showing and closing the dialog
+  // Handlers for showing and closing the detail dialog
   const handleShowDetails = useCallback((modelId: AIModel) => {
     setSelectedDetailModelId(modelId);
   }, []);
   const handleCloseDialog = useCallback(() => {
     setSelectedDetailModelId(null);
   }, []);
+
+  // --- Rendering Logic ---
+  // Memoize the main list rendering to avoid recomputing if data hasn't changed significantly
+  const modelsListSection = useMemo(() => {
+    // Group models by provider only if no filters are active
+    const groupedModels = hasActiveFilters
+      ? null
+      : sortedModels.reduce(
+          (groups, modelInfo) => {
+            const provider = modelInfo.provider;
+            if (!groups[provider]) {
+              groups[provider] = [];
+            }
+            groups[provider].push(modelInfo);
+            return groups;
+          },
+          {} as Record<string, ModelInfo[]>,
+        );
+
+    // Render the models list section: either grouped or as a flat list
+    return !hasActiveFilters && groupedModels ? (
+      // Render grouped by provider
+      Object.entries(groupedModels).map(([provider, models]) => {
+        // Determine if the provider group is expanded. Default to true (expanded) if state is undefined.
+        const isProviderExpanded = expandedProviders[provider] ?? true;
+        // Check if all models in this group are currently enabled for the "Select All" button state
+        const allModelsAreEnabled = models.every((model) => model.isEnabled);
+
+        return (
+          <div key={provider} className="space-y-4">
+            {/* Provider Header - Clickable to toggle expansion */}
+            <div
+              className={cn(
+                "flex items-center gap-3 p-4 rounded-lg transition-all duration-200",
+                // Highlight group if any models are enabled
+                models.some((m) => m.isEnabled) &&
+                  "bg-primary/5 border border-primary/20",
+              )}
+              onClick={() => toggleProviderExpansion(provider)} // Toggle expansion on click
+              role="button"
+              aria-expanded={isProviderExpanded} // ARIA attribute for accessibility
+              aria-controls={`provider-models-${provider}`} // Link to the content
+            >
+              {/* Provider Logo and Name */}
+              <ProviderLogo
+                provider={provider.toLowerCase() as any} // Type assertion for ProviderLogo
+                size="md"
+              />
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <h4 className="text-lg font-semibold">{provider}</h4>
+                  {/* Badge showing count of enabled models in the group */}
+                  {models.some((m) => m.isEnabled) && (
+                    <Badge
+                      variant="secondary"
+                      className="text-xs bg-primary/10 text-primary"
+                    >
+                      {models.filter((m) => m.isEnabled).length} active
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {models.length} model{models.length !== 1 ? "s" : ""}{" "}
+                  available
+                </p>
+              </div>
+
+              {/* Controls: Select All/Deselect All and Expand/Collapse icons */}
+              <div className="flex items-center gap-2">
+                {/* Select All / Deselect All Button */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation(); // Prevent the group header's onClick from firing
+                    handleToggleAllModelsForProvider(provider, models);
+                  }}
+                  className="gap-2"
+                  aria-label={
+                    allModelsAreEnabled
+                      ? "Deselect all models in this family"
+                      : "Select all models in this family"
+                  }
+                >
+                  {allModelsAreEnabled ? (
+                    <>
+                      <Square className="h-4 w-4" />
+                      Deselect All
+                    </>
+                  ) : (
+                    <>
+                      <CheckSquare className="h-4 w-4" />
+                      Select All
+                    </>
+                  )}
+                </Button>
+                {/* Expand/Collapse Button */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="opacity-60 hover:opacity-100 p-1"
+                  aria-label={`Toggle ${provider} models`}
+                >
+                  <ChevronDown
+                    className={cn(
+                      "h-4 w-4 transition-transform duration-200",
+                      !isProviderExpanded && "rotate-180", // Rotate icon when collapsed
+                    )}
+                  />
+                </Button>
+              </div>
+            </div>
+
+            {/* Conditionally render the list of models if the group is expanded */}
+            {isProviderExpanded && (
+              <div className="grid gap-4" id={`provider-models-${provider}`}>
+                {models.map((modelInfo) => (
+                  <ModelList.ModelCard // Render each model using the ModelCard component
+                    key={modelInfo.model}
+                    modelInfo={modelInfo}
+                    favoriteModels={favoriteModels}
+                    onToggleModel={handleToggleModel}
+                    onToggleFavorite={handleToggleFavorite}
+                    onShowDetails={handleShowDetails}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })
+    ) : (
+      // Render flat list when filters are active
+      <div className="space-y-4">
+        {sortedModels.map((modelInfo) => (
+          <ModelList.ModelCard // Render each model using the ModelCard component
+            key={modelInfo.model}
+            modelInfo={modelInfo}
+            favoriteModels={favoriteModels}
+            onToggleModel={handleToggleModel}
+            onToggleFavorite={handleToggleFavorite}
+            onShowDetails={handleShowDetails}
+          />
+        ))}
+      </div>
+    );
+  }, [
+    // Dependencies for re-rendering modelsListSection
+    hasActiveFilters,
+    sortedModels,
+    expandedProviders,
+    favoriteModels,
+    handleToggleAllModelsForProvider,
+    handleShowDetails,
+    handleToggleFavorite,
+    handleToggleModel,
+    toggleProviderExpansion,
+  ]);
 
   return (
     <div className="space-y-6">
@@ -762,35 +943,35 @@ export function ModelManager() {
         <FilterBar
           searchQuery={searchQuery}
           filters={filters}
-          onSearchChange={setSearchQuery}
-          onFilterChange={updateFilter}
-          onClearFilters={clearAllFilters}
-          onSelectRecommended={handleSelectRecommended}
-          onUnselectAll={handleUnselectAll}
+          onSearchChange={setSearchQuery} // Update search query state
+          onFilterChange={updateFilter} // Update filter state
+          onClearFilters={clearAllFilters} // Clear all filters
+          onSelectRecommended={handleSelectRecommended} // Action for selecting recommended
+          onUnselectAll={handleUnselectAll} // Action for unselecting all
         />
       </div>
 
       {/* Models List Section */}
       <div className="space-y-6">
-        <ModelList
-          sortedModels={sortedModels}
-          hasActiveFilters={hasActiveFilters}
-          favoriteModels={favoriteModels}
-          expandedProviders={expandedProviders}
-          onToggleModel={handleToggleModel}
-          onToggleFavorite={handleToggleFavorite}
-          onShowDetails={handleShowDetails}
-          onToggleProviderExpansion={toggleProviderExpansion}
-          onToggleAllModelsForProvider={handleToggleAllModelsForProvider}
-        />
+        {modelsListSection} {/* Render the memoized list */}
+        {/* Display "No models found" message only when filters are active and no results */}
+        {sortedModels.length === 0 && hasActiveFilters && (
+          <div className="text-center py-12">
+            <Search className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <h3 className="text-lg font-medium mb-2">No models found</h3>
+            <p className="text-sm text-muted-foreground">
+              Try adjusting your search or filters to find more models
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Model Details Dialog */}
       <ModelDetailsDialog
-        selectedDetailModelId={selectedDetailModelId}
-        detailedModelInfo={detailedModelInfoForDialog}
-        onClose={handleCloseDialog}
-        onToggleModel={handleToggleModel}
+        selectedDetailModelId={selectedDetailModelId} // Pass the ID of the selected model
+        detailedModelInfo={detailedModelInfoForDialog} // Pass the computed detailed info
+        onClose={handleCloseDialog} // Handler to close the dialog
+        onToggleModel={handleToggleModel} // Allow toggling model from dialog
       />
     </div>
   );

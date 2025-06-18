@@ -676,8 +676,8 @@ export default function HistorySyncSettings() {
       {/* Export Section */}
       <div className="space-y-4">
         <div className="flex items-center gap-3 mb-6">
-          <div className="p-2 rounded-lg bg-gradient-to-br from-blue-500/10 to-cyan-500/10 border border-blue-500/20">
-            <Archive className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+          <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">
+            <Archive className="h-5 w-5 text-primary" />
           </div>
           <div>
             <h3 className="text-lg font-semibold">Export Chat History</h3>
@@ -689,23 +689,20 @@ export default function HistorySyncSettings() {
           <CardContent className="p-6">
             <div className="space-y-6">
               {/* Export Info Card */}
-              <div className="relative overflow-hidden rounded-xl border bg-gradient-to-r from-blue-50/50 via-cyan-50/50 to-blue-50/50 dark:from-blue-950/20 dark:via-cyan-950/20 dark:to-blue-950/20 p-4">
+              <div className="relative overflow-hidden rounded-xl border bg-muted/30 p-4">
                 <div className="absolute top-3 right-3">
-                  <Badge
-                    variant="secondary"
-                    className="bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800"
-                  >
+                  <Badge variant="secondary">
                     <FileText className="h-3 w-3 mr-1" />
                     Portable
                   </Badge>
                 </div>
                 <div className="flex items-start gap-4 pr-20">
-                  <div className="p-2 rounded-lg bg-blue-500/10 border border-blue-500/20">
-                    <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                  <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">
+                    <FileText className="h-5 w-5 text-primary" />
                   </div>
                   <div className="flex-1">
-                    <h4 className="font-semibold text-blue-900 dark:text-blue-100 mb-1">JSON Format</h4>
-                    <p className="text-sm text-blue-700 dark:text-blue-300">
+                    <h4 className="font-semibold text-foreground mb-1">JSON Format</h4>
+                    <p className="text-sm text-muted-foreground">
                       Includes all conversations, messages, artifacts, and metadata in a structured format that can be
                       imported into any LoveChat instance.
                     </p>
@@ -717,7 +714,7 @@ export default function HistorySyncSettings() {
               <Button
                 onClick={handleExportHistory}
                 disabled={isExporting}
-                className="w-full gap-3 h-12 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.02]"
+                className="w-full gap-3 h-12 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.02]"
               >
                 {isExporting ? (
                   <>
@@ -741,8 +738,8 @@ export default function HistorySyncSettings() {
       {/* Import Section */}
       <div className="space-y-4">
         <div className="flex items-center gap-3 mb-6">
-          <div className="p-2 rounded-lg bg-gradient-to-br from-green-500/10 to-emerald-500/10 border border-green-500/20">
-            <Upload className="h-5 w-5 text-green-600 dark:text-green-400" />
+          <div className="p-2 rounded-lg bg-secondary/50 border border-secondary">
+            <Upload className="h-5 w-5 text-secondary-foreground" />
           </div>
           <div>
             <h3 className="text-lg font-semibold">Import Chat History</h3>
@@ -756,15 +753,15 @@ export default function HistorySyncSettings() {
               {/* Information Panels */}
               <div className="grid gap-4">
                 {/* Important Note */}
-                <div className="flex items-start gap-3 p-4 rounded-xl bg-gradient-to-r from-amber-50/80 via-orange-50/80 to-amber-50/80 dark:from-amber-950/20 dark:via-orange-950/20 dark:to-amber-950/20 border border-amber-200/50 dark:border-amber-800/50">
-                  <div className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
-                    <Shield className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                <div className="flex items-start gap-3 p-4 rounded-xl bg-muted/40 border border-border">
+                  <div className="p-1.5 rounded-lg bg-primary/10 border border-primary/20">
+                    <Shield className="h-4 w-4 text-primary" />
                   </div>
                   <div className="flex-1">
-                    <h4 className="text-sm font-semibold text-amber-800 dark:text-amber-200 mb-1">
+                    <h4 className="text-sm font-semibold text-foreground mb-1">
                       Safe Import Process
                     </h4>
-                    <p className="text-xs text-amber-700 dark:text-amber-300">
+                    <p className="text-xs text-muted-foreground">
                       Your existing conversations will be preserved. New conversations will be added alongside your
                       current ones.
                     </p>
@@ -772,26 +769,26 @@ export default function HistorySyncSettings() {
                 </div>
 
                 {/* Supported Formats */}
-                <div className="flex items-start gap-3 p-4 rounded-xl bg-gradient-to-r from-blue-50/80 via-indigo-50/80 to-blue-50/80 dark:from-blue-950/20 dark:via-indigo-950/20 dark:to-blue-950/20 border border-blue-200/50 dark:border-blue-800/50">
-                  <div className="p-1.5 rounded-lg bg-blue-500/10 border border-blue-500/20">
-                    <FileText className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                <div className="flex items-start gap-3 p-4 rounded-xl bg-muted/40 border border-border">
+                  <div className="p-1.5 rounded-lg bg-secondary/50 border border-secondary">
+                    <FileText className="h-4 w-4 text-secondary-foreground" />
                   </div>
                   <div className="flex-1">
-                    <h4 className="text-sm font-semibold text-blue-800 dark:text-blue-200 mb-2">Supported Formats</h4>
-                    <p className="text-xs text-blue-700 dark:text-blue-300 mb-2">
+                    <h4 className="text-sm font-semibold text-foreground mb-2">Supported Formats</h4>
+                    <p className="text-xs text-muted-foreground mb-2">
                       These formats can be imported into LoveChat:
                     </p>
-                    <ul className="text-xs text-blue-700 dark:text-blue-300 space-y-1">
+                    <ul className="text-xs text-muted-foreground space-y-1">
                       <li className="flex items-center gap-2">
-                        <div className="h-1 w-1 rounded-full bg-blue-500"></div>
+                        <div className="h-1 w-1 rounded-full bg-primary"></div>
                         LoveChat exports (.json)
                       </li>
                       <li className="flex items-center gap-2">
-                        <div className="h-1 w-1 rounded-full bg-blue-500"></div>
+                        <div className="h-1 w-1 rounded-full bg-primary"></div>
                         ChatGPT conversation exports
                       </li>
                       <li className="flex items-center gap-2">
-                        <div className="h-1 w-1 rounded-full bg-blue-500"></div>
+                        <div className="h-1 w-1 rounded-full bg-primary"></div>
                         Generic conversation JSON files
                       </li>
                     </ul>
@@ -820,8 +817,8 @@ export default function HistorySyncSettings() {
                 <div
                   className={`relative border-2 border-dashed rounded-xl p-8 text-center transition-all duration-300 ${
                     isDragOver
-                      ? "border-green-500 bg-gradient-to-br from-green-500/10 to-emerald-500/10 scale-[1.02] shadow-lg"
-                      : "border-muted-foreground/25 hover:border-green-500/50 hover:bg-gradient-to-br hover:from-green-500/5 hover:to-emerald-500/5"
+                      ? "border-primary bg-primary/10 scale-[1.02] shadow-lg"
+                      : "border-muted-foreground/25 hover:border-primary/50 hover:bg-primary/5"
                   } ${isImporting ? "opacity-50 pointer-events-none" : ""}`}
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
@@ -830,7 +827,7 @@ export default function HistorySyncSettings() {
                   <div className="space-y-4">
                     <CloudUpload
                       className={`mx-auto h-12 w-12 transition-all duration-300 ${
-                        isDragOver ? "text-green-500 scale-110" : "text-muted-foreground"
+                        isDragOver ? "text-primary scale-110" : "text-muted-foreground"
                       }`}
                     />
                     <div className="space-y-2">
@@ -844,7 +841,7 @@ export default function HistorySyncSettings() {
                         size="sm"
                         onClick={handleFileButtonClick}
                         disabled={isImporting}
-                        className="mt-2 hover:bg-green-500/10 hover:border-green-500/50 transition-all duration-300"
+                        className="mt-2 hover:bg-primary/10 hover:border-primary/50 transition-all duration-300"
                         onMouseDown={(e) => e.stopPropagation()}
                       >
                         <Upload className="h-4 w-4 mr-2" />
@@ -868,13 +865,13 @@ export default function HistorySyncSettings() {
 
               {/* Import Success Status */}
               {importStats && (
-                <div className="flex items-center gap-3 p-4 rounded-xl bg-gradient-to-r from-green-50/80 via-emerald-50/80 to-green-50/80 dark:from-green-950/20 dark:via-emerald-950/20 dark:to-green-950/20 border border-green-200/50 dark:border-green-800/50">
-                  <div className="p-1.5 rounded-lg bg-green-500/10 border border-green-500/20">
-                    <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
+                <div className="flex items-center gap-3 p-4 rounded-xl bg-muted/40 border border-border">
+                  <div className="p-1.5 rounded-lg bg-primary/10 border border-primary/20">
+                    <CheckCircle className="h-4 w-4 text-primary" />
                   </div>
                   <div className="flex-1">
-                    <h4 className="text-sm font-semibold text-green-800 dark:text-green-200 mb-1">Import Successful</h4>
-                    <p className="text-xs text-green-700 dark:text-green-300">
+                    <h4 className="text-sm font-semibold text-foreground mb-1">Import Successful</h4>
+                    <p className="text-xs text-muted-foreground">
                       Imported {importStats.threadsCount} conversations with {importStats.messagesCount} messages
                     </p>
                   </div>
@@ -883,11 +880,11 @@ export default function HistorySyncSettings() {
 
               {/* Import Loading State */}
               {isImporting && (
-                <div className="flex items-center gap-3 p-4 rounded-xl bg-gradient-to-r from-blue-50/80 via-indigo-50/80 to-blue-50/80 dark:from-blue-950/20 dark:via-indigo-950/20 dark:to-blue-950/20 border border-blue-200/50 dark:border-blue-800/50">
-                  <Loader2 className="h-4 w-4 animate-spin text-blue-600 dark:text-blue-400" />
+                <div className="flex items-center gap-3 p-4 rounded-xl bg-muted/40 border border-border">
+                  <Loader2 className="h-4 w-4 animate-spin text-primary" />
                   <div className="flex-1">
-                    <p className="text-sm font-medium text-blue-800 dark:text-blue-200">Processing import file...</p>
-                    <p className="text-xs text-blue-700 dark:text-blue-300">
+                    <p className="text-sm font-medium text-foreground">Processing import file...</p>
+                    <p className="text-xs text-muted-foreground">
                       This may take a few moments for large files
                     </p>
                   </div>
@@ -903,8 +900,8 @@ export default function HistorySyncSettings() {
       {/* Danger Zone */}
       <div className="space-y-4">
         <div className="flex items-center gap-3 mb-6">
-          <div className="p-2 rounded-lg bg-gradient-to-br from-red-500/10 to-pink-500/10 border border-red-500/20">
-            <Trash2 className="h-5 w-5 text-red-600 dark:text-red-400" />
+          <div className="p-2 rounded-lg bg-destructive/10 border border-destructive/20">
+            <Trash2 className="h-5 w-5 text-destructive" />
           </div>
           <div>
             <h3 className="text-lg font-semibold">Manage Chat History</h3>
@@ -916,27 +913,24 @@ export default function HistorySyncSettings() {
           <CardContent className="p-6">
             <div className="space-y-6">
               {/* Danger Zone Warning */}
-              <div className="relative overflow-hidden rounded-xl border bg-gradient-to-r from-red-50/80 via-pink-50/80 to-red-50/80 dark:from-red-950/20 dark:via-pink-950/20 dark:to-red-950/20 border-red-200/50 dark:border-red-800/50">
+              <div className="relative overflow-hidden rounded-xl border bg-destructive/5 border-destructive/20">
                 <div className="absolute top-3 right-3">
-                  <Badge
-                    variant="destructive"
-                    className="bg-red-100 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800"
-                  >
+                  <Badge variant="destructive">
                     <AlertTriangle className="h-3 w-3 mr-1" />
                     Danger Zone
                   </Badge>
                 </div>
                 <div className="flex items-start gap-4 p-4 pr-24">
-                  <div className="p-2 rounded-lg bg-red-500/10 border border-red-500/20">
-                    <Lock className="h-5 w-5 text-red-600 dark:text-red-400" />
+                  <div className="p-2 rounded-lg bg-destructive/10 border border-destructive/20">
+                    <Lock className="h-5 w-5 text-destructive" />
                   </div>
                   <div className="flex-1">
-                    <h4 className="font-semibold text-red-900 dark:text-red-100 mb-1">Permanent Deletion</h4>
-                    <p className="text-sm text-red-700 dark:text-red-300 mb-2">
+                    <h4 className="font-semibold text-foreground mb-1">Permanent Deletion</h4>
+                    <p className="text-sm text-muted-foreground mb-2">
                       This action cannot be undone. All your conversations, messages, and associated data will be
                       permanently deleted.
                     </p>
-                    <p className="text-xs text-red-600 dark:text-red-400 font-medium">
+                    <p className="text-xs text-destructive font-medium">
                       💡 Consider exporting your data first if you want to keep a backup.
                     </p>
                   </div>
@@ -948,7 +942,7 @@ export default function HistorySyncSettings() {
                 <AlertDialogTrigger asChild>
                   <Button
                     variant="destructive"
-                    className="w-full gap-3 h-12 bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-700 hover:to-pink-700 text-white shadow-lg hover:shadow-xl transition-all duration-300 group"
+                    className="w-full gap-3 h-12 shadow-lg hover:shadow-xl transition-all duration-300 group"
                     disabled={isDeleting}
                   >
                     {isDeleting ? (

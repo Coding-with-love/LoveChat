@@ -207,7 +207,7 @@ export function ArtifactGallery({ threadId, className, showHeader = true }: Arti
               {getArtifactIcon(artifact.content_type)}
             </div>
             <div className="flex-1 min-w-0">
-              <CardTitle className="text-sm truncate cursor-default" title={artifact.title}>
+              <CardTitle className="text-sm truncate cursor-default break-words" title={artifact.title}>
                 {artifact.title}
               </CardTitle>
             </div>
@@ -300,13 +300,13 @@ export function ArtifactGallery({ threadId, className, showHeader = true }: Arti
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <h3 className="font-medium text-sm truncate flex-1 min-w-0" title={artifact.title}>
+            <h3 className="font-medium text-sm truncate flex-1 min-w-0 break-words" title={artifact.title}>
               {artifact.title}
             </h3>
             {artifact.is_pinned && <Pin className="h-3 w-3 text-primary flex-shrink-0" />}
           </div>
           {artifact.description && (
-            <p className="text-xs text-muted-foreground truncate" title={artifact.description}>
+            <p className="text-xs text-muted-foreground truncate break-words" title={artifact.description}>
               {artifact.description}
             </p>
           )}

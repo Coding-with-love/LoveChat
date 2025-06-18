@@ -1,4 +1,3 @@
-// src/components/models/FilterBar.tsx
 "use client";
 
 import { Button } from "@/frontend/components/ui/button";
@@ -17,6 +16,8 @@ import {
   Sparkles,
   Eye,
   FileText,
+  CheckSquare,
+  Square,
   Lightbulb,
   Zap,
 } from "lucide-react";
