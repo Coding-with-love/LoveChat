@@ -19,13 +19,14 @@ import {
 import { cn } from "@/lib/utils"; // Utility for class names
 import type React from "react";
 import type { ModelInfo } from "./types";
+import type { AIModel } from "@/lib/models";
 
 interface ModelCardProps {
   modelInfo: ModelInfo;
   favoriteModels: string[]; // To check favorite status
-  onToggleModel: (model: string) => void;
-  onToggleFavorite: (model: string) => void;
-  onShowDetails: (model: string) => void;
+  onToggleModel: (model: AIModel) => void;
+  onToggleFavorite: (model: AIModel) => void;
+  onShowDetails: (model: AIModel) => void;
 }
 
 export function ModelCard({

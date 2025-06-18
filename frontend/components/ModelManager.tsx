@@ -5,6 +5,8 @@ import { useState, useMemo, useCallback } from "react";
 import { useModelStore } from "@/frontend/stores/ModelStore";
 import { useAPIKeyStore } from "@/frontend/stores/APIKeyStore";
 import { AI_MODELS, getModelConfig, type AIModel } from "@/lib/models";
+import { ModelList } from "@/frontend/components/models/ModelList";
+import { ModelCard } from "@/frontend/components/models/ModelCard";
 import { FilterBar } from "@/frontend/components/models/FilterBar";
 import { ModelCard } from "@/frontend/components/models/ModelCard";
 import { ModelDetailsDialog } from "@/frontend/components/models/ModelDetailsDialog";
