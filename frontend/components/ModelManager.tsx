@@ -6,6 +6,7 @@ import { useModelStore } from "@/frontend/stores/ModelStore";
 import { useAPIKeyStore } from "@/frontend/stores/APIKeyStore";
 import { AI_MODELS, getModelConfig, type AIModel } from "@/lib/models";
 import { ModelList } from "@/frontend/components/models/ModelList";
+import { ModelCard } from "@/frontend/components/models/ModelCard";
 import { FilterBar } from "@/frontend/components/models/FilterBar";
 import { ModelDetailsDialog } from "@/frontend/components/models/ModelDetailsDialog";
 import type {
@@ -885,7 +886,7 @@ export function ModelManager() {
             {isProviderExpanded && (
               <div className="grid gap-4" id={`provider-models-${provider}`}>
                 {models.map((modelInfo) => (
-                  <ModelList.ModelCard // Render each model using the ModelCard component
+                  <ModelCard // Render each model using the ModelCard component
                     key={modelInfo.model}
                     modelInfo={modelInfo}
                     favoriteModels={favoriteModels}
@@ -903,7 +904,7 @@ export function ModelManager() {
       // Render flat list when filters are active
       <div className="space-y-4">
         {sortedModels.map((modelInfo) => (
-          <ModelList.ModelCard // Render each model using the ModelCard component
+          <ModelCard // Render each model using the ModelCard component
             key={modelInfo.model}
             modelInfo={modelInfo}
             favoriteModels={favoriteModels}
