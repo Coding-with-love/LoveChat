@@ -60,9 +60,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data: { user } } = await supabase.auth.getUser()
       console.log("🔍 User metadata:", user?.user_metadata)
       
-      // If no profile exists or profile is missing data, check if we can populate from user metadata
-      // Also force update if forceRefresh is true
-      if (user && (forceRefresh || !profile || !profile.avatar_url) && user.user_metadata) {
+      // If no profile exists, create one first
+      if (!profile && user) {
+        console.log("📝 No profile exists, creating initial profile...")
+        try {
+          const { createUserProfile } = await import("@/lib/supabase/queries")
+          profile = await createUserProfile(user.id, {
+            full_name: user.user_metadata?.full_name || null,
+            avatar_url: user.user_metadata?.avatar_url || 
+                       user.user_metadata?.picture || 
+                       user.user_metadata?.profile_picture ||
+                       user.user_metadata?.photo || null,
+          })
+          console.log("✅ Initial profile created:", profile)
+          setProfile(profile)
+          return
+        } catch (createError: any) {
+          console.error("❌ Error creating initial profile:", createError)
+          // Continue to fallback logic below
+        }
+      }
+
+      // If profile exists but is missing data, or force refresh is requested
+      if (user && (forceRefresh || (profile && !profile.avatar_url)) && user.user_metadata) {
         console.log("🔄 Profile missing or incomplete, checking user metadata...")
         
         const updates: {
@@ -97,9 +117,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             console.log("✅ Profile updated successfully:", updatedProfile)
             setProfile(updatedProfile)
             return
-          } catch (updateError) {
+          } catch (updateError: any) {
             console.error("❌ Error updating profile:", updateError)
-            // Fall through to set the original profile
+            console.error("❌ Update error details:", {
+              message: updateError?.message,
+              code: updateError?.code,
+              details: updateError?.details,
+              hint: updateError?.hint
+            })
+            // If update failed but we have user metadata, create a fallback profile object
+            if (user?.user_metadata) {
+              const fallbackProfile = {
+                ...profile,
+                full_name: profile?.full_name || user.user_metadata.full_name || null,
+                avatar_url: profile?.avatar_url || 
+                           user.user_metadata.avatar_url || 
+                           user.user_metadata.picture || 
+                           user.user_metadata.profile_picture ||
+                           user.user_metadata.photo || null,
+                username: profile?.username || null
+              }
+              console.log("🔄 Using fallback profile from metadata:", fallbackProfile)
+              setProfile(fallbackProfile)
+              return
+            }
           }
         }
       }

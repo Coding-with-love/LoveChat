@@ -36,11 +36,33 @@ function PureMessageReasoning({
       .trim();
   }, [reasoning]);
 
-  // Show a thinking indicator for streaming or placeholder content
-  const isThinkingPlaceholder = reasoning === "Thinking..." || (isStreaming && cleanedReasoning.length < 10);
+  // If we have meaningful reasoning content, never show placeholder
+  // Use original reasoning length to determine if content exists, not cleaned version
+  const hasRealContent = reasoning && reasoning !== "Thinking..." && reasoning.length > 50;
+  
+  // Only show thinking indicator if we truly don't have content
+  const isThinkingPlaceholder = reasoning === "Thinking..." || (!hasRealContent && isStreaming);
 
-  // Don't render if no meaningful content
-  if (!reasoning && !isStreaming) {
+  // Debug reasoning state
+  useEffect(() => {
+    console.log("🧠 MessageReasoning DISPLAY DECISION:", {
+      id,
+      reasoning: reasoning ? "has content" : "no content",
+      reasoningLength: reasoning?.length || 0,
+      cleanedLength: cleanedReasoning.length,
+      isStreaming,
+      isThinkingPlaceholder,
+      hasRealContent,
+      reasoningEqualsThinking: reasoning === "Thinking...",
+      willShowThinking: isThinkingPlaceholder,
+      willShowContent: hasRealContent,
+      reasoningPreview: reasoning?.substring(0, 100) || "NONE",
+      cleanedPreview: cleanedReasoning.substring(0, 100) || "NONE"
+    })
+  }, [reasoning, cleanedReasoning, isStreaming, isThinkingPlaceholder, hasRealContent, id])
+
+  // Don't render if no meaningful content at all
+  if (!reasoning) {
     return null;
   }
 
@@ -72,7 +94,7 @@ function PureMessageReasoning({
       </button>
       {isExpanded && (
         <div className="p-4 rounded-md bg-accent/20 border border-border">
-          {cleanedReasoning.length > 0 ? (
+          {hasRealContent ? (
             <div className="text-sm">
               <MemoizedMarkdown content={cleanedReasoning} id={id} size="small" />
               {isStreaming && (
@@ -81,6 +103,26 @@ function PureMessageReasoning({
                   <span>reasoning in progress...</span>
                 </div>
               )}
+            </div>
+          ) : reasoning && reasoning !== "Thinking..." && cleanedReasoning.length > 0 ? (
+            // Fallback: show any non-placeholder reasoning content
+            <div className="text-sm">
+              <MemoizedMarkdown content={cleanedReasoning} id={id} size="small" />
+              {isStreaming && (
+                <div className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
+                  <div className="w-1 h-1 bg-current rounded-full animate-pulse" />
+                  <span>reasoning in progress...</span>
+                </div>
+              )}
+            </div>
+          ) : isThinkingPlaceholder ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <div className="flex gap-1">
+                <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              </div>
+              <span>AI is thinking...</span>
             </div>
           ) : null}
         </div>

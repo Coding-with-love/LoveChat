@@ -159,7 +159,7 @@ function PureMessage({
 
   // Extract reasoning from current message - check multiple sources with improved parsing
   const reasoning =
-    actualCurrentMessage.reasoning ||
+    actualCurrentMessage.reasoning || // Prioritize top-level reasoning field
     actualCurrentMessage.parts?.find((part) => part.type === "reasoning")?.reasoning ||
     (() => {
       // Also check if thinking content is embedded in text parts
@@ -201,11 +201,15 @@ function PureMessage({
   console.log("🧠 Message reasoning debug:", {
     messageId: message.id,
     hasDirectReasoning: !!actualCurrentMessage.reasoning,
+    directReasoningLength: actualCurrentMessage.reasoning?.length || 0,
+    directReasoningPreview: actualCurrentMessage.reasoning?.substring(0, 100) || "none",
     hasReasoningParts: !!actualCurrentMessage.parts?.find((part) => part.type === "reasoning"),
+    reasoningPartsContent: actualCurrentMessage.parts?.find((part) => part.type === "reasoning")?.reasoning?.substring(0, 100) || "none",
     extractedReasoning: !!reasoning,
     reasoningLength: reasoning?.length || 0,
     reasoningPreview: reasoning?.substring(0, 100) || "none",
     isStreaming,
+    isThinkingModel,
   })
 
   // Refresh artifacts when streaming stops to catch auto-generated artifacts
@@ -559,7 +563,7 @@ const isSelectionInThisMessage = useCallback(() => {
 
           // If we have reasoning but no reasoning parts, add it as a virtual part
           // For thinking models, always show reasoning if available, even during streaming
-          if (reasoning && reasoningParts.length === 0) {
+          if (reasoning && reasoning.trim() && reasoningParts.length === 0) {
             console.log("🧠 Adding virtual reasoning part:", {
               messageId: message.id,
               reasoningLength: reasoning.length,
@@ -582,9 +586,21 @@ const isSelectionInThisMessage = useCallback(() => {
             const key = `message-${message.id}-part-${index}`
 
             if (type === "reasoning") {
+              // Use top-level reasoning if available, otherwise use part reasoning
+              // This ensures we always show the most up-to-date reasoning content
+              const displayReasoning = actualCurrentMessage.reasoning || part.reasoning;
+              
+              console.log("🧠 Rendering MessageReasoning:", {
+                messageId: message.id,
+                hasTopLevelReasoning: !!actualCurrentMessage.reasoning,
+                hasPartReasoning: !!part.reasoning,
+                displayReasoningLength: displayReasoning?.length || 0,
+                displayReasoningPreview: displayReasoning?.substring(0, 100) || "none"
+              });
+              
               return <MessageReasoning 
                 key={key} 
-                reasoning={part.reasoning} 
+                reasoning={displayReasoning} 
                 id={message.id} 
                 isStreaming={isStreaming}
                 autoExpand={isThinkingModel}

@@ -1113,6 +1113,28 @@ export const getUserProfile = async (userId: string) => {
   return data || null // Explicitly return null if no data
 }
 
+export const createUserProfile = async (userId: string, profileData?: {
+  username?: string
+  full_name?: string
+  avatar_url?: string
+}) => {
+  const { data, error } = await supabase
+    .from("profiles")
+    .insert({
+      id: userId,
+      username: profileData?.username || null,
+      full_name: profileData?.full_name || null,
+      avatar_url: profileData?.avatar_url || null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
 export const updateUserProfile = async (updates: {
   username?: string
   full_name?: string
@@ -1123,7 +1145,19 @@ export const updateUserProfile = async (updates: {
   } = await supabase.auth.getUser()
   if (!user) throw new Error("User not authenticated")
 
-  const { data, error } = await supabase.from("profiles").update(updates).eq("id", user.id).select().single()
+  // Use upsert to handle cases where profile doesn't exist yet
+  const { data, error } = await supabase
+    .from("profiles")
+    .upsert(
+      {
+        id: user.id,
+        ...updates,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "id" }
+    )
+    .select()
+    .single()
 
   if (error) throw error
   return data

@@ -16,6 +16,7 @@ import { PinnedMessages } from "./PinnedMessages"
 import { useKeyboardShortcutManager } from "@/frontend/hooks/useKeyboardShortcutManager"
 import { useNavigate, useParams } from "react-router"
 import { createMessage, createThread } from "@/lib/supabase/queries"
+import { supabase } from "@/lib/supabase/client"
 import { v4 as uuidv4 } from "uuid"
 import { toast } from "sonner"
 
@@ -140,6 +141,22 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
       // Log reasoning extraction for debugging
       if (reasoning) {
         console.log("🧠 Extracted reasoning from stream:", reasoning.substring(0, 100) + "...")
+        
+        // Update the message with reasoning if it was extracted
+        setMessages(prevMessages => 
+          prevMessages.map(msg => 
+            msg.id === message.id 
+              ? {
+                  ...msg,
+                  reasoning: reasoning,
+                  parts: [
+                    { type: "reasoning", reasoning: reasoning } as any,
+                    ...(msg.parts?.filter(part => part.type !== "reasoning") || [])
+                  ]
+                }
+              : msg
+          )
+        )
       }
 
       // Reset streaming reasoning state when chat finishes
@@ -186,6 +203,13 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
       const newReasoning = streamingReasoning + content
       setStreamingReasoning(newReasoning)
       
+      console.log('[REASONING-STREAM-DEBUG] onReasoningDelta called:', {
+        contentLength: content.length,
+        totalReasoningLength: newReasoning.length,
+        streamingReasoningMessageId,
+        newReasoningPreview: newReasoning.substring(0, 100)
+      })
+      
       if (streamingReasoningMessageId) {
         console.log('[REASONING-STREAM-DEBUG] setMessages (delta):', {
           messageId: streamingReasoningMessageId,
@@ -197,6 +221,7 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
             msg.id === streamingReasoningMessageId 
               ? {
                   ...msg,
+                  reasoning: newReasoning, // Update top-level reasoning field
                   parts: msg.parts?.map(part => 
                     part.type === "reasoning" 
                       ? { ...part, reasoning: newReasoning } as any
@@ -221,6 +246,7 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
                 msg.id === lastMessage.id
                   ? {
                       ...msg,
+                      reasoning: newReasoning, // Update top-level reasoning field
                       parts: [
                         { type: "reasoning", reasoning: newReasoning } as any,
                         ...(msg.parts || [])
@@ -368,14 +394,15 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
           
           // Only add reasoning part if it doesn't already exist
           if (!lastMessage.parts?.some(part => part.type === "reasoning")) {
-            console.log("🧠 Adding reasoning part to message immediately")
+            console.log("🧠 Adding reasoning part to message immediately with current content")
             setMessages(prevMessages => {
               const updatedMessages = prevMessages.map(msg => 
                 msg.id === lastMessage.id 
                   ? {
                       ...msg,
+                      reasoning: streamingReasoning || undefined, // Set top-level reasoning too
                       parts: [
-                        { type: "reasoning", reasoning: streamingReasoning || "Thinking..." } as any,
+                        { type: "reasoning", reasoning: streamingReasoning || undefined } as any,
                         ...(msg.parts || [])
                       ]
                     }
@@ -385,12 +412,29 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
               return updatedMessages
             })
           } else {
-            console.log("🧠 Reasoning part already exists, skipping duplicate")
+            console.log("🧠 Reasoning part already exists, updating with current content")
+            // Update existing reasoning part with current content
+            setMessages(prevMessages => {
+              const updatedMessages = prevMessages.map(msg => 
+                msg.id === lastMessage.id 
+                  ? {
+                      ...msg,
+                      reasoning: streamingReasoning || msg.reasoning,
+                      parts: msg.parts?.map(part => 
+                        part.type === "reasoning" 
+                          ? { ...part, reasoning: streamingReasoning || (part as any).reasoning } as any
+                          : part
+                      ) || msg.parts
+                    }
+                  : msg
+              )
+              return updatedMessages
+            })
           }
         }
-        // For ALL thinking models, ensure reasoning component appears IMMEDIATELY when message is created
-        else if (supportsThinking && (status === "streaming" || status === "submitted") && !lastMessage.parts?.some(part => part.type === "reasoning")) {
-          console.log("🧠 Adding reasoning placeholder for thinking model IMMEDIATELY:", lastMessage.id)
+        // For thinking models that DON'T send reasoning events, add placeholder only if no reasoning stream is active AND no reasoning content exists
+        else if (supportsThinking && !isStreamingReasoning && !lastMessage.reasoning && (status === "streaming" || status === "submitted") && !lastMessage.parts?.some(part => part.type === "reasoning")) {
+          console.log("🧠 Adding reasoning placeholder for thinking model (no reasoning stream active):", lastMessage.id)
           setMessages(prevMessages => {
             const updatedMessages = prevMessages.map(msg => 
               msg.id === lastMessage.id 
@@ -447,9 +491,54 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
             )
           )
         }
+        
+        // For models that don't stream reasoning but save it to database (like Gemini),
+        // fetch the reasoning content after streaming completes
+        if (!lastMessage.reasoning && !isStreamingReasoning && !hasReasoningPlaceholder) {
+          console.log("🧠 Checking for reasoning in database after streaming completed:", lastMessage.id)
+          // Delay to allow database save to complete
+          setTimeout(async () => {
+            try {
+              const { data: messageData, error } = await supabase
+                .from('messages')
+                .select('reasoning, parts')
+                .eq('id', lastMessage.id)
+                .single()
+              
+              if (!error && messageData?.reasoning) {
+                console.log("🧠 Found reasoning in database, updating message:", {
+                  messageId: lastMessage.id,
+                  reasoningLength: messageData.reasoning.length,
+                  reasoningPreview: messageData.reasoning.substring(0, 100)
+                })
+                
+                setMessages(prevMessages => 
+                  prevMessages.map(msg => 
+                    msg.id === lastMessage.id 
+                      ? {
+                          ...msg,
+                          reasoning: messageData.reasoning,
+                          parts: [
+                            { type: "reasoning", reasoning: messageData.reasoning } as any,
+                            ...(msg.parts?.filter(part => part.type !== "reasoning") || [])
+                          ]
+                        }
+                      : msg
+                  )
+                )
+              } else if (!error) {
+                console.log("🧠 No reasoning found in database for message:", lastMessage.id)
+              } else {
+                console.log("🧠 Error fetching reasoning from database:", error)
+              }
+            } catch (fetchError) {
+              console.error("🧠 Failed to fetch reasoning from database:", fetchError)
+            }
+          }, 2000) // Wait 2 seconds for database save to complete
+        }
       }
     }
-  }, [status, messages, supportsThinking])
+  }, [status, messages, supportsThinking, isStreamingReasoning])
 
   // Listen for workflow execution events
   useEffect(() => {
