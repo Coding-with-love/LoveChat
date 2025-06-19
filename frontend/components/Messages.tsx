@@ -5,7 +5,6 @@ import Message from "./Message"
 import type { UIMessage } from "ai"
 import type { UseChatHelpers } from "@ai-sdk/react"
 import MessageLoading from "./ui/MessageLoading"
-import MessageReasoning from "./MessageReasoning"
 import Error from "./Error"
 import ChatLandingPage from "./ChatLandingPage"
 import { useAuth } from "@/frontend/components/AuthProvider"
@@ -728,12 +727,7 @@ function PureMessages({
         {status === "submitted" && !isThinkingModel(messages[messages.length - 1]?.model || "", messages[messages.length - 1]) && <MessageLoading />}
         {status === "submitted" && isThinkingModel(messages[messages.length - 1]?.model || "", messages[messages.length - 1]) && (
           <div className="flex flex-col gap-2 w-full">
-            <MessageReasoning 
-              reasoning="Thinking..." 
-              id="thinking-placeholder" 
-              isStreaming={true}
-              autoExpand={true}
-            />
+
           </div>
         )}
         {error && <Error message={error.message} />}

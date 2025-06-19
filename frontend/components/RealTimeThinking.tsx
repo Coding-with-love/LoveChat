@@ -1,7 +1,6 @@
 import { memo, useState, useEffect } from 'react';
 import { Brain, ChevronUpIcon, ChevronDownIcon } from 'lucide-react';
 import { cn } from "@/lib/utils";
-import MessageReasoning from './MessageReasoning';
 
 interface RealtimeThinkingProps {
   isVisible: boolean;

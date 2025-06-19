@@ -56,9 +56,9 @@ function PureMessageReasoning({
           <ChevronDownIcon className="w-4 h-4" />
         )}
         <span className="text-sm font-medium">
-          {isThinkingPlaceholder ? "Thinking..." : "Reasoning"}
+          {"Reasoning"}
         </span>
-        {isStreaming && !isThinkingPlaceholder && (
+        {isStreaming && cleanedReasoning.length > 0 && (
           <div className="flex items-center gap-1">
             <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
             <span className="text-xs text-blue-600 dark:text-blue-400">streaming</span>
@@ -72,16 +72,7 @@ function PureMessageReasoning({
       </button>
       {isExpanded && (
         <div className="p-4 rounded-md bg-accent/20 border border-border">
-          {isThinkingPlaceholder ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <div className="flex gap-1">
-                <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-              </div>
-              <span>AI is thinking...</span>
-            </div>
-          ) : (
+          {cleanedReasoning.length > 0 ? (
             <div className="text-sm">
               <MemoizedMarkdown content={cleanedReasoning} id={id} size="small" />
               {isStreaming && (
@@ -91,7 +82,7 @@ function PureMessageReasoning({
                 </div>
               )}
             </div>
-          )}
+          ) : null}
         </div>
       )}
     </div>

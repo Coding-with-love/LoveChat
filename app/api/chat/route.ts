@@ -1452,12 +1452,13 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
                     
                     if (thinkEnd !== Infinity) {
                       // Capture thinking content
-                      currentThinkingContent += buffer.substring(i, thinkEnd)
+                      const newThinkingContent = buffer.substring(i, thinkEnd)
+                      currentThinkingContent += newThinkingContent
                       
-                      // Emit reasoning delta event
+                      // Emit reasoning delta event with ONLY the new content
                       safeEnqueue(new TextEncoder().encode(`r:${JSON.stringify({ 
                         type: "reasoning-delta", 
-                        content: currentThinkingContent 
+                        content: newThinkingContent 
                       })}\n`))
                       
                       // Store for final reasoning and reset buffer
@@ -1468,9 +1469,24 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
                       insideThinking = false
                       // Skip the appropriate tag length
                       i = thinkEnd + (buffer.substring(thinkEnd, thinkEnd + 10) === "</Thinking>" ? 10 : 8)
+                      
+                      // Emit reasoning end event
+                      safeEnqueue(new TextEncoder().encode(`r:${JSON.stringify({ 
+                        type: "reasoning-end", 
+                        duration: 0, // Will be calculated properly in Google models
+                        totalReasoning: reasoning 
+                      })}\n`))
                     } else {
                       // Still inside thinking, accumulate content
-                      currentThinkingContent += buffer.substring(i)
+                      const newThinkingContent = buffer.substring(i)
+                      currentThinkingContent += newThinkingContent
+                      
+                      // Emit reasoning delta event with ONLY the new content
+                      safeEnqueue(new TextEncoder().encode(`r:${JSON.stringify({ 
+                        type: "reasoning-delta", 
+                        content: newThinkingContent 
+                      })}\n`))
+                      
                       break
                     }
                   }
