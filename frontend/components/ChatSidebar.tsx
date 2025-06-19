@@ -808,26 +808,29 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
                   variant="ghost"
                   size="icon"
                   className={cn(
-                    "ml-auto h-6 w-6",
-                    openDropdownThreadId === thread.id ? "flex" : "hidden group-hover/thread:flex",
+                    "ml-auto h-7 w-7 shrink-0",
+                    openDropdownThreadId === thread.id
+                      ? "flex"
+                      : "opacity-0 group-hover/thread:opacity-100 transition-opacity",
                   )}
                   onClick={(e) => {
                     e.preventDefault()
                     e.stopPropagation()
                   }}
                 >
-                  <MoreHorizontal size={14} />
+                  <MoreHorizontal size={16} />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" side="right" className="w-48" sideOffset={5} avoidCollisions={true}>
+              <DropdownMenuContent align="end" side="right" className="w-52" sideOffset={5} avoidCollisions={true}>
                 <DropdownMenuItem
                   onClick={(e) => {
                     e.preventDefault()
                     e.stopPropagation()
                     handleShareThread(thread.id, thread.title)
                   }}
+                  className="gap-2"
                 >
-                  <Share2 className="h-4 w-4 mr-2" />
+                  <Share2 className="h-4 w-4 text-blue-500" />
                   Share
                 </DropdownMenuItem>
                 <DropdownMenuItem
@@ -836,13 +839,26 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
                     e.stopPropagation()
                     handleStartRename(thread.id, thread.title)
                   }}
+                  className="gap-2"
                 >
-                  <Edit2 className="h-4 w-4 mr-2" />
+                  <Edit2 className="h-4 w-4 text-amber-500" />
                   Rename
                 </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    navigator.clipboard.writeText(thread.title)
+                    toast.success("Chat duplicated")
+                  }}
+                  className="gap-2"
+                >
+                  <Copy className="h-4 w-4 text-green-500" />
+                  Duplicate Chat
+                </DropdownMenuItem>
                 <DropdownMenuSub>
-                  <DropdownMenuSubTrigger>
-                    <Folder className="h-4 w-4 mr-2" />
+                  <DropdownMenuSubTrigger className="gap-2">
+                    <Folder className="h-4 w-4 text-purple-500" />
                     Move to Project
                   </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent>
@@ -864,8 +880,9 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
                           e.stopPropagation()
                           handleMoveThread(thread.id, project.id)
                         }}
+                        className="gap-2"
                       >
-                        <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: project.color }} />
+                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: project.color }} />
                         {project.name}
                       </DropdownMenuItem>
                     ))}
@@ -877,8 +894,9 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
                     e.stopPropagation()
                     handleArchiveThread(thread.id, thread.is_archived || false)
                   }}
+                  className="gap-2"
                 >
-                  <Archive className="h-4 w-4 mr-2" />
+                  <Archive className="h-4 w-4 text-gray-500" />
                   Archive
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
@@ -888,9 +906,9 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
                     e.stopPropagation()
                     handleDeleteThread(thread.id)
                   }}
-                  className="text-destructive"
+                  className="text-destructive gap-2"
                 >
-                  <Trash className="h-4 w-4 mr-2" />
+                  <Trash className="h-4 w-4" />
                   Delete
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -1208,7 +1226,7 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
   // Show loading state while auth is loading
   if (authLoading) {
     return (
-      <Sidebar className="sidebar-with-spacing" data-collapsed={collapsed}>
+      <Sidebar className="sidebar-with-spacing z-30" data-collapsed={collapsed}>
         <div className="flex flex-col h-full">
           <div className="p-4 border-b border-border/50">
             <h1 className="text-lg font-bold">LoveChat</h1>
@@ -1226,7 +1244,7 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
   // Show login prompt if not authenticated
   if (!user) {
     return (
-      <Sidebar className="sidebar-with-spacing" data-collapsed={collapsed}>
+      <Sidebar className="sidebar-with-spacing z-30" data-collapsed={collapsed}>
         <div className="flex flex-col h-full">
           <div className="p-4 border-b border-border/50">
             <h1 className="text-lg font-bold">LoveChat</h1>
@@ -1243,7 +1261,7 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
 
   return (
     <>
-      <Sidebar className="sidebar-with-spacing" data-collapsed={collapsed}>
+      <Sidebar className="sidebar-with-spacing z-30" data-collapsed={collapsed}>
         <div className="flex flex-col h-full">
           <ProfileSection />
           <div className="p-4 border-b border-border/50">
