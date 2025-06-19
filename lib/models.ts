@@ -15,6 +15,7 @@ export const AI_MODELS = [
   "gemini-2.5-pro",
   "anthropic/claude-3.5-haiku",
   "anthropic/claude-v3.5-sonnet",
+  "anthropic/claude-3-5-sonnet-20241022",
   "anthropic/claude-3.7-sonnet",
   "anthropic/claude-3.7-sonnet-reasoning",
   "anthropic/claude-4-opus-20250514",
@@ -239,6 +240,15 @@ export function getModelConfig(model: AIModel): ModelConfig {
         supportsSearch: false,
         supportsThinking: false,
       }
+    case "anthropic/claude-3-5-sonnet-20241022":
+      return {
+        provider: "openrouter",
+        modelId: "anthropic/claude-3-5-sonnet-20241022",
+        name: "Claude 3.5 Sonnet (20241022)",
+        headerKey: "X-OpenRouter-API-Key",
+        supportsSearch: false,
+        supportsThinking: false,
+      }
     case "anthropic/claude-3.7-sonnet":
       return {
         provider: "openrouter",
@@ -326,15 +336,46 @@ export function getModelConfig(model: AIModel): ModelConfig {
         supportsThinking: false,
       }
     default:
-      console.warn(`Unknown model: ${model}. Falling back to default model: ${AI_MODELS[0]}`)
-      // Return config for the first available model as fallback
-      return {
-        provider: "google",
-        modelId: "gemini-2.5-flash",
-        name: "Gemini 2.5 Flash",
-        headerKey: "X-Google-API-Key",
-        supportsSearch: true,
-        supportsThinking: false,
+      console.warn(`Unknown model: ${model}. Attempting to infer provider from model name.`)
+      
+      // Try to infer provider from model name patterns
+      if (model.includes("claude") || model.startsWith("anthropic/")) {
+        return {
+          provider: "openrouter",
+          modelId: model,
+          name: model.replace("anthropic/", "").replace(/-/g, " ").replace(/\b\w/g, l => l.toUpperCase()),
+          headerKey: "X-OpenRouter-API-Key",
+          supportsSearch: false,
+          supportsThinking: model.includes("reasoning") || model.includes("thinking"),
+        }
+      } else if (model.includes("gpt") || model.includes("o1") || model.includes("o3")) {
+        return {
+          provider: "openai",
+          modelId: model,
+          name: model.toUpperCase(),
+          headerKey: "X-OpenAI-API-Key",
+          supportsSearch: true,
+          supportsThinking: model.includes("o1") || model.includes("o3") || model.includes("reasoning"),
+        }
+      } else if (model.includes("gemini")) {
+        return {
+          provider: "google",
+          modelId: model,
+          name: model.replace(/-/g, " ").replace(/\b\w/g, l => l.toUpperCase()),
+          headerKey: "X-Google-API-Key",
+          supportsSearch: true,
+          supportsThinking: model.includes("thinking"),
+        }
+      } else {
+        // Fallback to OpenRouter for unknown models
+        return {
+          provider: "openrouter",
+          modelId: model,
+          name: model.replace(/[-_]/g, " ").replace(/\b\w/g, l => l.toUpperCase()),
+          headerKey: "X-OpenRouter-API-Key",
+          supportsSearch: false,
+          supportsThinking: model.includes("reasoning") || model.includes("thinking"),
+        }
       }
   }
 }
