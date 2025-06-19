@@ -806,14 +806,14 @@ function PureChatInput({ threadId, input, status, setInput, append, stop, onRefr
   return (
     <div
       className={cn(
-        "fixed bottom-0 left-0 right-0 z-50",
+        "fixed bottom-0 z-40",
         "transition-all duration-300 ease-out",
-        // Responsive positioning
+        // Responsive positioning - respect sidebar area
         isMobile
-          ? "px-3 pb-3"
+          ? "left-0 right-0 px-3 pb-3"
           : sidebarCollapsed
-            ? "px-4 pb-4 max-w-4xl mx-auto"
-            : "pl-[calc(var(--sidebar-width)+1rem)] pr-4 pb-4",
+            ? "left-0 right-0 px-4 pb-4 max-w-4xl mx-auto"
+            : "left-[calc(var(--sidebar-width)+1rem)] right-4 pb-4",
       )}
     >
       {/* Main Input Container */}
