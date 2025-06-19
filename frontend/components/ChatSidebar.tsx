@@ -1208,7 +1208,7 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
   // Show loading state while auth is loading
   if (authLoading) {
     return (
-      <Sidebar className="sidebar-with-spacing" data-collapsed={collapsed}>
+      <Sidebar className="sidebar-with-spacing z-30" data-collapsed={collapsed}>
         <div className="flex flex-col h-full">
           <div className="p-4 border-b border-border/50">
             <h1 className="text-lg font-bold">LoveChat</h1>
@@ -1226,7 +1226,7 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
   // Show login prompt if not authenticated
   if (!user) {
     return (
-      <Sidebar className="sidebar-with-spacing" data-collapsed={collapsed}>
+      <Sidebar className="sidebar-with-spacing z-30" data-collapsed={collapsed}>
         <div className="flex flex-col h-full">
           <div className="p-4 border-b border-border/50">
             <h1 className="text-lg font-bold">LoveChat</h1>
@@ -1243,7 +1243,7 @@ export function ChatSidebar({ onRefreshData }: ChatSidebarProps = {}) {
 
   return (
     <>
-      <Sidebar className="sidebar-with-spacing" data-collapsed={collapsed}>
+      <Sidebar className="sidebar-with-spacing z-30" data-collapsed={collapsed}>
         <div className="flex flex-col h-full">
           <ProfileSection />
           <div className="p-4 border-b border-border/50">
