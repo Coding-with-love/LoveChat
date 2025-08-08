@@ -267,7 +267,7 @@ export default function ChatLayout() {
 
   return (
     <SidebarProvider>
-      <div className="flex flex-1 relative">
+      <div className="flex flex-1 relative h-svh overflow-hidden">
         <ChatSidebar onRefreshData={sidebarRefreshRef} />
         <div className="flex-1 flex flex-col relative pl-2">
           {/* Sticky Header */}
