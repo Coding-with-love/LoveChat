@@ -836,7 +836,7 @@ function PureChatInput({ threadId, input, status, setInput, append, stop, onRefr
 
         {/* Artifact References - Simplified */}
         {hasArtifacts && (
-          <div className="px-4 pt-3">
+          <div className="px-3 sm:px-4 pt-3">
             <div className="bg-muted/30 rounded-lg p-3 border border-border/30">
               <div className="flex items-center gap-2 mb-2">
                 <Archive className="h-3.5 w-3.5 text-muted-foreground" />
@@ -884,7 +884,7 @@ function PureChatInput({ threadId, input, status, setInput, append, stop, onRefr
 
         {/* File Preview - Simplified */}
         {hasFiles && (
-          <div className="px-4 pt-3">
+          <div className="px-3 sm:px-4 pt-3">
             <div className="bg-muted/30 rounded-lg p-3 border border-border/30">
               <FilePreviewList files={uploadedFiles} onRemoveFile={handleRemoveFile} />
             </div>
@@ -892,7 +892,7 @@ function PureChatInput({ threadId, input, status, setInput, append, stop, onRefr
         )}
 
         {/* Main Input Area */}
-        <div className="p-4">
+        <div className="p-3 sm:p-4">
           <div className="flex flex-col gap-3">
             {/* Textarea */}
             <div className="relative">
@@ -933,9 +933,9 @@ function PureChatInput({ threadId, input, status, setInput, append, stop, onRefr
             </div>
 
             {/* Toolbar - Unified Design */}
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
               {/* Left Side - Model Selector */}
-              <div className="flex items-center">
+              <div className="flex items-center w-full sm:w-auto justify-center sm:justify-start">
                 <div className="bg-muted/50 rounded-lg px-3 py-2 border border-border/30">
                   <ChatModelDropdown />
                   {isThinkingModel && (
@@ -952,7 +952,7 @@ function PureChatInput({ threadId, input, status, setInput, append, stop, onRefr
               </div>
 
               {/* Right Side - Actions */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto justify-center sm:justify-end">
                 {/* File Upload */}
                 <TooltipProvider>
                   <Tooltip>
