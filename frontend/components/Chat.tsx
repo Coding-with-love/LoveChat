@@ -55,6 +55,7 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
   const isAutoScrolling = useRef(false)
   const lastUserScrollTime = useRef(0)
   const autoScrollEnabled = useRef(true)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
 
   // Add these state variables inside the Chat component function
   const [realtimeThinking, setRealtimeThinking] = useState("")
@@ -707,23 +708,22 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
   }, [messages, status, supportsThinking, isResuming, selectedModel])
 
   const scrollToBottom = () => {
+    const container = messagesContainerRef.current
+    if (!container) return
     isAutoScrolling.current = true
-    
+
     // Hide the button immediately when clicked
     setShowScrollToBottom(false)
-    
-    window.scrollTo({
-      top: document.documentElement.scrollHeight,
+
+    container.scrollTo({
+      top: container.scrollHeight,
       behavior: "smooth",
     })
-    
+
     setTimeout(() => {
       isAutoScrolling.current = false
-      // Double-check if we're at bottom after scroll completes
-      const scrollTop = window.pageYOffset || document.documentElement.scrollTop
-      const windowHeight = window.innerHeight
-      const documentHeight = document.documentElement.scrollHeight
-      const isNearBottom = documentHeight - (scrollTop + windowHeight) < 100
+      const { scrollTop, clientHeight, scrollHeight } = container
+      const isNearBottom = scrollHeight - (scrollTop + clientHeight) < 100
       setShowScrollToBottom(!isNearBottom)
     }, 1000)
   }
@@ -733,22 +733,20 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
 
     // Track when user manually scrolls
     lastUserScrollTime.current = Date.now()
-    
-    const scrollTop = window.pageYOffset || document.documentElement.scrollTop
-    const windowHeight = window.innerHeight
-    const documentHeight = document.documentElement.scrollHeight
 
-    const isNearBottom = documentHeight - (scrollTop + windowHeight) < 100
+    const container = messagesContainerRef.current
+    if (!container) return
+    const { scrollTop, clientHeight, scrollHeight } = container
+
+    const isNearBottom = scrollHeight - (scrollTop + clientHeight) < 100
     setShowScrollToBottom(!isNearBottom)
-    
+
     // More responsive auto-scroll control during streaming
     if (status === "streaming") {
-      // If user scrolls significantly away from bottom, disable auto-scroll
-      const distanceFromBottom = documentHeight - (scrollTop + windowHeight)
+      const distanceFromBottom = scrollHeight - (scrollTop + clientHeight)
       if (distanceFromBottom > 500) {
         autoScrollEnabled.current = false
       } else if (distanceFromBottom < 100) {
-        // Re-enable if user scrolls close to bottom
         autoScrollEnabled.current = true
       }
     } else if (isNearBottom) {
@@ -757,20 +755,20 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
   }
 
   useEffect(() => {
-    window.addEventListener("scroll", handleScroll)
+    const container = messagesContainerRef.current
+    container?.addEventListener("scroll", handleScroll)
     handleScroll()
-    return () => window.removeEventListener("scroll", handleScroll)
+    return () => container?.removeEventListener("scroll", handleScroll)
   }, [])
 
   // Auto-scroll during streaming or resuming
   useEffect(() => {
     if ((status === "streaming" || isResuming) && messages.length > 0) {
-      const scrollTop = window.pageYOffset || document.documentElement.scrollTop
-      const windowHeight = window.innerHeight
-      const documentHeight = document.documentElement.scrollHeight
-      const isNearBottom = documentHeight - (scrollTop + windowHeight) < 300
+      const container = messagesContainerRef.current
+      if (!container) return
+      const { scrollTop, clientHeight, scrollHeight } = container
+      const isNearBottom = scrollHeight - (scrollTop + clientHeight) < 300
 
-      // Only auto-scroll if user hasn't manually scrolled recently and auto-scroll is enabled
       const timeSinceUserScroll = Date.now() - lastUserScrollTime.current
       const shouldAutoScroll = autoScrollEnabled.current && (timeSinceUserScroll > 1000 || isNearBottom)
 
@@ -784,13 +782,11 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
   useEffect(() => {
     if (status === "streaming" && messages.length > 0) {
       const lastMessage = messages[messages.length - 1]
-      
-      // Only auto-scroll if it's an assistant message being streamed and auto-scroll is enabled
       if (lastMessage?.role === "assistant" && autoScrollEnabled.current) {
-        // Use requestAnimationFrame for smoother scrolling during rapid updates
         requestAnimationFrame(() => {
-          window.scrollTo({
-            top: document.documentElement.scrollHeight,
+          const container = messagesContainerRef.current
+          container?.scrollTo({
+            top: container.scrollHeight,
             behavior: "smooth",
           })
         })
@@ -1069,7 +1065,7 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
   }
 
   return (
-    <div className="relative w-full">
+    <div className="relative h-[100dvh] w-full overflow-hidden">
       <Button variant="outline" size="icon" onClick={toggleSidebar} className="fixed top-4 left-4 z-50 md:hidden">
         <ChevronDown className="h-4 w-4" />
       </Button>
@@ -1084,38 +1080,42 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
         </div>
       )}
 
-      <main className="flex flex-col w-full max-w-3xl pt-10 pb-48 mx-auto transition-all duration-300 ease-in-out px-4 sm:px-6 lg:px-8">
-
-        <RegenerationProvider
-          onMessageUpdate={(updatedMessage) => {
-            console.log("🔄 Updating message with new attempts:", updatedMessage.id, "Total attempts:", updatedMessage.attempts?.length)
-            setMessages((prevMessages) => {
-              return prevMessages.map(msg => 
-                msg.id === updatedMessage.id ? updatedMessage as UIMessage : msg
-              )
-            })
-          }}
+      <main className="flex flex-col h-full w-full max-w-3xl mx-auto transition-all duration-300 ease-in-out">
+        <div
+          ref={messagesContainerRef}
+          className="flex-1 overflow-y-auto pt-6 sm:pt-10 pb-32 sm:pb-48 px-4 sm:px-6 lg:px-8"
         >
-          <Messages
-            threadId={threadId}
-            messages={messages}
-            status={status}
-            setMessages={setMessages as any}
-            reload={reload}
-            error={error}
-            registerRef={registerRef || (() => {})}
-            stop={stop}
-            resumeComplete={resumeComplete}
-            resumedMessageId={resumedMessageId}
-            onPromptClick={handlePromptClick}
-          />
-        </RegenerationProvider>
-        <ChatInput threadId={threadId} input={input} status={status} append={append} setInput={setInput} stop={stop} onRefreshMessages={onRefreshMessages} />
+          <RegenerationProvider
+            onMessageUpdate={(updatedMessage) => {
+              console.log("🔄 Updating message with new attempts:", updatedMessage.id, "Total attempts:", updatedMessage.attempts?.length)
+              setMessages((prevMessages) => {
+                return prevMessages.map(msg =>
+                  msg.id === updatedMessage.id ? updatedMessage as UIMessage : msg
+                )
+              })
+            }}
+          >
+            <Messages
+              threadId={threadId}
+              messages={messages}
+              status={status}
+              setMessages={setMessages as any}
+              reload={reload}
+              error={error}
+              registerRef={registerRef || (() => {})}
+              stop={stop}
+              resumeComplete={resumeComplete}
+              resumedMessageId={resumedMessageId}
+              onPromptClick={handlePromptClick}
+            />
+          </RegenerationProvider>
+        </div>
       </main>
+      <ChatInput threadId={threadId} input={input} status={status} append={append} setInput={setInput} stop={stop} onRefreshMessages={onRefreshMessages} />
 
       {showScrollToBottom && (
         <div className={cn(
-          "fixed w-full max-w-4xl bottom-[220px] z-50",
+          "fixed w-full max-w-4xl bottom-[180px] sm:bottom-[220px] z-50",
           "transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]",
           "px-3 md:px-4 pointer-events-none",
           isMobile
