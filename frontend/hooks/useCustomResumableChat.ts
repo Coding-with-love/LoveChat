@@ -6,6 +6,7 @@ import { useAuth } from "@/frontend/components/AuthProvider"
 import { useAPIKeyStore } from "@/frontend/stores/APIKeyStore"
 import { useModelStore } from "@/frontend/stores/ModelStore"
 import { useWebSearchStore } from "@/frontend/stores/WebSearchStore"
+import { useStudyModeStore } from "@/frontend/stores/StudyModeStore"
 import { apiClient } from "@/lib/api-client"
 import { getActiveStreamsForThread, resumeStream } from "./resumable-streams-client"
 import type { UIMessage, Message, CreateMessage } from "ai"
@@ -35,6 +36,7 @@ export function useCustomResumableChat({
   const getKey = useAPIKeyStore((state) => state.getKey)
   const selectedModel = useModelStore((state) => state.selectedModel)
   const webSearchEnabled = useWebSearchStore((state) => state.enabled)
+  const studyModeEnabled = useStudyModeStore((state) => state.enabled)
 
   // Resume state
   const [isResuming, setIsResuming] = useState(false)
@@ -126,6 +128,7 @@ export function useCustomResumableChat({
           ...newBody,
           model: selectedModel,
           webSearchEnabled,
+          studyMode: studyModeEnabled,
           // Only include API key in body if it's valid
           ...(apiKey && typeof apiKey === 'string' && apiKey.trim().length > 0 && { apiKey }),
           // Preserve any existing data field (which may contain user preferences)

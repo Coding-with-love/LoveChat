@@ -30,6 +30,7 @@ import {
   ChevronUp,
   ChevronDown,
   Loader2,
+  GraduationCap,
 } from "lucide-react"
 import ThemeToggler from "@/frontend/components/ui/ThemeToggler"
 import { useChatNavigator } from "@/frontend/hooks/useChatNavigator"
@@ -53,6 +54,7 @@ import {
 } from "@/frontend/components/ui/dialog"
 import { createThread, getMessagesByThreadId, createMessage, getSharedThreadByThreadId } from "@/lib/supabase/queries"
 import { v4 as uuidv4 } from "uuid"
+import { useStudyModeStore } from "@/frontend/stores/StudyModeStore"
 
 export default function ChatLayout() {
   const { id } = useParams()
@@ -81,6 +83,9 @@ export default function ChatLayout() {
   const titleInputRef = useRef<HTMLInputElement>(null)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const navigate = useNavigate()
+
+  const studyModeEnabled = useStudyModeStore((state) => state.enabled)
+  const toggleStudyMode = useStudyModeStore((state) => state.toggle)
 
   // Ref to store the sidebar refresh function
   const sidebarRefreshRef = useRef<() => void>(() => {})
@@ -369,6 +374,18 @@ export default function ChatLayout() {
                       <MessageSquareMore className="h-4 w-4" />
                     </Button>
                   )}
+
+                  {/* Study Mode */}
+                  <Button
+                    onClick={toggleStudyMode}
+                    variant={studyModeEnabled ? "default" : "outline"}
+                    size="icon"
+                    className="h-9 w-9 hover:shadow-md hover:scale-105 transition-all duration-200 rounded-lg"
+                    aria-label="Toggle study mode"
+                    title="Study Mode"
+                  >
+                    <GraduationCap className="h-4 w-4" />
+                  </Button>
 
                   {/* Pinned Messages */}
                   {id && (

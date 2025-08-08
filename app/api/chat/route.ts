@@ -483,7 +483,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 })
     }
 
-    const { messages, model, webSearchEnabled: userWebSearchEnabled, apiKey: bodyApiKey, data, experimental_attachments } = json
+    const { messages, model, webSearchEnabled: userWebSearchEnabled, apiKey: bodyApiKey, data, experimental_attachments, studyMode } = json
     const headersList = await headers()
 
     // Analyze user message to determine if web search should be automatically enabled
@@ -543,6 +543,7 @@ export async function POST(req: NextRequest) {
     console.log("🖼️ Image attachments received:", experimental_attachments?.length || 0)
     console.log("🚨 FULL REQUEST JSON:", JSON.stringify(json, null, 2))
     console.log("📦 Request data received:", data ? "present" : "not present")
+    console.log("🎓 Study mode:", !!studyMode)
     if (data) {
       console.log("📦 Data content:", {
         hasUserPreferences: !!data.userPreferences,
@@ -574,7 +575,7 @@ export async function POST(req: NextRequest) {
     // Check if this is an Ollama model
     if (model.startsWith("ollama:")) {
       console.log("🦙 Ollama model detected, routing to Ollama handler")
-      return handleOllamaChat(req, messages, model, headersList, data)
+      return handleOllamaChat(req, messages, model, headersList, data, studyMode)
     }
 
     // Get authorization header
@@ -961,6 +962,7 @@ export async function POST(req: NextRequest) {
       isThinkingModel,
       modelConfig.provider,
       modelConfig.modelId,
+      studyMode,
     )
     console.log("📝 Generated system prompt preview:", systemPrompt.substring(0, 200) + "...")
     console.log("📝 Full system prompt:", systemPrompt)
@@ -2234,7 +2236,7 @@ You can influence reasoning depth using \`reasoning_effort\` (low/medium/high). 
   }
 }
 
-async function handleOllamaChat(req: NextRequest, messages: any[], model: string, headersList: Headers, data?: any) {
+async function handleOllamaChat(req: NextRequest, messages: any[], model: string, headersList: Headers, data?: any, studyMode: boolean = false) {
   try {
     console.log("🦙 Handling Ollama chat request")
 
@@ -2255,6 +2257,7 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
 
     const ollamaModel = model.replace("ollama:", "")
     console.log("🦙 Using Ollama model:", ollamaModel)
+    console.log("🎓 Study mode:", !!studyMode)
 
     // Get the Ollama base URL from headers (sent by frontend) or fallback to environment/default
     const ollamaUrl = headersList.get('x-ollama-base-url') || 
@@ -2313,7 +2316,7 @@ async function handleOllamaChat(req: NextRequest, messages: any[], model: string
     console.log("👤 Ollama user preferences:", userPreferences ? "present" : "not found")
 
     // Create system prompt for Ollama
-    const systemPrompt = getSystemPrompt(false, false, userEmail, threadPersona, userPreferences, isThinkingModel, modelConfig.provider, modelConfig.modelId)
+    const systemPrompt = getSystemPrompt(false, false, userEmail, threadPersona, userPreferences, isThinkingModel, modelConfig.provider, modelConfig.modelId, studyMode)
     console.log("📝 Ollama generated system prompt preview:", systemPrompt.substring(0, 200) + "...")
 
     // Prepare messages for Ollama - inject system prompt as system message
@@ -2743,6 +2746,7 @@ function getSystemPrompt(
   isThinkingModel: boolean = false,
   modelProvider: string = "",
   modelId: string = "",
+  studyMode: boolean = false,
 ) {
   let basePrompt = `You are LoveChat, an AI assistant that can answer questions and help with tasks.
 Be helpful and provide relevant information.
@@ -2785,21 +2789,15 @@ IMPORTANT: If the user has provided personal information in your system instruct
       console.log("👤 Added assistant traits to prompt:", userPreferences.assistantTraits)
     }
 
-    // Add custom instructions
-    if (userPreferences.customInstructions) {
-      personalizationSection += `\n- Custom instructions from the user: ${userPreferences.customInstructions}`
-      console.log("👤 Added custom instructions to prompt:", userPreferences.customInstructions)
-    }
+      // Add custom instructions
+      if (userPreferences.customInstructions) {
+        personalizationSection += `\n- Custom instructions from the user: ${userPreferences.customInstructions}`
+        console.log("👤 Added custom instructions to prompt:", userPreferences.customInstructions)
+      }
 
-    // Add custom instructions
-    if (userPreferences.customInstructions) {
-      personalizationSection += `\n- Custom instructions from the user: ${userPreferences.customInstructions}`
-      console.log("👤 Added custom instructions to prompt:", userPreferences.customInstructions)
-    }
-
-    if (personalizationSection) {
-      personalizationSection += "\n"
-    }
+      if (personalizationSection) {
+        personalizationSection += "\n"
+      }
 
     console.log("👤 Final personalization section:", personalizationSection)
   } else {
@@ -2811,6 +2809,11 @@ IMPORTANT: If the user has provided personal information in your system instruct
   if (persona && persona.system_prompt) {
     console.log("🎭 Using persona system prompt:", persona.name)
     basePrompt = persona.system_prompt
+  }
+
+  // Add study & learn mode instructions if enabled
+  if (studyMode) {
+    basePrompt += `\n\nYou are in \"Study & Learn\" mode.\n- Do not provide direct answers unless the user explicitly asks.\n- Guide the user with targeted questions, hints, and examples to encourage critical thinking.\n- Use professional teaching methods: assess understanding, scaffold explanations, and prompt the user to summarize.\n- Respond with empathy and adjust to the user's pace.\n- If the user asks to exit this mode or requests a direct answer, comply respectfully.`
   }
 
   // Add reasoning effort instructions for thinking models
