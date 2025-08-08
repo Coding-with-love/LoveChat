@@ -1069,7 +1069,7 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
   }
 
   return (
-    <div className="relative w-full">
+    <div className="relative flex flex-col h-full w-full overflow-hidden">
       <Button variant="outline" size="icon" onClick={toggleSidebar} className="fixed top-4 left-4 z-50 md:hidden">
         <ChevronDown className="h-4 w-4" />
       </Button>
@@ -1084,34 +1084,35 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
         </div>
       )}
 
-      <main className="flex flex-col w-full max-w-3xl pt-6 pb-36 sm:pt-10 sm:pb-48 mx-auto transition-all duration-300 ease-in-out px-4 sm:px-6 lg:px-8">
-
-        <RegenerationProvider
-          onMessageUpdate={(updatedMessage) => {
-            console.log("🔄 Updating message with new attempts:", updatedMessage.id, "Total attempts:", updatedMessage.attempts?.length)
-            setMessages((prevMessages) => {
-              return prevMessages.map(msg => 
-                msg.id === updatedMessage.id ? updatedMessage as UIMessage : msg
-              )
-            })
-          }}
-        >
-          <Messages
-            threadId={threadId}
-            messages={messages}
-            status={status}
-            setMessages={setMessages as any}
-            reload={reload}
-            error={error}
-            registerRef={registerRef || (() => {})}
-            stop={stop}
-            resumeComplete={resumeComplete}
-            resumedMessageId={resumedMessageId}
-            onPromptClick={handlePromptClick}
-          />
-        </RegenerationProvider>
-        <ChatInput threadId={threadId} input={input} status={status} append={append} setInput={setInput} stop={stop} onRefreshMessages={onRefreshMessages} />
+      <main className="flex-1 overflow-y-auto">
+        <div className="flex flex-col w-full max-w-3xl pt-6 pb-36 sm:pt-10 sm:pb-48 mx-auto transition-all duration-300 ease-in-out px-4 sm:px-6 lg:px-8">
+          <RegenerationProvider
+            onMessageUpdate={(updatedMessage) => {
+              console.log("🔄 Updating message with new attempts:", updatedMessage.id, "Total attempts:", updatedMessage.attempts?.length)
+              setMessages((prevMessages) => {
+                return prevMessages.map(msg =>
+                  msg.id === updatedMessage.id ? updatedMessage as UIMessage : msg
+                )
+              })
+            }}
+          >
+            <Messages
+              threadId={threadId}
+              messages={messages}
+              status={status}
+              setMessages={setMessages as any}
+              reload={reload}
+              error={error}
+              registerRef={registerRef || (() => {})}
+              stop={stop}
+              resumeComplete={resumeComplete}
+              resumedMessageId={resumedMessageId}
+              onPromptClick={handlePromptClick}
+            />
+          </RegenerationProvider>
+        </div>
       </main>
+      <ChatInput threadId={threadId} input={input} status={status} append={append} setInput={setInput} stop={stop} onRefreshMessages={onRefreshMessages} />
 
       {showScrollToBottom && (
         <div className={cn(
