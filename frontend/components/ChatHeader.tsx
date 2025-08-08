@@ -2,9 +2,10 @@
 
 import { useState } from "react"
 import { Button } from "./ui/button"
-import { Pin } from 'lucide-react'
+import { Pin, GraduationCap } from 'lucide-react'
 import { SidebarTrigger, useSidebar } from "./ui/sidebar"
 import PinnedMessages from "./PinnedMessages"
+import { useStudyModeStore } from "@/frontend/stores/StudyModeStore"
 
 interface ChatHeaderProps {
   threadId: string
@@ -13,6 +14,8 @@ interface ChatHeaderProps {
 export function ChatHeader({ threadId }: ChatHeaderProps) {
   const { state } = useSidebar()
   const [showPinnedMessages, setShowPinnedMessages] = useState(false)
+  const studyModeEnabled = useStudyModeStore((state) => state.enabled)
+  const toggleStudyMode = useStudyModeStore((state) => state.toggle)
 
   return (
     <div className="fixed top-0 left-0 right-0 z-40 bg-background/80 backdrop-blur-sm border-b border-border/40">
@@ -23,6 +26,15 @@ export function ChatHeader({ threadId }: ChatHeaderProps) {
         </div>
         
         <div className="flex items-center gap-2">
+          <Button
+            onClick={toggleStudyMode}
+            variant={studyModeEnabled ? "default" : "outline"}
+            size="sm"
+            className="flex items-center gap-1"
+          >
+            <GraduationCap className="h-4 w-4" />
+            <span className="hidden sm:inline">Study</span>
+          </Button>
           <Button
             onClick={() => setShowPinnedMessages(!showPinnedMessages)}
             variant="outline"
