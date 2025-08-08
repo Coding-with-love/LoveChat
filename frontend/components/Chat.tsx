@@ -1084,7 +1084,7 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
         </div>
       )}
 
-      <main className="flex flex-col w-full max-w-3xl pt-10 pb-48 mx-auto transition-all duration-300 ease-in-out px-4 sm:px-6 lg:px-8">
+      <main className="flex flex-col w-full max-w-3xl pt-6 pb-36 sm:pt-10 sm:pb-48 mx-auto transition-all duration-300 ease-in-out px-4 sm:px-6 lg:px-8">
 
         <RegenerationProvider
           onMessageUpdate={(updatedMessage) => {
@@ -1115,7 +1115,7 @@ export default function Chat({ threadId, initialMessages, registerRef, onRefresh
 
       {showScrollToBottom && (
         <div className={cn(
-          "fixed w-full max-w-4xl bottom-[220px] z-50",
+          "fixed w-full max-w-4xl bottom-[180px] sm:bottom-[220px] z-50",
           "transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]",
           "px-3 md:px-4 pointer-events-none",
           isMobile
